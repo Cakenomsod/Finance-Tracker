@@ -21,6 +21,6 @@ jobs:
         run: echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' > firebase-service-account.json
 
       - name: Deploy Preview
-        run: npx firebase deploy --only hosting
+        run: npx firebase deploy --only hosting --project ${{ secrets.NEXT_PUBLIC_FIREBASE_PROJECT_ID }}
         env:
           GOOGLE_APPLICATION_CREDENTIALS: firebase-service-account.json
