@@ -36,6 +36,16 @@ export const getUserTransactions = async (userId: string) => {
   return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Transaction));
 };
 
+export const updateTransaction = async (id: string, data: Partial<Omit<Transaction, 'id' | 'createdAt'>>) => {
+  const docRef = doc(db, 'transactions', id);
+  return await updateDoc(docRef, data);
+};
+
+export const deleteTransaction = async (id: string) => {
+  const docRef = doc(db, 'transactions', id);
+  return await deleteDoc(docRef);
+};
+
 // --- Debts ---
 
 export const createDebt = async (data: Omit<Debt, 'id' | 'createdAt'>) => {

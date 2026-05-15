@@ -81,7 +81,7 @@ export function AppSidebar({ children }: { children: React.ReactNode }) {
                     <Wallet className="size-4" />
                   </div>
                   <div className="flex flex-col gap-0.5 leading-none">
-                    <span className="font-semibold">Core Finance</span>
+                    <span className="font-semibold">Finance</span>
                     <span className="text-xs text-muted-foreground">System</span>
                   </div>
                 </Link>

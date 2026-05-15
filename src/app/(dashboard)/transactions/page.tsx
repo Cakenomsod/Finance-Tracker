@@ -60,110 +60,9 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
 import { cn } from '@/lib/utils'
-
-// Mock transaction data
-const transactions = [
-  {
-    id: '1',
-    date: '2024-06-15',
-    description: 'Grab Food - Pad Thai',
-    amount: -185,
-    category: 'Food & Dining',
-    payer: 'Me',
-    notes: 'Lunch delivery',
-    tags: ['delivery', 'thai'],
-  },
-  {
-    id: '2',
-    date: '2024-06-15',
-    description: 'BTS Monthly Pass',
-    amount: -1500,
-    category: 'Transport',
-    payer: 'Me',
-    notes: 'June monthly pass',
-    tags: ['subscription'],
-  },
-  {
-    id: '3',
-    date: '2024-06-14',
-    description: 'Salary Deposit',
-    amount: 55000,
-    category: 'Income',
-    payer: 'Company',
-    notes: 'June salary',
-    tags: ['salary'],
-  },
-  {
-    id: '4',
-    date: '2024-06-14',
-    description: 'Central Department Store',
-    amount: -2340,
-    category: 'Shopping',
-    payer: 'Me',
-    notes: 'New shoes',
-    tags: ['clothing'],
-  },
-  {
-    id: '5',
-    date: '2024-06-13',
-    description: 'Netflix Subscription',
-    amount: -419,
-    category: 'Entertainment',
-    payer: 'Me',
-    notes: 'Monthly subscription',
-    tags: ['subscription', 'streaming'],
-  },
-  {
-    id: '6',
-    date: '2024-06-13',
-    description: 'Starbucks Coffee',
-    amount: -175,
-    category: 'Food & Dining',
-    payer: 'Me',
-    notes: 'Morning coffee',
-    tags: ['coffee'],
-  },
-  {
-    id: '7',
-    date: '2024-06-12',
-    description: 'Electric Bill',
-    amount: -1850,
-    category: 'Bills & Utilities',
-    payer: 'Me',
-    notes: 'May electricity',
-    tags: ['utilities'],
-  },
-  {
-    id: '8',
-    date: '2024-06-12',
-    description: 'Dinner with friends',
-    amount: -890,
-    category: 'Food & Dining',
-    payer: 'Me',
-    notes: 'Split bill at Sushi restaurant',
-    tags: ['social', 'japanese'],
-  },
-  {
-    id: '9',
-    date: '2024-06-11',
-    description: 'Freelance Payment',
-    amount: 8500,
-    category: 'Income',
-    payer: 'Client',
-    notes: 'Design project',
-    tags: ['freelance'],
-  },
-  {
-    id: '10',
-    date: '2024-06-10',
-    description: 'Gym Membership',
-    amount: -1200,
-    category: 'Health & Fitness',
-    payer: 'Me',
-    notes: 'Monthly gym fee',
-    tags: ['subscription', 'fitness'],
-  },
-]
+import { useTransactions } from '@/hooks/use-transactions'
+import { TransactionForm } from '@/components/transactions/transaction-form'
+import { Transaction } from '@/lib/firestore-types'
 
 const categories = [
   'All Categories',
@@ -193,19 +92,21 @@ interface ParsedItem {
 }
 
 export default function TransactionsPage() {
+  const { transactions, loading, addTransaction, editTransaction, removeTransaction } = useTransactions()
   const [searchQuery, setSearchQuery] = React.useState('')
   const [selectedCategory, setSelectedCategory] = React.useState('All Categories')
   const [selectedRows, setSelectedRows] = React.useState<string[]>([])
   const [naturalInput, setNaturalInput] = React.useState('')
   const [parsedItems, setParsedItems] = React.useState<ParsedItem[]>([])
   const [showParsedDialog, setShowParsedDialog] = React.useState(false)
+  const [isAddDialogOpen, setIsAddDialogOpen] = React.useState(false)
+  const [editingTransaction, setEditingTransaction] = React.useState<Transaction | null>(null)
 
   // Filter transactions
   const filteredTransactions = transactions.filter((t) => {
-    const matchesSearch =
-      t.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      t.notes.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      t.tags.some((tag) => tag.toLowerCase().includes(searchQuery.toLowerCase()))
+    const descMatches = t.description?.toLowerCase().includes(searchQuery.toLowerCase()) || false
+    const catMatches = t.category?.toLowerCase().includes(searchQuery.toLowerCase()) || false
+    const matchesSearch = descMatches || catMatches
     const matchesCategory =
       selectedCategory === 'All Categories' || t.category === selectedCategory
     return matchesSearch && matchesCategory
@@ -328,7 +229,10 @@ export default function TransactionsPage() {
             <Download className="mr-2 size-4" />
             Export
           </Button>
-          <Dialog>
+          <Dialog open={isAddDialogOpen} onOpenChange={(open) => {
+            setIsAddDialogOpen(open)
+            if (!open) setEditingTransaction(null)
+          }}>
             <DialogTrigger asChild>
               <Button size="sm" className="gap-2">
                 <Plus className="size-4" />
@@ -337,49 +241,27 @@ export default function TransactionsPage() {
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>Add Transaction</DialogTitle>
+                <DialogTitle>{editingTransaction ? 'Edit Transaction' : 'Add Transaction'}</DialogTitle>
                 <DialogDescription>
-                  Enter the details for your new transaction.
+                  Enter the details for your transaction.
                 </DialogDescription>
               </DialogHeader>
-              <div className="grid gap-4 py-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="description">Description</Label>
-                  <Input id="description" placeholder="Enter description" />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="grid gap-2">
-                    <Label htmlFor="amount">Amount (฿)</Label>
-                    <Input id="amount" type="number" placeholder="0" />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="category">Category</Label>
-                    <Select>
-                      <SelectTrigger id="category">
-                        <SelectValue placeholder="Select" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {categories.slice(1).map((category) => (
-                          <SelectItem key={category} value={category}>
-                            {category}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="notes">Notes</Label>
-                  <Textarea id="notes" placeholder="Add any notes..." />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="tags">Tags</Label>
-                  <Input id="tags" placeholder="Comma-separated tags" />
-                </div>
-              </div>
-              <DialogFooter>
-                <Button type="submit">Save Transaction</Button>
-              </DialogFooter>
+              <TransactionForm 
+                initialData={editingTransaction}
+                onSubmit={async (data) => {
+                  if (editingTransaction) {
+                    await editTransaction(editingTransaction.id!, data)
+                  } else {
+                    await addTransaction(data)
+                  }
+                  setIsAddDialogOpen(false)
+                  setEditingTransaction(null)
+                }}
+                onCancel={() => {
+                  setIsAddDialogOpen(false)
+                  setEditingTransaction(null)
+                }}
+              />
             </DialogContent>
           </Dialog>
         </div>
@@ -445,39 +327,37 @@ export default function TransactionsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredTransactions.map((transaction) => (
+              {loading ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="h-24 text-center">Loading transactions...</TableCell>
+                </TableRow>
+              ) : filteredTransactions.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="h-24 text-center">No transactions found.</TableCell>
+                </TableRow>
+              ) : filteredTransactions.map((transaction) => (
                 <TableRow
                   key={transaction.id}
                   className={cn(
                     'group cursor-pointer',
-                    selectedRows.includes(transaction.id) && 'bg-muted/50'
+                    selectedRows.includes(transaction.id!) && 'bg-muted/50'
                   )}
                 >
                   <TableCell>
                     <Checkbox
-                      checked={selectedRows.includes(transaction.id)}
-                      onCheckedChange={() => handleRowSelect(transaction.id)}
+                      checked={selectedRows.includes(transaction.id!)}
+                      onCheckedChange={() => handleRowSelect(transaction.id!)}
                     />
                   </TableCell>
                   <TableCell className="text-muted-foreground">
-                    {new Date(transaction.date).toLocaleDateString('en-US', {
+                    {transaction.date ? new Date(transaction.date.seconds * 1000).toLocaleDateString('en-US', {
                       month: 'short',
                       day: 'numeric',
-                    })}
+                    }) : ''}
                   </TableCell>
                   <TableCell>
                     <div>
                       <p className="font-medium">{transaction.description}</p>
-                      <p className="text-xs text-muted-foreground">{transaction.notes}</p>
-                      {transaction.tags.length > 0 && (
-                        <div className="mt-1 flex gap-1">
-                          {transaction.tags.map((tag) => (
-                            <Badge key={tag} variant="outline" className="text-[10px] px-1.5 py-0">
-                              {tag}
-                            </Badge>
-                          ))}
-                        </div>
-                      )}
                     </div>
                   </TableCell>
                   <TableCell>
@@ -491,7 +371,7 @@ export default function TransactionsPage() {
                       {transaction.category}
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-muted-foreground">{transaction.payer}</TableCell>
+                  <TableCell className="text-muted-foreground">{transaction.paidBy || 'Me'}</TableCell>
                   <TableCell
                     className={cn(
                       'text-right font-semibold tabular-nums',
@@ -513,16 +393,15 @@ export default function TransactionsPage() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => {
+                          setEditingTransaction(transaction)
+                          setIsAddDialogOpen(true)
+                        }}>
                           <Edit2 className="mr-2 size-4" />
                           Edit
                         </DropdownMenuItem>
-                        <DropdownMenuItem>
-                          <Tag className="mr-2 size-4" />
-                          Add Tags
-                        </DropdownMenuItem>
                         <DropdownMenuSeparator />
-                        <DropdownMenuItem className="text-destructive">
+                        <DropdownMenuItem className="text-destructive" onClick={() => removeTransaction(transaction.id!)}>
                           <Trash2 className="mr-2 size-4" />
                           Delete
                         </DropdownMenuItem>
