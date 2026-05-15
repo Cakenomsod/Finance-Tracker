@@ -17,7 +17,7 @@ export function middleware(request: NextRequest) {
     request.nextUrl.pathname.startsWith('/settings');
 
   if (isDashboardRoute && !session) {
-    const loginUrl = new NextUrl('/login', request.url);
+    const loginUrl = new URL('/login', request.url);
     // Remember where we came from
     loginUrl.searchParams.set('from', request.nextUrl.pathname);
     return NextResponse.redirect(loginUrl);
@@ -25,7 +25,7 @@ export function middleware(request: NextRequest) {
 
   // If already logged in and trying to access login page
   if (request.nextUrl.pathname === '/login' && session) {
-    return NextResponse.redirect(new NextUrl('/', request.url));
+    return NextResponse.redirect(new URL('/', request.url));
   }
 
   return NextResponse.next();
@@ -46,7 +46,3 @@ export const config = {
   ],
 };
 
-// Helper for NextUrl fix (standard URL constructor often safer in Edge)
-function NextUrl(path: string, base: string) {
-  return new URL(path, base);
-}
