@@ -48,13 +48,23 @@ export const deleteTransaction = async (id: string) => {
 
 // --- Debts ---
 
-export const createDebt = async (data: Omit<Debt, 'id' | 'createdAt'>) => {
+export const createDebt = async (data: Omit<Debt, 'id' | 'createdAt' | 'status' | 'settledAt'>) => {
   return await addDoc(debtsRef, {
     ...data,
     createdAt: serverTimestamp(),
     status: 'pending',
     settledAt: null,
   });
+};
+
+export const updateDebt = async (id: string, data: Partial<Omit<Debt, 'id' | 'createdAt'>>) => {
+  const docRef = doc(db, 'debts', id);
+  return await updateDoc(docRef, data);
+};
+
+export const deleteDebt = async (id: string) => {
+  const docRef = doc(db, 'debts', id);
+  return await deleteDoc(docRef);
 };
 
 // --- Trips ---

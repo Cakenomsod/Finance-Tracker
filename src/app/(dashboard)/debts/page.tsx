@@ -6,20 +6,18 @@ import {
   Plus,
   ArrowRight,
   Check,
-  Clock,
-  MoreHorizontal,
-  Send,
   History,
   AlertCircle,
-  ChevronRight,
   Wallet,
+  MoreHorizontal,
+  Send,
+  Trash2,
 } from 'lucide-react'
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { Progress } from '@/components/ui/progress'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Dialog,
@@ -47,117 +45,25 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
-
-// Mock debt data
-const debts = {
-  youOwe: [
-    {
-      id: '1',
-      person: 'Sarah Chen',
-      initials: 'SC',
-      amount: 1500,
-      reason: 'Dinner at Italian restaurant',
-      date: '2024-06-10',
-      status: 'pending',
-    },
-    {
-      id: '2',
-      person: 'Mike Johnson',
-      initials: 'MJ',
-      amount: 1750,
-      reason: 'Concert tickets',
-      date: '2024-06-08',
-      status: 'pending',
-    },
-  ],
-  owedToYou: [
-    {
-      id: '3',
-      person: 'Lisa Wang',
-      initials: 'LW',
-      amount: 2300,
-      reason: 'Grocery shopping split',
-      date: '2024-06-12',
-      status: 'pending',
-    },
-    {
-      id: '4',
-      person: 'Tom Brown',
-      initials: 'TB',
-      amount: 800,
-      reason: 'Uber ride share',
-      date: '2024-06-11',
-      status: 'partial',
-      paid: 300,
-    },
-    {
-      id: '5',
-      person: 'Emily Davis',
-      initials: 'ED',
-      amount: 2700,
-      reason: 'Weekend trip expenses',
-      date: '2024-06-05',
-      status: 'pending',
-    },
-  ],
-}
-
-const paymentHistory = [
-  {
-    id: '1',
-    type: 'received',
-    person: 'Alex Kim',
-    amount: 450,
-    date: '2024-06-14',
-    description: 'Coffee run settlement',
-  },
-  {
-    id: '2',
-    type: 'paid',
-    person: 'Rachel Green',
-    amount: 1200,
-    date: '2024-06-13',
-    description: 'Birthday dinner',
-  },
-  {
-    id: '3',
-    type: 'received',
-    person: 'Tom Brown',
-    amount: 300,
-    date: '2024-06-12',
-    description: 'Partial payment - Uber',
-  },
-  {
-    id: '4',
-    type: 'paid',
-    person: 'David Lee',
-    amount: 850,
-    date: '2024-06-10',
-    description: 'Movie night expenses',
-  },
-]
+import { useDebts } from '@/hooks/use-debts'
+import { useAuth } from '@/hooks/use-auth'
+import { Debt } from '@/lib/firestore-types'
 
 function DebtCard({
-  person,
-  initials,
-  amount,
-  reason,
-  date,
-  status,
-  paid,
+  debt,
   type,
+  person,
+  onSettle,
+  onDelete,
 }: {
-  person: string
-  initials: string
-  amount: number
-  reason: string
-  date: string
-  status: string
-  paid?: number
+  debt: Debt
   type: 'owe' | 'owed'
+  person: string
+  onSettle: (id: string) => void
+  onDelete: (id: string) => void
 }) {
-  const remaining = paid ? amount - paid : amount
-  const progress = paid ? (paid / amount) * 100 : 0
+  const initials = person.substring(0, 2).toUpperCase()
+  const date = debt.createdAt ? new Date(debt.createdAt.seconds * 1000) : new Date()
 
   return (
     <Card className="group transition-all hover:shadow-md">
@@ -178,7 +84,7 @@ function DebtCard({
             </Avatar>
             <div>
               <p className="font-medium">{person}</p>
-              <p className="text-sm text-muted-foreground">{reason}</p>
+              <p className="text-sm text-muted-foreground">{debt.relatedTxIds?.length > 0 ? 'From transaction split' : 'Manual debt'}</p>
             </div>
           </div>
           <div className="text-right">
@@ -188,48 +94,42 @@ function DebtCard({
                 type === 'owe' ? 'text-destructive' : 'text-primary'
               )}
             >
-              {type === 'owe' ? '-' : '+'}฿{remaining.toLocaleString()}
+              {type === 'owe' ? '-' : '+'}฿{debt.amount.toLocaleString()}
             </p>
             <Badge
               variant="secondary"
               className={cn(
                 'mt-1 text-xs',
-                status === 'partial' && 'bg-warning/20 text-warning',
-                status === 'pending' && 'bg-muted text-muted-foreground'
+                debt.status === 'pending' && 'bg-warning/20 text-warning',
+                debt.status === 'settled' && 'bg-primary/20 text-primary'
               )}
             >
-              {status === 'partial' ? `Partial (฿${paid} paid)` : 'Pending'}
+              {debt.status === 'pending' ? 'Pending' : 'Settled'}
             </Badge>
           </div>
         </div>
 
-        {status === 'partial' && (
-          <div className="mt-3">
-            <div className="flex justify-between text-xs text-muted-foreground mb-1">
-              <span>Progress</span>
-              <span>{Math.round(progress)}%</span>
-            </div>
-            <Progress value={progress} className="h-1.5" />
-          </div>
-        )}
-
         <div className="mt-3 flex items-center justify-between border-t pt-3">
           <span className="text-xs text-muted-foreground">
-            {new Date(date).toLocaleDateString('en-US', {
+            {date.toLocaleDateString('en-US', {
               month: 'short',
               day: 'numeric',
             })}
           </span>
           <div className="flex gap-2 opacity-0 transition-opacity group-hover:opacity-100">
-            {type === 'owe' ? (
-              <Button size="sm" variant="outline">
-                <Send className="mr-2 size-3" />
-                Settle
-              </Button>
-            ) : (
-              <Button size="sm" variant="outline">
-                <Check className="mr-2 size-3" />
-                Mark Paid
+            {debt.status === 'pending' && (
+              <Button size="sm" variant="outline" onClick={() => onSettle(debt.id!)}>
+                {type === 'owe' ? (
+                  <>
+                    <Send className="mr-2 size-3" />
+                    Settle
+                  </>
+                ) : (
+                  <>
+                    <Check className="mr-2 size-3" />
+                    Mark Paid
+                  </>
+                )}
               </Button>
             )}
             <DropdownMenu>
@@ -239,9 +139,8 @@ function DebtCard({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem>Send Reminder</DropdownMenuItem>
-                <DropdownMenuItem>Edit Details</DropdownMenuItem>
-                <DropdownMenuItem className="text-destructive">
+                <DropdownMenuItem className="text-destructive" onClick={() => onDelete(debt.id!)}>
+                  <Trash2 className="mr-2 size-4" />
                   Delete
                 </DropdownMenuItem>
               </DropdownMenuContent>
@@ -254,12 +153,43 @@ function DebtCard({
 }
 
 export default function DebtsPage() {
-  const totalOwed = debts.youOwe.reduce((sum, d) => sum + d.amount, 0)
-  const totalOwedToYou = debts.owedToYou.reduce(
-    (sum, d) => sum + d.amount - (d.paid || 0),
-    0
-  )
+  const { user } = useAuth()
+  const { debts, loading, addDebt, settleDebt, removeDebt } = useDebts()
+
+  const [isAddOpen, setIsAddOpen] = React.useState(false)
+  const [newDebtType, setNewDebtType] = React.useState<'owe' | 'owed'>('owe')
+  const [newDebtPerson, setNewDebtPerson] = React.useState('')
+  const [newDebtAmount, setNewDebtAmount] = React.useState('')
+
+  if (loading) {
+    return <div className="p-6">Loading debts...</div>
+  }
+
+  const pendingDebts = debts.filter(d => d.status === 'pending')
+  const settledDebts = debts.filter(d => d.status === 'settled')
+
+  const youOwe = pendingDebts.filter((d) => d.fromUserId === user?.uid)
+  const owedToYou = pendingDebts.filter((d) => d.toUserId === user?.uid)
+
+  const totalOwed = youOwe.reduce((sum, d) => sum + d.amount, 0)
+  const totalOwedToYou = owedToYou.reduce((sum, d) => sum + d.amount, 0)
+  
   const netBalance = totalOwedToYou - totalOwed
+
+  const handleAddDebt = async () => {
+    if (!newDebtPerson || !newDebtAmount || isNaN(parseFloat(newDebtAmount))) return
+    
+    await addDebt({
+      fromUserId: newDebtType === 'owe' ? user!.uid : newDebtPerson,
+      toUserId: newDebtType === 'owe' ? newDebtPerson : user!.uid,
+      amount: parseFloat(newDebtAmount),
+      relatedTxIds: [],
+    })
+
+    setIsAddOpen(false)
+    setNewDebtPerson('')
+    setNewDebtAmount('')
+  }
 
   return (
     <div className="flex flex-col gap-6 p-6">
@@ -283,7 +213,7 @@ export default function DebtsPage() {
               ฿{totalOwed.toLocaleString()}
             </p>
             <p className="mt-1 text-sm text-muted-foreground">
-              {debts.youOwe.length} people
+              {youOwe.length} active debts
             </p>
           </CardContent>
         </Card>
@@ -298,7 +228,7 @@ export default function DebtsPage() {
               ฿{totalOwedToYou.toLocaleString()}
             </p>
             <p className="mt-1 text-sm text-muted-foreground">
-              {debts.owedToYou.length} people
+              {owedToYou.length} active debts
             </p>
           </CardContent>
         </Card>
@@ -327,7 +257,7 @@ export default function DebtsPage() {
       {/* Quick Add Debt */}
       <Card className="border-dashed">
         <CardContent className="flex items-center justify-center py-6">
-          <Dialog>
+          <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
             <DialogTrigger asChild>
               <Button variant="outline" className="gap-2">
                 <Plus className="size-4" />
@@ -338,13 +268,13 @@ export default function DebtsPage() {
               <DialogHeader>
                 <DialogTitle>Record Debt</DialogTitle>
                 <DialogDescription>
-                  Enter the details of the shared expense or loan.
+                  Enter the details of the manual loan.
                 </DialogDescription>
               </DialogHeader>
               <div className="grid gap-4 py-4">
                 <div className="grid gap-2">
                   <Label>Type</Label>
-                  <Select>
+                  <Select value={newDebtType} onValueChange={(v: 'owe' | 'owed') => setNewDebtType(v)}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select type" />
                     </SelectTrigger>
@@ -355,27 +285,28 @@ export default function DebtsPage() {
                   </Select>
                 </div>
                 <div className="grid gap-2">
-                  <Label>Person</Label>
-                  <Input placeholder="Enter name" />
+                  <Label>Person Name</Label>
+                  <Input 
+                    placeholder="Enter name" 
+                    value={newDebtPerson} 
+                    onChange={e => setNewDebtPerson(e.target.value)} 
+                  />
                 </div>
                 <div className="grid gap-2">
                   <Label>Amount (฿)</Label>
-                  <Input type="number" placeholder="0" />
-                </div>
-                <div className="grid gap-2">
-                  <Label>Reason</Label>
-                  <Textarea placeholder="What was this for?" />
+                  <Input 
+                    type="number" 
+                    placeholder="0" 
+                    value={newDebtAmount} 
+                    onChange={e => setNewDebtAmount(e.target.value)} 
+                  />
                 </div>
               </div>
               <DialogFooter>
-                <Button>Save</Button>
+                <Button onClick={handleAddDebt}>Save</Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
-          <span className="mx-4 text-muted-foreground">or</span>
-          <p className="text-sm text-muted-foreground">
-            Type: &quot;I paid 500 for my girlfriend&quot;
-          </p>
         </CardContent>
       </Card>
 
@@ -386,14 +317,14 @@ export default function DebtsPage() {
             <Wallet className="size-4" />
             Owed to You
             <Badge variant="secondary" className="ml-1 rounded-full">
-              {debts.owedToYou.length}
+              {owedToYou.length}
             </Badge>
           </TabsTrigger>
           <TabsTrigger value="you-owe" className="gap-2">
             <AlertCircle className="size-4" />
             You Owe
             <Badge variant="secondary" className="ml-1 rounded-full">
-              {debts.youOwe.length}
+              {youOwe.length}
             </Badge>
           </TabsTrigger>
           <TabsTrigger value="history" className="gap-2">
@@ -403,19 +334,41 @@ export default function DebtsPage() {
         </TabsList>
 
         <TabsContent value="owed-to-you" className="mt-4">
-          <div className="grid gap-4 md:grid-cols-2">
-            {debts.owedToYou.map((debt) => (
-              <DebtCard key={debt.id} {...debt} type="owed" />
-            ))}
-          </div>
+          {owedToYou.length === 0 ? (
+            <div className="py-8 text-center text-muted-foreground">No one owes you money right now.</div>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2">
+              {owedToYou.map((debt) => (
+                <DebtCard 
+                  key={debt.id} 
+                  debt={debt} 
+                  type="owed" 
+                  person={debt.fromUserId} 
+                  onSettle={settleDebt} 
+                  onDelete={removeDebt} 
+                />
+              ))}
+            </div>
+          )}
         </TabsContent>
 
         <TabsContent value="you-owe" className="mt-4">
-          <div className="grid gap-4 md:grid-cols-2">
-            {debts.youOwe.map((debt) => (
-              <DebtCard key={debt.id} {...debt} type="owe" />
-            ))}
-          </div>
+          {youOwe.length === 0 ? (
+            <div className="py-8 text-center text-muted-foreground">You don't owe anyone money right now.</div>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2">
+              {youOwe.map((debt) => (
+                <DebtCard 
+                  key={debt.id} 
+                  debt={debt} 
+                  type="owe" 
+                  person={debt.toUserId} 
+                  onSettle={settleDebt} 
+                  onDelete={removeDebt} 
+                />
+              ))}
+            </div>
+          )}
         </TabsContent>
 
         <TabsContent value="history" className="mt-4">
@@ -425,57 +378,67 @@ export default function DebtsPage() {
               <CardDescription>Recent debt settlements and payments</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
-                {paymentHistory.map((payment) => (
-                  <div
-                    key={payment.id}
-                    className="flex items-center justify-between border-b pb-4 last:border-0 last:pb-0"
-                  >
-                    <div className="flex items-center gap-3">
+              {settledDebts.length === 0 ? (
+                <div className="text-center text-muted-foreground py-4">No settlement history found.</div>
+              ) : (
+                <div className="space-y-4">
+                  {settledDebts.map((payment) => {
+                    const isReceived = payment.toUserId === user?.uid
+                    const person = isReceived ? payment.fromUserId : payment.toUserId
+                    const date = payment.settledAt ? new Date(payment.settledAt.seconds * 1000) : new Date()
+                    
+                    return (
                       <div
-                        className={cn(
-                          'flex size-10 items-center justify-center rounded-full',
-                          payment.type === 'received'
-                            ? 'bg-primary/20 text-primary'
-                            : 'bg-muted text-muted-foreground'
-                        )}
+                        key={payment.id}
+                        className="flex items-center justify-between border-b pb-4 last:border-0 last:pb-0"
                       >
-                        {payment.type === 'received' ? (
-                          <ArrowRight className="size-4 rotate-180" />
-                        ) : (
-                          <ArrowRight className="size-4" />
-                        )}
+                        <div className="flex items-center gap-3">
+                          <div
+                            className={cn(
+                              'flex size-10 items-center justify-center rounded-full',
+                              isReceived
+                                ? 'bg-primary/20 text-primary'
+                                : 'bg-muted text-muted-foreground'
+                            )}
+                          >
+                            {isReceived ? (
+                              <ArrowRight className="size-4 rotate-180" />
+                            ) : (
+                              <ArrowRight className="size-4" />
+                            )}
+                          </div>
+                          <div>
+                            <p className="font-medium">
+                              {isReceived ? 'Received from' : 'Paid to'}{' '}
+                              {person}
+                            </p>
+                            <p className="text-sm text-muted-foreground">
+                              Settled Debt
+                            </p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p
+                            className={cn(
+                              'font-semibold tabular-nums',
+                              isReceived ? 'text-primary' : 'text-foreground'
+                            )}
+                          >
+                            {isReceived ? '+' : '-'}฿
+                            {payment.amount.toLocaleString()}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {date.toLocaleDateString('en-US', {
+                              month: 'short',
+                              day: 'numeric',
+                            })}
+                          </p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="font-medium">
-                          {payment.type === 'received' ? 'Received from' : 'Paid to'}{' '}
-                          {payment.person}
-                        </p>
-                        <p className="text-sm text-muted-foreground">
-                          {payment.description}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p
-                        className={cn(
-                          'font-semibold tabular-nums',
-                          payment.type === 'received' ? 'text-primary' : 'text-foreground'
-                        )}
-                      >
-                        {payment.type === 'received' ? '+' : '-'}฿
-                        {payment.amount.toLocaleString()}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {new Date(payment.date).toLocaleDateString('en-US', {
-                          month: 'short',
-                          day: 'numeric',
-                        })}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
+                    )
+                  })}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

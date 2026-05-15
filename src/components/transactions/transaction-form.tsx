@@ -28,6 +28,8 @@ const formSchema = z.object({
   category: z.string().min(1, 'Please select a category'),
   description: z.string().min(1, 'Description is required'),
   date: z.string(),
+  paidBy: z.string().optional(),
+  splitWith: z.string().optional(),
 })
 
 type TransactionFormValues = z.infer<typeof formSchema>
@@ -53,6 +55,8 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
       category: initialData?.category || '',
       description: initialData?.description || '',
       date: defaultDate,
+      paidBy: initialData?.paidBy || 'Me',
+      splitWith: initialData?.splitWith || '',
     },
   })
 
@@ -73,8 +77,8 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
         category: values.category,
         description: values.description,
         date: Timestamp.fromDate(new Date(values.date)),
-        paidBy: initialData?.paidBy || 'Me',
-        splitWith: initialData?.splitWith || null,
+        paidBy: values.paidBy || 'Me',
+        splitWith: values.splitWith || null,
         tripId: initialData?.tripId || null,
         receiptUrl: initialData?.receiptUrl || null,
         source: initialData?.source || 'manual',
@@ -168,6 +172,36 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
                     ))}
                   </SelectContent>
                 </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <FormField
+            control={form.control}
+            name="paidBy"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Paid By</FormLabel>
+                <FormControl>
+                  <Input placeholder="Me or Friend's name" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="splitWith"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Split With</FormLabel>
+                <FormControl>
+                  <Input placeholder="Friend's name (optional)" {...field} />
+                </FormControl>
                 <FormMessage />
               </FormItem>
             )}
