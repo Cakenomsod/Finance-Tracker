@@ -145,7 +145,7 @@ export default function TransactionsPage() {
     if (selectedRows.length === filteredTransactions.length) {
       setSelectedRows([])
     } else {
-      setSelectedRows(filteredTransactions.map((t) => t.id))
+      setSelectedRows(filteredTransactions.map((t) => t.id as string))
     }
   }
 

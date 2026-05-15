@@ -23,7 +23,7 @@ import { Transaction } from '@/lib/firestore-types'
 import { Timestamp } from 'firebase/firestore'
 
 const formSchema = z.object({
-  amount: z.coerce.number().positive('Amount must be positive'),
+  amount: z.string().min(1, 'Amount is required'),
   type: z.enum(['income', 'expense']),
   category: z.string().min(1, 'Please select a category'),
   description: z.string().min(1, 'Description is required'),
@@ -48,7 +48,7 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
   const form = useForm<TransactionFormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      amount: initialData ? Math.abs(initialData.amount) : 0,
+      amount: initialData ? Math.abs(initialData.amount).toString() : '',
       type: initialData?.type || 'expense',
       category: initialData?.category || '',
       description: initialData?.description || '',
@@ -59,7 +59,13 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
   const handleSubmit = async (values: TransactionFormValues) => {
     setIsSubmitting(true)
     try {
-      const finalAmount = values.type === 'expense' ? -Math.abs(values.amount) : Math.abs(values.amount)
+      const parsedAmount = parseFloat(values.amount)
+      if (isNaN(parsedAmount) || parsedAmount <= 0) {
+        form.setError('amount', { message: 'Amount must be a positive number' })
+        return
+      }
+
+      const finalAmount = values.type === 'expense' ? -Math.abs(parsedAmount) : Math.abs(parsedAmount)
       
       const transactionData: Omit<Transaction, 'id' | 'createdAt' | 'userId'> = {
         amount: finalAmount,
