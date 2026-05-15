@@ -25,6 +25,6 @@ jobs:
       - name: Deploy to Firebase
         run: |
           npx firebase experiments:enable webframeworks
-          npx firebase deploy --only hosting --project ${{ secrets.NEXT_PUBLIC_FIREBASE_PROJECT_ID }}
+          npx firebase deploy --only hosting --project ${{ secrets.NEXT_PUBLIC_FIREBASE_PROJECT_ID }} --force
         env:
           GOOGLE_APPLICATION_CREDENTIALS: firebase-service-account.json
