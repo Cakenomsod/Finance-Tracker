@@ -12,8 +12,14 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
-// Initialize Firebase
-const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
+const isConfigValid = !!firebaseConfig.apiKey;
+
+// Initialize Firebase only if config is valid or if we're in a browser (where we expect it to be valid)
+// During static generation, we might not have the env vars.
+const app = getApps().length > 0 
+  ? getApp() 
+  : initializeApp(isConfigValid ? firebaseConfig : { ...firebaseConfig, apiKey: "dummy-key-for-build" });
+
 const auth = getAuth(app);
 const db = getFirestore(app);
 const storage = getStorage(app);
