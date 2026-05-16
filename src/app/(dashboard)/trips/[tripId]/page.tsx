@@ -18,8 +18,11 @@ import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
-  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuSeparator, DropdownMenuTrigger,
@@ -31,6 +34,7 @@ import { useTransactions } from '@/hooks/use-transactions'
 import { useAuth } from '@/hooks/use-auth'
 import { TransactionForm } from '@/components/transactions/transaction-form'
 import { Transaction } from '@/lib/firestore-types'
+import { Timestamp } from 'firebase/firestore'
 
 const chartConfig = {
   amount: { label: 'Amount', color: 'var(--chart-1)' },
@@ -47,10 +51,11 @@ export default function TripDetailPage() {
   const router = useRouter()
   const tripId = params.tripId as string
   const { user } = useAuth()
-  const { trips, loading: tripsLoading, removeTrip, endTrip } = useTrips()
+  const { trips, loading: tripsLoading, removeTrip, endTrip, editTrip } = useTrips()
   const { transactions, loading: txLoading, addTransaction, editTransaction, removeTransaction } = useTransactions()
 
   const [isAddExpenseOpen, setIsAddExpenseOpen] = React.useState(false)
+  const [isEditTripOpen, setIsEditTripOpen] = React.useState(false)
   const [editingTx, setEditingTx] = React.useState<Transaction | null>(null)
 
   const trip = trips.find((t) => t.id === tripId)
@@ -176,9 +181,14 @@ export default function TripDetailPage() {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               {trip.status === 'active' && (
-                <DropdownMenuItem onClick={() => endTrip(trip.id!)}>
-                  <Lock className="mr-2 size-4" /> Close Trip
-                </DropdownMenuItem>
+                <>
+                  <DropdownMenuItem onClick={() => endTrip(trip.id!)}>
+                    <Lock className="mr-2 size-4" /> Close Trip
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setIsEditTripOpen(true)}>
+                    <Edit2 className="mr-2 size-4" /> Edit Trip
+                  </DropdownMenuItem>
+                </>
               )}
               <DropdownMenuSeparator />
               <DropdownMenuItem className="text-destructive" onClick={async () => {
@@ -437,6 +447,98 @@ export default function TripDetailPage() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Edit Trip Dialog */}
+      <Dialog open={isEditTripOpen} onOpenChange={setIsEditTripOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Trip</DialogTitle>
+            <DialogDescription>Update trip details and members</DialogDescription>
+          </DialogHeader>
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault()
+              const formData = new FormData(e.currentTarget)
+              const name = formData.get('name') as string
+              const description = formData.get('description') as string
+              const startStr = formData.get('startDate') as string
+              const endStr = formData.get('endDate') as string
+              const membersStr = formData.get('members') as string
+
+              await editTrip(trip.id!, {
+                name,
+                description,
+                startDate: startStr ? Timestamp.fromDate(new Date(startStr)) : null,
+                endDate: endStr ? Timestamp.fromDate(new Date(endStr)) : null,
+                members: membersStr.split(',').map((m) => m.trim()).filter(Boolean),
+              })
+              setIsEditTripOpen(false)
+            }}
+            className="space-y-4 pt-4"
+          >
+            <div className="space-y-2">
+              <Label htmlFor="name">Trip Name</Label>
+              <Input id="name" name="name" defaultValue={trip.name} required />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="description">Description (Location/Details)</Label>
+              <Textarea
+                id="description"
+                name="description"
+                defaultValue={trip.description || ''}
+                placeholder="e.g. Japan Spring Trip"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="startDate">Start Date</Label>
+                <Input
+                  id="startDate"
+                  name="startDate"
+                  type="date"
+                  defaultValue={
+                    trip.startDate?.seconds
+                      ? new Date(trip.startDate.seconds * 1000).toISOString().split('T')[0]
+                      : ''
+                  }
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="endDate">End Date</Label>
+                <Input
+                  id="endDate"
+                  name="endDate"
+                  type="date"
+                  defaultValue={
+                    trip.endDate?.seconds
+                      ? new Date(trip.endDate.seconds * 1000).toISOString().split('T')[0]
+                      : ''
+                  }
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="members">Members (comma separated)</Label>
+              <Input
+                id="members"
+                name="members"
+                defaultValue={trip.members.join(', ')}
+                placeholder="Me, Friend A, Friend B"
+                required
+              />
+              <p className="text-xs text-muted-foreground">
+                Tip: Use "Me" for yourself to track your own spending.
+              </p>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setIsEditTripOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit">Save Changes</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       {/* Add/Edit Expense Dialog */}
       <Dialog open={isAddExpenseOpen} onOpenChange={(open) => { setIsAddExpenseOpen(open); if (!open) setEditingTx(null) }}>

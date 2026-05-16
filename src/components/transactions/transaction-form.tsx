@@ -19,6 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Textarea } from '@/components/ui/textarea'
 import { Transaction } from '@/lib/firestore-types'
 import { Timestamp } from 'firebase/firestore'
 import { useTrips } from '@/hooks/use-trips'
@@ -136,7 +137,11 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
             <FormItem>
               <FormLabel>Description</FormLabel>
               <FormControl>
-                <Input placeholder="Enter description" {...field} />
+                <Textarea 
+                  placeholder="Enter details about this transaction" 
+                  className="resize-none"
+                  {...field} 
+                />
               </FormControl>
               <FormMessage />
             </FormItem>
