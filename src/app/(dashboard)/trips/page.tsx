@@ -12,18 +12,18 @@ import {
   Calendar,
   MapPin,
   Check,
-  X,
   Edit2,
   Trash2,
   UserPlus,
   DollarSign,
+  X,
+  Lock,
 } from 'lucide-react'
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { Progress } from '@/components/ui/progress'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Dialog,
@@ -45,66 +45,70 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
+import { useTrips } from '@/hooks/use-trips'
+import { useTransactions } from '@/hooks/use-transactions'
+import { useAuth } from '@/hooks/use-auth'
+import { TransactionForm } from '@/components/transactions/transaction-form'
+import { Trip, Transaction } from '@/lib/firestore-types'
+import { Timestamp } from 'firebase/firestore'
 
-// Mock trip data
-const trips = [
-  {
-    id: '1',
-    name: 'Phuket Weekend',
-    destination: 'Phuket, Thailand',
-    startDate: '2024-06-20',
-    endDate: '2024-06-23',
-    status: 'active',
-    totalExpenses: 15800,
-    participants: [
-      { name: 'Me', initials: 'ME', paid: 8500, share: 3950 },
-      { name: 'Sarah', initials: 'SC', paid: 3500, share: 3950 },
-      { name: 'Mike', initials: 'MJ', paid: 2800, share: 3950 },
-      { name: 'Lisa', initials: 'LW', paid: 1000, share: 3950 },
-    ],
-    expenses: [
-      { id: '1', description: 'Hotel (3 nights)', amount: 6500, payer: 'Me', split: 'equal' },
-      { id: '2', description: 'Flight tickets', amount: 4800, payer: 'Me', split: 'equal' },
-      { id: '3', description: 'Dinner Day 1', amount: 1800, payer: 'Sarah', split: 'equal' },
-      { id: '4', description: 'Activities', amount: 1700, payer: 'Sarah', split: 'equal' },
-      { id: '5', description: 'Taxi rides', amount: 1000, payer: 'Lisa', split: 'equal' },
-    ],
-  },
-  {
-    id: '2',
-    name: 'Birthday Dinner',
-    destination: 'Bangkok',
-    startDate: '2024-06-15',
-    endDate: '2024-06-15',
-    status: 'completed',
-    totalExpenses: 4500,
-    participants: [
-      { name: 'Me', initials: 'ME', paid: 4500, share: 1500 },
-      { name: 'Tom', initials: 'TB', paid: 0, share: 1500 },
-      { name: 'Emily', initials: 'ED', paid: 0, share: 1500 },
-    ],
-    expenses: [
-      { id: '1', description: 'Restaurant bill', amount: 3800, payer: 'Me', split: 'equal' },
-      { id: '2', description: 'Birthday cake', amount: 700, payer: 'Me', split: 'equal' },
-    ],
-  },
-]
-
+// --- Settlement calculation ---
 interface Settlement {
   from: string
   to: string
   amount: number
 }
 
-function calculateSettlements(participants: typeof trips[0]['participants']): Settlement[] {
+interface ParticipantSummary {
+  name: string
+  initials: string
+  paid: number
+  share: number
+}
+
+function calculateParticipants(
+  trip: Trip,
+  tripTransactions: Transaction[]
+): ParticipantSummary[] {
+  const totalExpenses = tripTransactions.reduce(
+    (sum, tx) => sum + Math.abs(tx.amount),
+    0
+  )
+  const members = trip.members || []
+  const sharePerPerson = members.length > 0 ? totalExpenses / members.length : 0
+
+  return members.map((member) => {
+    const paid = tripTransactions
+      .filter((tx) => tx.paidBy === member)
+      .reduce((sum, tx) => sum + Math.abs(tx.amount), 0)
+    const initials = member
+      .split(' ')
+      .map((w) => w[0])
+      .join('')
+      .toUpperCase()
+      .substring(0, 2)
+    return {
+      name: member,
+      initials,
+      paid,
+      share: Math.round(sharePerPerson),
+    }
+  })
+}
+
+function calculateSettlements(participants: ParticipantSummary[]): Settlement[] {
   const settlements: Settlement[] = []
   const balances = participants.map((p) => ({
     name: p.name,
     balance: p.paid - p.share,
   }))
 
-  const debtors = balances.filter((b) => b.balance < 0).sort((a, b) => a.balance - b.balance)
-  const creditors = balances.filter((b) => b.balance > 0).sort((a, b) => b.balance - a.balance)
+  const debtors = balances
+    .filter((b) => b.balance < 0)
+    .sort((a, b) => a.balance - b.balance)
+  const creditors = balances
+    .filter((b) => b.balance > 0)
+    .sort((a, b) => b.balance - a.balance)
 
   let i = 0
   let j = 0
@@ -112,8 +116,8 @@ function calculateSettlements(participants: typeof trips[0]['participants']): Se
   while (i < debtors.length && j < creditors.length) {
     const debt = Math.abs(debtors[i].balance)
     const credit = creditors[j].balance
-
     const amount = Math.min(debt, credit)
+
     if (amount > 0) {
       settlements.push({
         from: debtors[i].name,
@@ -132,10 +136,39 @@ function calculateSettlements(participants: typeof trips[0]['participants']): Se
   return settlements
 }
 
-function TripCard({ trip }: { trip: typeof trips[0] }) {
-  const settlements = calculateSettlements(trip.participants)
-  const myBalance = trip.participants.find((p) => p.name === 'Me')
-  const myNetBalance = myBalance ? myBalance.paid - myBalance.share : 0
+// --- Trip Card Component ---
+function TripCard({
+  trip,
+  tripTransactions,
+  onDelete,
+  onClose,
+  onAddExpense,
+}: {
+  trip: Trip
+  tripTransactions: Transaction[]
+  onDelete: (id: string) => void
+  onClose: (id: string) => void
+  onAddExpense: (tripId: string) => void
+}) {
+  const participants = calculateParticipants(trip, tripTransactions)
+  const settlements = calculateSettlements(participants)
+  const totalExpenses = tripTransactions.reduce(
+    (sum, tx) => sum + Math.abs(tx.amount),
+    0
+  )
+
+  // Find "Me" balance
+  const meParticipant = participants.find(
+    (p) => p.name === 'Me' || p.name === 'me'
+  )
+  const myNetBalance = meParticipant
+    ? meParticipant.paid - meParticipant.share
+    : 0
+
+  const startDate = trip.startDate
+    ? new Date(trip.startDate.seconds * 1000)
+    : null
+  const endDate = trip.endDate ? new Date(trip.endDate.seconds * 1000) : null
 
   return (
     <Card className="overflow-hidden">
@@ -150,13 +183,15 @@ function TripCard({ trip }: { trip: typeof trips[0] }) {
                   trip.status === 'active' && 'bg-primary/20 text-primary'
                 )}
               >
-                {trip.status === 'active' ? 'Active' : 'Completed'}
+                {trip.status === 'active' ? 'Active' : 'Closed'}
               </Badge>
             </div>
-            <CardDescription className="flex items-center gap-1 mt-1">
-              <MapPin className="size-3" />
-              {trip.destination}
-            </CardDescription>
+            {trip.description && (
+              <CardDescription className="flex items-center gap-1 mt-1">
+                <MapPin className="size-3" />
+                {trip.description}
+              </CardDescription>
+            )}
           </div>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -165,38 +200,42 @@ function TripCard({ trip }: { trip: typeof trips[0] }) {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem>
-                <Edit2 className="mr-2 size-4" />
-                Edit Trip
-              </DropdownMenuItem>
-              <DropdownMenuItem>
-                <UserPlus className="mr-2 size-4" />
-                Add Participant
-              </DropdownMenuItem>
+              {trip.status === 'active' && (
+                <DropdownMenuItem onClick={() => onClose(trip.id!)}>
+                  <Lock className="mr-2 size-4" />
+                  Close Trip
+                </DropdownMenuItem>
+              )}
               <DropdownMenuSeparator />
-              <DropdownMenuItem className="text-destructive">
+              <DropdownMenuItem
+                className="text-destructive"
+                onClick={() => onDelete(trip.id!)}
+              >
                 <Trash2 className="mr-2 size-4" />
                 Delete Trip
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Calendar className="size-3" />
-          {new Date(trip.startDate).toLocaleDateString('en-US', {
-            month: 'short',
-            day: 'numeric',
-          })}
-          {trip.startDate !== trip.endDate && (
-            <>
-              {' - '}
-              {new Date(trip.endDate).toLocaleDateString('en-US', {
-                month: 'short',
-                day: 'numeric',
-              })}
-            </>
-          )}
-        </div>
+        {startDate && (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Calendar className="size-3" />
+            {startDate.toLocaleDateString('en-US', {
+              month: 'short',
+              day: 'numeric',
+            })}
+            {endDate &&
+              startDate.toDateString() !== endDate.toDateString() && (
+                <>
+                  {' - '}
+                  {endDate.toLocaleDateString('en-US', {
+                    month: 'short',
+                    day: 'numeric',
+                  })}
+                </>
+              )}
+          </div>
+        )}
       </CardHeader>
 
       <CardContent className="space-y-4">
@@ -204,37 +243,47 @@ function TripCard({ trip }: { trip: typeof trips[0] }) {
         <div className="flex items-center justify-between rounded-lg bg-muted p-4">
           <div>
             <p className="text-sm text-muted-foreground">Total Expenses</p>
-            <p className="text-2xl font-bold">฿{trip.totalExpenses.toLocaleString()}</p>
-          </div>
-          <div className="text-right">
-            <p className="text-sm text-muted-foreground">Your Balance</p>
-            <p
-              className={cn(
-                'text-xl font-bold',
-                myNetBalance > 0 ? 'text-primary' : myNetBalance < 0 ? 'text-destructive' : ''
-              )}
-            >
-              {myNetBalance > 0 ? '+' : ''}฿{myNetBalance.toLocaleString()}
+            <p className="text-2xl font-bold">
+              ฿{totalExpenses.toLocaleString()}
             </p>
           </div>
+          {meParticipant && (
+            <div className="text-right">
+              <p className="text-sm text-muted-foreground">Your Balance</p>
+              <p
+                className={cn(
+                  'text-xl font-bold',
+                  myNetBalance > 0
+                    ? 'text-primary'
+                    : myNetBalance < 0
+                    ? 'text-destructive'
+                    : ''
+                )}
+              >
+                {myNetBalance > 0 ? '+' : ''}฿{myNetBalance.toLocaleString()}
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Participants */}
-        <div>
-          <p className="text-sm font-medium mb-2">Participants</p>
-          <div className="flex -space-x-2">
-            {trip.participants.map((participant) => (
-              <Avatar
-                key={participant.name}
-                className="size-8 border-2 border-background"
-              >
-                <AvatarFallback className="text-xs bg-muted">
-                  {participant.initials}
-                </AvatarFallback>
-              </Avatar>
-            ))}
+        {participants.length > 0 && (
+          <div>
+            <p className="text-sm font-medium mb-2">Participants</p>
+            <div className="flex -space-x-2">
+              {participants.map((participant) => (
+                <Avatar
+                  key={participant.name}
+                  className="size-8 border-2 border-background"
+                >
+                  <AvatarFallback className="text-xs bg-muted">
+                    {participant.initials}
+                  </AvatarFallback>
+                </Avatar>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Settlements */}
         {settlements.length > 0 && (
@@ -260,37 +309,168 @@ function TripCard({ trip }: { trip: typeof trips[0] }) {
           </div>
         )}
 
+        {/* Expense list */}
+        {tripTransactions.length > 0 && (
+          <div>
+            <p className="text-sm font-medium mb-2">
+              Recent Expenses ({tripTransactions.length})
+            </p>
+            <div className="space-y-2 max-h-[200px] overflow-y-auto">
+              {tripTransactions.slice(0, 5).map((tx) => (
+                <div
+                  key={tx.id}
+                  className="flex items-center justify-between rounded-lg border p-3"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="flex size-8 items-center justify-center rounded-lg bg-muted">
+                      <Receipt className="size-4 text-muted-foreground" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium">{tx.description}</p>
+                      <p className="text-xs text-muted-foreground">
+                        Paid by {tx.paidBy || 'Me'}
+                      </p>
+                    </div>
+                  </div>
+                  <span className="font-semibold tabular-nums text-sm">
+                    ฿{Math.abs(tx.amount).toLocaleString()}
+                  </span>
+                </div>
+              ))}
+              {tripTransactions.length > 5 && (
+                <p className="text-xs text-center text-muted-foreground pt-1">
+                  +{tripTransactions.length - 5} more expenses
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Actions */}
-        <div className="flex gap-2 pt-2">
-          <Button variant="outline" size="sm" className="flex-1">
-            <Receipt className="mr-2 size-4" />
-            Add Expense
-          </Button>
-          <Button size="sm" className="flex-1">
-            <Calculator className="mr-2 size-4" />
-            View Split
-          </Button>
-        </div>
+        {trip.status === 'active' && (
+          <div className="flex gap-2 pt-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="flex-1"
+              onClick={() => onAddExpense(trip.id!)}
+            >
+              <Receipt className="mr-2 size-4" />
+              Add Expense
+            </Button>
+          </div>
+        )}
       </CardContent>
     </Card>
   )
 }
 
+// --- Main Page ---
 export default function TripsPage() {
-  const activeTrips = trips.filter((t) => t.status === 'active')
-  const completedTrips = trips.filter((t) => t.status === 'completed')
+  const { user } = useAuth()
+  const {
+    activeTrips,
+    closedTrips,
+    loading: tripsLoading,
+    addTrip,
+    removeTrip,
+    endTrip,
+  } = useTrips()
+  const { transactions, loading: txLoading, addTransaction } = useTransactions()
+
+  // Create Trip Dialog state
+  const [isCreateOpen, setIsCreateOpen] = React.useState(false)
+  const [newTripName, setNewTripName] = React.useState('')
+  const [newTripDescription, setNewTripDescription] = React.useState('')
+  const [newTripStartDate, setNewTripStartDate] = React.useState('')
+  const [newTripEndDate, setNewTripEndDate] = React.useState('')
+  const [newTripMembers, setNewTripMembers] = React.useState('')
+
+  // Add Expense Dialog state
+  const [isAddExpenseOpen, setIsAddExpenseOpen] = React.useState(false)
+  const [expenseTripId, setExpenseTripId] = React.useState<string | null>(null)
+
+  const loading = tripsLoading || txLoading
+
+  // Group transactions by tripId
+  const getTransactionsForTrip = (tripId: string) =>
+    transactions.filter((tx) => tx.tripId === tripId)
+
+  // All trip-related transactions
+  const allTripTransactions = transactions.filter((tx) => tx.tripId)
+
+  const handleCreateTrip = async () => {
+    if (!newTripName.trim()) return
+
+    const members = newTripMembers
+      .split('\n')
+      .map((m) => m.trim())
+      .filter(Boolean)
+
+    // Always include "Me" if not already there
+    if (!members.some((m) => m.toLowerCase() === 'me')) {
+      members.unshift('Me')
+    }
+
+    await addTrip({
+      name: newTripName.trim(),
+      description: newTripDescription.trim(),
+      members,
+      startDate: newTripStartDate
+        ? Timestamp.fromDate(new Date(newTripStartDate))
+        : Timestamp.now(),
+      endDate: newTripEndDate
+        ? Timestamp.fromDate(new Date(newTripEndDate))
+        : Timestamp.now(),
+    })
+
+    // Reset form
+    setIsCreateOpen(false)
+    setNewTripName('')
+    setNewTripDescription('')
+    setNewTripStartDate('')
+    setNewTripEndDate('')
+    setNewTripMembers('')
+  }
+
+  const handleAddExpense = (tripId: string) => {
+    setExpenseTripId(tripId)
+    setIsAddExpenseOpen(true)
+  }
+
+  // Stats
+  const totalTripExpenses = allTripTransactions.reduce(
+    (sum, tx) => sum + Math.abs(tx.amount),
+    0
+  )
+  const uniquePeople = new Set(
+    [...activeTrips, ...closedTrips].flatMap((t) => t.members || [])
+  )
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center p-12">
+        <div className="text-center">
+          <Plane className="mx-auto size-8 animate-pulse text-muted-foreground" />
+          <p className="mt-2 text-muted-foreground">Loading trips...</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex flex-col gap-6 p-6">
       {/* Page Header */}
       <div className="flex items-start justify-between">
         <div className="flex flex-col gap-1">
-          <h1 className="text-2xl font-semibold tracking-tight">Trip / Event Mode</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            Trip / Event Mode
+          </h1>
           <p className="text-muted-foreground">
             Create shared expense sessions for trips and events.
           </p>
         </div>
-        <Dialog>
+        <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
           <DialogTrigger asChild>
             <Button className="gap-2">
               <Plus className="size-4" />
@@ -307,29 +487,60 @@ export default function TripsPage() {
             <div className="grid gap-4 py-4">
               <div className="grid gap-2">
                 <Label>Trip Name</Label>
-                <Input placeholder="e.g., Phuket Weekend" />
+                <Input
+                  placeholder="e.g., Phuket Weekend"
+                  value={newTripName}
+                  onChange={(e) => setNewTripName(e.target.value)}
+                />
               </div>
               <div className="grid gap-2">
-                <Label>Destination</Label>
-                <Input placeholder="e.g., Phuket, Thailand" />
+                <Label>Description / Destination</Label>
+                <Input
+                  placeholder="e.g., Phuket, Thailand"
+                  value={newTripDescription}
+                  onChange={(e) => setNewTripDescription(e.target.value)}
+                />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
                   <Label>Start Date</Label>
-                  <Input type="date" />
+                  <Input
+                    type="date"
+                    value={newTripStartDate}
+                    onChange={(e) => setNewTripStartDate(e.target.value)}
+                  />
                 </div>
                 <div className="grid gap-2">
                   <Label>End Date</Label>
-                  <Input type="date" />
+                  <Input
+                    type="date"
+                    value={newTripEndDate}
+                    onChange={(e) => setNewTripEndDate(e.target.value)}
+                  />
                 </div>
               </div>
               <div className="grid gap-2">
                 <Label>Participants</Label>
-                <Textarea placeholder="Enter names, one per line" />
+                <Textarea
+                  placeholder={`Enter names, one per line\ne.g.\nSarah\nMike\nLisa`}
+                  value={newTripMembers}
+                  onChange={(e) => setNewTripMembers(e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  "Me" will be added automatically
+                </p>
               </div>
             </div>
             <DialogFooter>
-              <Button>Create Trip</Button>
+              <Button
+                variant="outline"
+                onClick={() => setIsCreateOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button onClick={handleCreateTrip} disabled={!newTripName.trim()}>
+                Create Trip
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -350,10 +561,10 @@ export default function TripsPage() {
           <CardContent className="pt-6">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <DollarSign className="size-4" />
-              Total This Month
+              Total Trip Expenses
             </div>
             <p className="mt-2 text-3xl font-bold">
-              ฿{trips.reduce((sum, t) => sum + t.totalExpenses, 0).toLocaleString()}
+              ฿{totalTripExpenses.toLocaleString()}
             </p>
           </CardContent>
         </Card>
@@ -363,14 +574,12 @@ export default function TripsPage() {
               <Users className="size-4" />
               People Involved
             </div>
-            <p className="mt-2 text-3xl font-bold">
-              {new Set(trips.flatMap((t) => t.participants.map((p) => p.name))).size}
-            </p>
+            <p className="mt-2 text-3xl font-bold">{uniquePeople.size}</p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Trips */}
+      {/* Trips Tabs */}
       <Tabs defaultValue="active" className="w-full">
         <TabsList>
           <TabsTrigger value="active" className="gap-2">
@@ -385,6 +594,11 @@ export default function TripsPage() {
           <TabsTrigger value="completed" className="gap-2">
             <Check className="size-4" />
             Completed
+            {closedTrips.length > 0 && (
+              <Badge variant="secondary" className="ml-1 rounded-full">
+                {closedTrips.length}
+              </Badge>
+            )}
           </TabsTrigger>
         </TabsList>
 
@@ -392,7 +606,14 @@ export default function TripsPage() {
           {activeTrips.length > 0 ? (
             <div className="grid gap-4 md:grid-cols-2">
               {activeTrips.map((trip) => (
-                <TripCard key={trip.id} trip={trip} />
+                <TripCard
+                  key={trip.id}
+                  trip={trip}
+                  tripTransactions={getTransactionsForTrip(trip.id!)}
+                  onDelete={removeTrip}
+                  onClose={endTrip}
+                  onAddExpense={handleAddExpense}
+                />
               ))}
             </div>
           ) : (
@@ -403,7 +624,10 @@ export default function TripsPage() {
                 <p className="text-sm text-muted-foreground">
                   Create a new trip to start tracking shared expenses
                 </p>
-                <Button className="mt-4 gap-2">
+                <Button
+                  className="mt-4 gap-2"
+                  onClick={() => setIsCreateOpen(true)}
+                >
                   <Plus className="size-4" />
                   Create Trip
                 </Button>
@@ -413,10 +637,17 @@ export default function TripsPage() {
         </TabsContent>
 
         <TabsContent value="completed" className="mt-4">
-          {completedTrips.length > 0 ? (
+          {closedTrips.length > 0 ? (
             <div className="grid gap-4 md:grid-cols-2">
-              {completedTrips.map((trip) => (
-                <TripCard key={trip.id} trip={trip} />
+              {closedTrips.map((trip) => (
+                <TripCard
+                  key={trip.id}
+                  trip={trip}
+                  tripTransactions={getTransactionsForTrip(trip.id!)}
+                  onDelete={removeTrip}
+                  onClose={endTrip}
+                  onAddExpense={handleAddExpense}
+                />
               ))}
             </div>
           ) : (
@@ -433,85 +664,46 @@ export default function TripsPage() {
         </TabsContent>
       </Tabs>
 
-      {/* Active Trip Detail (if any) */}
-      {activeTrips.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Expense Breakdown - {activeTrips[0].name}</CardTitle>
-            <CardDescription>All expenses for this trip</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {activeTrips[0].expenses.map((expense) => (
-                <div
-                  key={expense.id}
-                  className="flex items-center justify-between rounded-lg border p-3"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="flex size-10 items-center justify-center rounded-lg bg-muted">
-                      <Receipt className="size-4 text-muted-foreground" />
-                    </div>
-                    <div>
-                      <p className="font-medium">{expense.description}</p>
-                      <p className="text-sm text-muted-foreground">
-                        Paid by {expense.payer} • Split {expense.split}
-                      </p>
-                    </div>
-                  </div>
-                  <span className="font-semibold tabular-nums">
-                    ฿{expense.amount.toLocaleString()}
-                  </span>
-                </div>
-              ))}
-            </div>
-
-            {/* Per Person Summary */}
-            <div className="mt-6 border-t pt-4">
-              <p className="text-sm font-medium mb-3">Per Person Summary</p>
-              <div className="space-y-3">
-                {activeTrips[0].participants.map((participant) => (
-                  <div
-                    key={participant.name}
-                    className="flex items-center justify-between"
-                  >
-                    <div className="flex items-center gap-2">
-                      <Avatar className="size-8">
-                        <AvatarFallback className="text-xs bg-muted">
-                          {participant.initials}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div>
-                        <p className="text-sm font-medium">{participant.name}</p>
-                        <p className="text-xs text-muted-foreground">
-                          Paid: ฿{participant.paid.toLocaleString()}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm text-muted-foreground">
-                        Share: ฿{participant.share.toLocaleString()}
-                      </p>
-                      <p
-                        className={cn(
-                          'text-sm font-medium',
-                          participant.paid - participant.share > 0
-                            ? 'text-primary'
-                            : participant.paid - participant.share < 0
-                            ? 'text-destructive'
-                            : ''
-                        )}
-                      >
-                        {participant.paid - participant.share > 0 ? '+' : ''}฿
-                        {(participant.paid - participant.share).toLocaleString()}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      {/* Add Expense to Trip Dialog */}
+      <Dialog
+        open={isAddExpenseOpen}
+        onOpenChange={(open) => {
+          setIsAddExpenseOpen(open)
+          if (!open) setExpenseTripId(null)
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Trip Expense</DialogTitle>
+            <DialogDescription>
+              Add an expense to this trip. It will be split among all
+              participants.
+            </DialogDescription>
+          </DialogHeader>
+          <TransactionForm
+            initialData={
+              expenseTripId
+                ? ({
+                    tripId: expenseTripId,
+                    type: 'expense',
+                  } as any)
+                : null
+            }
+            onSubmit={async (data) => {
+              await addTransaction({
+                ...data,
+                tripId: expenseTripId,
+              })
+              setIsAddExpenseOpen(false)
+              setExpenseTripId(null)
+            }}
+            onCancel={() => {
+              setIsAddExpenseOpen(false)
+              setExpenseTripId(null)
+            }}
+          />
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

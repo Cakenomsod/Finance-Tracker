@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/select'
 import { Transaction } from '@/lib/firestore-types'
 import { Timestamp } from 'firebase/firestore'
+import { useTrips } from '@/hooks/use-trips'
 
 const formSchema = z.object({
   amount: z.string().min(1, 'Amount is required'),
@@ -30,6 +31,7 @@ const formSchema = z.object({
   date: z.string(),
   paidBy: z.string().optional(),
   splitWith: z.string().optional(),
+  tripId: z.string().optional(),
 })
 
 type TransactionFormValues = z.infer<typeof formSchema>
@@ -42,8 +44,9 @@ interface TransactionFormProps {
 
 export function TransactionForm({ initialData, onSubmit, onCancel }: TransactionFormProps) {
   const [isSubmitting, setIsSubmitting] = React.useState(false)
+  const { activeTrips } = useTrips()
 
-  const defaultDate = initialData?.date
+  const defaultDate = initialData?.date?.seconds
     ? new Date(initialData.date.seconds * 1000).toISOString().split('T')[0]
     : new Date().toISOString().split('T')[0];
 
@@ -57,6 +60,7 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
       date: defaultDate,
       paidBy: initialData?.paidBy || 'Me',
       splitWith: initialData?.splitWith || '',
+      tripId: initialData?.tripId || 'none',
     },
   })
 
@@ -79,7 +83,7 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
         date: Timestamp.fromDate(new Date(values.date)),
         paidBy: values.paidBy || 'Me',
         splitWith: values.splitWith || null,
-        tripId: initialData?.tripId || null,
+        tripId: values.tripId && values.tripId !== 'none' ? values.tripId : null,
         receiptUrl: initialData?.receiptUrl || null,
         source: initialData?.source || 'manual',
       }
@@ -207,6 +211,34 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
             )}
           />
         </div>
+
+        {activeTrips.length > 0 && (
+          <FormField
+            control={form.control}
+            name="tripId"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Trip (Optional)</FormLabel>
+                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue placeholder="No trip" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    <SelectItem value="none">No trip</SelectItem>
+                    {activeTrips.map((trip) => (
+                      <SelectItem key={trip.id} value={trip.id!}>
+                        {trip.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        )}
 
         <FormField
           control={form.control}

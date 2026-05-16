@@ -77,6 +77,27 @@ export const createTrip = async (data: Omit<Trip, 'id' | 'createdAt'>) => {
   });
 };
 
+export const getUserTrips = async (userId: string) => {
+  const q = query(tripsRef, where('createdBy', '==', userId), orderBy('createdAt', 'desc'));
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Trip));
+};
+
+export const updateTrip = async (id: string, data: Partial<Omit<Trip, 'id' | 'createdAt'>>) => {
+  const docRef = doc(db, 'trips', id);
+  return await updateDoc(docRef, data);
+};
+
+export const deleteTrip = async (id: string) => {
+  const docRef = doc(db, 'trips', id);
+  return await deleteDoc(docRef);
+};
+
+export const closeTrip = async (id: string) => {
+  const docRef = doc(db, 'trips', id);
+  return await updateDoc(docRef, { status: 'closed' });
+};
+
 // --- Categories ---
 
 export const createCategory = async (data: Omit<Category, 'id' | 'createdAt'>) => {
