@@ -32,9 +32,11 @@ import { cn } from '@/lib/utils'
 import { useTrips } from '@/hooks/use-trips'
 import { useTransactions } from '@/hooks/use-transactions'
 import { useAuth } from '@/hooks/use-auth'
-import { TransactionForm } from '@/components/transactions/transaction-form'
+import { TripExpenseForm } from '@/components/trips/trip-expense-form'
+import { MemberTagInput } from '@/components/trips/member-tag-input'
 import { Transaction } from '@/lib/firestore-types'
 import { Timestamp } from 'firebase/firestore'
+import { Search, Filter } from 'lucide-react'
 
 const chartConfig = {
   amount: { label: 'Amount', color: 'var(--chart-1)' },
@@ -57,6 +59,9 @@ export default function TripDetailPage() {
   const [isAddExpenseOpen, setIsAddExpenseOpen] = React.useState(false)
   const [isEditTripOpen, setIsEditTripOpen] = React.useState(false)
   const [editingTx, setEditingTx] = React.useState<Transaction | null>(null)
+  const [editTripMembers, setEditTripMembers] = React.useState<string[]>([])
+  const [expenseSearch, setExpenseSearch] = React.useState('')
+  const [expenseFilterPaidBy, setExpenseFilterPaidBy] = React.useState('all')
 
   const trip = trips.find((t) => t.id === tripId)
   const tripTxs = transactions.filter((tx) => tx.tripId === tripId)
@@ -65,26 +70,58 @@ export default function TripDetailPage() {
   // --- Calculations ---
   const totalExpenses = tripTxs.reduce((s, tx) => s + Math.abs(tx.amount), 0)
   const members = trip?.members || []
-  const sharePerPerson = members.length > 0 ? totalExpenses / members.length : 0
 
-  const participants = members.map((member) => {
-    const paid = tripTxs
-      .filter((tx) => tx.paidBy === member)
-      .reduce((s, tx) => s + Math.abs(tx.amount), 0)
-    const initials = member.split(' ').map((w) => w[0]).join('').toUpperCase().substring(0, 2)
-    return { name: member, initials, paid, share: Math.round(sharePerPerson) }
-  })
+  // FIXED: calculate each person's net balance based on splitWith per transaction
+  const participants = React.useMemo(() => {
+    const net: Record<string, number> = {}
+    members.forEach((m) => { net[m] = 0 })
 
-  // Settlements
+    tripTxs.forEach((tx) => {
+      const amount = Math.abs(tx.amount)
+      const payer = tx.paidBy || members[0]
+      const split = tx.splitWith // null = solo, 'all' = everyone, 'Name' = specific
+
+      if (!split) {
+        // Solo: only paidBy bears the cost, no effect on others
+        return
+      }
+
+      let involved: string[] = []
+      if (split === 'all') {
+        involved = members.filter((m) => net[m] !== undefined)
+      } else {
+        // specific person
+        involved = [payer, split].filter((m) => members.includes(m))
+      }
+
+      if (involved.length === 0) return
+      const share = amount / involved.length
+
+      // payer paid `amount` but only owes `share`
+      if (net[payer] !== undefined) net[payer] += amount - share
+      // others owe their share
+      involved.forEach((m) => {
+        if (m !== payer && net[m] !== undefined) net[m] -= share
+      })
+    })
+
+    return members.map((member) => {
+      const paid = tripTxs.filter((tx) => tx.paidBy === member).reduce((s, tx) => s + Math.abs(tx.amount), 0)
+      const initials = member.split(' ').map((w) => w[0]).join('').toUpperCase().substring(0, 2)
+      return { name: member, initials, paid, netBalance: Math.round(net[member] || 0) }
+    })
+  }, [tripTxs, members])
+
+  // Settlements — greedy min-transfer algorithm
   const settlements = React.useMemo(() => {
     const result: { from: string; to: string; amount: number }[] = []
-    const balances = participants.map((p) => ({ name: p.name, balance: p.paid - p.share }))
+    const balances = participants.map((p) => ({ name: p.name, balance: p.netBalance }))
     const debtors = balances.filter((b) => b.balance < 0).sort((a, b) => a.balance - b.balance)
     const creditors = balances.filter((b) => b.balance > 0).sort((a, b) => b.balance - a.balance)
     let i = 0, j = 0
     while (i < debtors.length && j < creditors.length) {
       const amount = Math.min(Math.abs(debtors[i].balance), creditors[j].balance)
-      if (amount > 0) result.push({ from: debtors[i].name, to: creditors[j].name, amount: Math.round(amount) })
+      if (amount > 1) result.push({ from: debtors[i].name, to: creditors[j].name, amount: Math.round(amount) })
       debtors[i].balance += amount
       creditors[j].balance -= amount
       if (Math.abs(debtors[i].balance) < 1) i++
@@ -109,11 +146,20 @@ export default function TripDetailPage() {
   const perPersonData = participants.map((p) => ({
     name: p.name,
     paid: p.paid,
-    share: p.share,
+    net: p.netBalance,
   }))
 
   const meParticipant = participants.find((p) => p.name.toLowerCase() === 'me')
-  const myBalance = meParticipant ? meParticipant.paid - meParticipant.share : 0
+  const myBalance = meParticipant ? meParticipant.netBalance : 0
+
+  // Filtered expenses for the Expenses tab
+  const filteredTripTxs = tripTxs.filter((tx) => {
+    const matchSearch = !expenseSearch ||
+      tx.description?.toLowerCase().includes(expenseSearch.toLowerCase()) ||
+      tx.category?.toLowerCase().includes(expenseSearch.toLowerCase())
+    const matchPaidBy = expenseFilterPaidBy === 'all' || tx.paidBy === expenseFilterPaidBy
+    return matchSearch && matchPaidBy
+  })
 
   const startDate = trip?.startDate?.seconds ? new Date(trip.startDate.seconds * 1000) : null
   const endDate = trip?.endDate?.seconds ? new Date(trip.endDate.seconds * 1000) : null
@@ -185,7 +231,10 @@ export default function TripDetailPage() {
                   <DropdownMenuItem onClick={() => endTrip(trip.id!)}>
                     <Lock className="mr-2 size-4" /> Close Trip
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setIsEditTripOpen(true)}>
+                  <DropdownMenuItem onClick={() => {
+                    setEditTripMembers([...trip.members])
+                    setIsEditTripOpen(true)
+                  }}>
                     <Edit2 className="mr-2 size-4" /> Edit Trip
                   </DropdownMenuItem>
                 </>
@@ -231,9 +280,9 @@ export default function TripDetailPage() {
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <BarChart3 className="size-4" /> Per Person
+              <BarChart3 className="size-4" /> Shared Splits
             </div>
-            <p className="mt-2 text-3xl font-bold">฿{Math.round(sharePerPerson).toLocaleString()}</p>
+            <p className="mt-2 text-3xl font-bold">{tripTxs.filter(tx => tx.splitWith).length}</p>
           </CardContent>
         </Card>
       </div>
@@ -257,18 +306,55 @@ export default function TripDetailPage() {
         <TabsContent value="expenses" className="mt-4">
           <Card>
             <CardHeader>
-              <CardTitle>All Expenses</CardTitle>
-              <CardDescription>{tripTxs.length} transactions in this trip</CardDescription>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <CardTitle>All Expenses</CardTitle>
+                  <CardDescription>{filteredTripTxs.length} / {tripTxs.length} transactions</CardDescription>
+                </div>
+                <div className="flex gap-2">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      placeholder="ค้นหา..."
+                      value={expenseSearch}
+                      onChange={(e) => setExpenseSearch(e.target.value)}
+                      className="pl-9 w-[180px]"
+                    />
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setExpenseFilterPaidBy('all')}
+                      className={cn('rounded-full border px-3 py-1 text-xs font-medium transition-all',
+                        expenseFilterPaidBy === 'all' ? 'bg-primary text-primary-foreground border-primary' : 'hover:border-primary/50'
+                      )}
+                    >ทุกคน</button>
+                    {members.map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setExpenseFilterPaidBy(m)}
+                        className={cn('rounded-full border px-3 py-1 text-xs font-medium transition-all',
+                          expenseFilterPaidBy === m ? 'bg-primary text-primary-foreground border-primary' : 'hover:border-primary/50'
+                        )}
+                      >{m}</button>
+                    ))}
+                  </div>
+                </div>
+              </div>
             </CardHeader>
             <CardContent>
               {tripTxs.length === 0 ? (
                 <div className="py-8 text-center text-muted-foreground">
-                  No expenses yet. Add one to get started.
+                  ยังไม่มีรายการ กดปุ่ม Add Expense เพื่อเพิ่ม
                 </div>
+              ) : filteredTripTxs.length === 0 ? (
+                <div className="py-8 text-center text-muted-foreground">ไม่พบรายการที่ค้นหา</div>
               ) : (
                 <div className="space-y-3">
-                  {tripTxs.map((tx) => {
+                  {filteredTripTxs.map((tx) => {
                     const txDate = tx.date?.seconds ? new Date(tx.date.seconds * 1000) : new Date()
+                    const splitLabel = !tx.splitWith ? '🙋 Solo' : tx.splitWith === 'all' ? '👥 All' : `🤝 ${tx.splitWith}`
                     return (
                       <div key={tx.id} className="group flex items-center justify-between rounded-lg border p-4 transition-all hover:shadow-sm">
                         <div className="flex items-center gap-3">
@@ -278,7 +364,7 @@ export default function TripDetailPage() {
                           <div>
                             <p className="font-medium">{tx.description}</p>
                             <p className="text-xs text-muted-foreground">
-                              Paid by {tx.paidBy || 'Me'} · {tx.category} · {txDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                              จ่ายโดย {tx.paidBy || 'Me'} · {tx.category} · {splitLabel} · {txDate.toLocaleDateString('th-TH', { month: 'short', day: 'numeric' })}
                             </p>
                           </div>
                         </div>
@@ -328,7 +414,7 @@ export default function TripDetailPage() {
                       <YAxis tickLine={false} axisLine={false} tickFormatter={(v) => `฿${v}`} className="text-xs fill-muted-foreground" />
                       <ChartTooltip content={<ChartTooltipContent />} />
                       <Bar dataKey="paid" fill="var(--chart-1)" radius={[4, 4, 0, 0]} />
-                      <Bar dataKey="share" fill="var(--chart-4)" radius={[4, 4, 0, 0]} opacity={0.5} />
+                      <Bar dataKey="net" fill="var(--chart-4)" radius={[4, 4, 0, 0]} opacity={0.5} />
                     </BarChart>
                   </ChartContainer>
                 ) : (
@@ -382,8 +468,8 @@ export default function TripDetailPage() {
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
-                {participants.map((p) => {
-                  const balance = p.paid - p.share
+              {participants.map((p) => {
+                  const balance = p.netBalance
                   return (
                     <div key={p.name} className="flex items-center justify-between rounded-lg border p-4">
                       <div className="flex items-center gap-3">
@@ -392,12 +478,15 @@ export default function TripDetailPage() {
                         </Avatar>
                         <div>
                           <p className="font-medium">{p.name}</p>
-                          <p className="text-xs text-muted-foreground">Paid: ฿{p.paid.toLocaleString()} · Share: ฿{p.share.toLocaleString()}</p>
+                          <p className="text-xs text-muted-foreground">จ่ายไป: ฿{p.paid.toLocaleString()}</p>
                         </div>
                       </div>
-                      <p className={cn('font-semibold tabular-nums', balance > 0 ? 'text-primary' : balance < 0 ? 'text-destructive' : '')}>
-                        {balance > 0 ? '+' : ''}฿{balance.toLocaleString()}
-                      </p>
+                      <div className="text-right">
+                        <p className={cn('font-semibold tabular-nums', balance > 0 ? 'text-primary' : balance < 0 ? 'text-destructive' : '')}>
+                          {balance > 0 ? '+' : ''}฿{balance.toLocaleString()}
+                        </p>
+                        <p className="text-xs text-muted-foreground">{balance > 0 ? 'ได้รับคืน' : balance < 0 ? 'ต้องจ่ายคืน' : 'เท่ากัน'}</p>
+                      </div>
                     </div>
                   )
                 })}
@@ -463,14 +552,13 @@ export default function TripDetailPage() {
               const description = formData.get('description') as string
               const startStr = formData.get('startDate') as string
               const endStr = formData.get('endDate') as string
-              const membersStr = formData.get('members') as string
 
               await editTrip(trip.id!, {
                 name,
                 description,
-                startDate: startStr ? Timestamp.fromDate(new Date(startStr)) : null,
-                endDate: endStr ? Timestamp.fromDate(new Date(endStr)) : null,
-                members: membersStr.split(',').map((m) => m.trim()).filter(Boolean),
+                startDate: startStr ? Timestamp.fromDate(new Date(startStr)) : undefined,
+                endDate: endStr ? Timestamp.fromDate(new Date(endStr)) : undefined,
+                members: editTripMembers,
               })
               setIsEditTripOpen(false)
             }}
@@ -518,17 +606,12 @@ export default function TripDetailPage() {
               </div>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="members">Members (comma separated)</Label>
-              <Input
-                id="members"
-                name="members"
-                defaultValue={trip.members.join(', ')}
-                placeholder="Me, Friend A, Friend B"
-                required
+              <Label>สมาชิก</Label>
+              <MemberTagInput
+                value={editTripMembers}
+                onChange={setEditTripMembers}
               />
-              <p className="text-xs text-muted-foreground">
-                Tip: Use "Me" for yourself to track your own spending.
-              </p>
+              <p className="text-xs text-muted-foreground">ใช้ "Me" สำหรับตัวเอง</p>
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setIsEditTripOpen(false)}>
@@ -549,8 +632,9 @@ export default function TripDetailPage() {
               {editingTx ? 'Edit this expense' : 'Add an expense to this trip'}
             </DialogDescription>
           </DialogHeader>
-          <TransactionForm
-            initialData={editingTx || ({ tripId, type: 'expense' } as any)}
+          <TripExpenseForm
+            tripMembers={members}
+            initialData={editingTx}
             onSubmit={async (data) => {
               if (editingTx) {
                 await editTransaction(editingTx.id!, { ...data, tripId })
