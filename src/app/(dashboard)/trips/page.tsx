@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { useRouter } from 'next/navigation'
 import {
   Plane,
   Plus,
@@ -150,6 +151,7 @@ function TripCard({
   onClose: (id: string) => void
   onAddExpense: (tripId: string) => void
 }) {
+  const router = useRouter()
   const participants = calculateParticipants(trip, tripTransactions)
   const settlements = calculateSettlements(participants)
   const totalExpenses = tripTransactions.reduce(
@@ -171,7 +173,7 @@ function TripCard({
   const endDate = trip.endDate ? new Date(trip.endDate.seconds * 1000) : null
 
   return (
-    <Card className="overflow-hidden">
+    <Card className="overflow-hidden cursor-pointer transition-all hover:shadow-md" onClick={() => router.push(`/trips/${trip.id}`)}>
       <CardHeader className="pb-4">
         <div className="flex items-start justify-between">
           <div>
