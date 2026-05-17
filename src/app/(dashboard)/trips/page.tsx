@@ -50,10 +50,11 @@ import { useTrips } from '@/hooks/use-trips'
 import { useTransactions } from '@/hooks/use-transactions'
 import { useAuth } from '@/hooks/use-auth'
 import { useTripExpenses } from '@/hooks/use-trip-expenses'
-import { Trip, Transaction } from '@/lib/firestore-types'
+import { Trip, Transaction, TripExpense, TripSettlement } from '@/lib/firestore-types'
 import { MemberPicker, PickedMember } from '@/components/trips/member-picker'
 import { TripExpenseFormV2 } from '@/components/trips/trip-expense-form'
-import { Timestamp } from 'firebase/firestore'
+import { Timestamp, collection, query, where, onSnapshot } from 'firebase/firestore'
+import { db } from '@/lib/firebase'
 
 // --- Settlement calculation ---
 interface Settlement {
@@ -140,34 +141,117 @@ function calculateSettlements(participants: ParticipantSummary[]): Settlement[] 
 }
 
 // --- Trip Card Component ---
+// --- Trip Card Component ---
 function TripCard({
   trip,
   tripTransactions,
+  tripExpenses = [],
+  tripSettlements = [],
   onDelete,
   onClose,
   onAddExpense,
 }: {
   trip: Trip
   tripTransactions: Transaction[]
+  tripExpenses?: TripExpense[]
+  tripSettlements?: TripSettlement[]
   onDelete: (id: string) => void
   onClose: (id: string) => void
   onAddExpense: (tripId: string) => void
 }) {
   const router = useRouter()
-  const participants = calculateParticipants(trip, tripTransactions)
+  const { user } = useAuth()
+
+  // --- 1. Legacy Calculations ---
+  const members = trip.members || []
+  const net: Record<string, number> = {}
+  const paid: Record<string, number> = {}
+  members.forEach((m) => { net[m] = 0; paid[m] = 0 })
+
+  tripTransactions.forEach((tx) => {
+    const amount = Math.abs(tx.amount)
+    const payer = tx.paidBy || members[0]
+    const split = tx.splitWith
+
+    if (paid[payer] !== undefined) paid[payer] += amount
+
+    if (!split) return // Solo
+
+    let involved: string[] = []
+    if (split === 'all') {
+      involved = members
+    } else {
+      involved = [payer, split].filter((m) => members.includes(m))
+    }
+
+    if (involved.length === 0) return
+    const share = amount / involved.length
+
+    if (net[payer] !== undefined) net[payer] += amount - share
+    involved.forEach((m) => {
+      if (m !== payer && net[m] !== undefined) net[m] -= share
+    })
+  })
+
+  // --- 2. New Trip Expenses Calculations ---
+  const newPaid: Record<string, number> = {}
+  const newShare: Record<string, number> = {}
+  members.forEach((m) => { newPaid[m] = 0; newShare[m] = 0 })
+
+  tripExpenses.forEach((ex) => {
+    ex.payers.forEach((p) => {
+      if (newPaid[p.userId] !== undefined) newPaid[p.userId] += p.amount
+    })
+    ex.shares.forEach((s) => {
+      if (newShare[s.userId] !== undefined) newShare[s.userId] += s.amount
+    })
+  })
+
+  // --- 3. Settlements Calculations ---
+  const settlementsNet: Record<string, number> = {}
+  members.forEach((m) => { settlementsNet[m] = 0 })
+  tripSettlements.forEach((s) => {
+    if (settlementsNet[s.fromUserId] !== undefined) settlementsNet[s.fromUserId] += s.amount
+    if (settlementsNet[s.toUserId] !== undefined) settlementsNet[s.toUserId] -= s.amount
+  })
+
+  // --- 4. Combine participants ---
+  const getDisplayName = (key: string) => trip.memberProfiles?.[key]?.displayName || key
+  
+  const participants = members.map((member) => {
+    const legacyPaid = paid[member] || 0
+    const legacyNet = net[member] || 0
+    
+    const nPaid = newPaid[member] || 0
+    const nShare = newShare[member] || 0
+    const newNet = nPaid - nShare
+    
+    const setNet = settlementsNet[member] || 0
+    const netBalance = Math.round(legacyNet + newNet + setNet)
+
+    const displayName = getDisplayName(member)
+    const initials = displayName.split(' ').map((w) => w[0]).join('').toUpperCase().substring(0, 2)
+
+    return {
+      name: member,
+      displayName,
+      initials,
+      paid: legacyPaid + nPaid,
+      share: legacyPaid + nPaid - netBalance, // share = paid - netBalance
+      netBalance,
+    }
+  })
+
   const settlements = calculateSettlements(participants)
-  const totalExpenses = tripTransactions.reduce(
-    (sum, tx) => sum + Math.abs(tx.amount),
-    0
-  )
+  const totalLegacyExpenses = tripTransactions.reduce((sum, tx) => sum + Math.abs(tx.amount), 0)
+  const totalNewExpenses = tripExpenses.reduce((sum, ex) => sum + ex.totalAmount, 0)
+  const totalExpenses = totalLegacyExpenses + totalNewExpenses
 
   // Find "Me" balance
   const meParticipant = participants.find(
-    (p) => p.name === 'Me' || p.name === 'me'
+    (p) => p.name === user?.uid || p.name === 'Me' || p.name === 'me'
   )
-  const myNetBalance = meParticipant
-    ? meParticipant.paid - meParticipant.share
-    : 0
+  const myNetBalance = meParticipant ? meParticipant.netBalance : 0
 
   const startDate = trip.startDate
     ? new Date(trip.startDate.seconds * 1000)
@@ -402,6 +486,50 @@ export default function TripsPage() {
 
   const loading = tripsLoading || txLoading
 
+  // Real-time listener for all user's trip expenses and settlements
+  const [allTripExpenses, setAllTripExpenses] = React.useState<TripExpense[]>([])
+  const [allTripSettlements, setAllTripSettlements] = React.useState<TripSettlement[]>([])
+
+  React.useEffect(() => {
+    if (!user) {
+      setAllTripExpenses([])
+      setAllTripSettlements([])
+      return
+    }
+
+    const tripIds = [...activeTrips, ...closedTrips].map(t => t.id).filter(Boolean) as string[]
+    if (tripIds.length === 0) {
+      setAllTripExpenses([])
+      setAllTripSettlements([])
+      return
+    }
+
+    const queryTripIds = tripIds.slice(0, 30)
+
+    // Listen to all expenses for these trips
+    const qExp = query(
+      collection(db, 'trip_expenses'),
+      where('tripId', 'in', queryTripIds)
+    )
+    const unsubExp = onSnapshot(qExp, (snap) => {
+      setAllTripExpenses(snap.docs.map(d => ({ id: d.id, ...d.data() } as TripExpense)))
+    }, (err) => console.error("Error loading all trip expenses:", err))
+
+    // Listen to all settlements for these trips
+    const qSet = query(
+      collection(db, 'trip_settlements'),
+      where('tripId', 'in', queryTripIds)
+    )
+    const unsubSet = onSnapshot(qSet, (snap) => {
+      setAllTripSettlements(snap.docs.map(d => ({ id: d.id, ...d.data() } as TripSettlement)))
+    }, (err) => console.error("Error loading all trip settlements:", err))
+
+    return () => {
+      unsubExp()
+      unsubSet()
+    }
+  }, [user, activeTrips.length, closedTrips.length])
+
   // Group transactions by tripId
   const getTransactionsForTrip = (tripId: string) =>
     transactions.filter((tx) => tx.tripId === tripId)
@@ -449,10 +577,15 @@ export default function TripsPage() {
   }
 
   // Stats
-  const totalTripExpenses = allTripTransactions.reduce(
+  const totalLegacyExpenses = allTripTransactions.reduce(
     (sum, tx) => sum + Math.abs(tx.amount),
     0
   )
+  const totalNewExpenses = allTripExpenses.reduce(
+    (sum, ex) => sum + ex.totalAmount,
+    0
+  )
+  const totalTripExpenses = totalLegacyExpenses + totalNewExpenses
   const uniquePeople = new Set(
     [...activeTrips, ...closedTrips].flatMap((t) => t.members || [])
   )
@@ -618,6 +751,8 @@ export default function TripsPage() {
                   key={trip.id}
                   trip={trip}
                   tripTransactions={getTransactionsForTrip(trip.id!)}
+                  tripExpenses={allTripExpenses.filter((e) => e.tripId === trip.id)}
+                  tripSettlements={allTripSettlements.filter((s) => s.tripId === trip.id)}
                   onDelete={removeTrip}
                   onClose={endTrip}
                   onAddExpense={handleAddExpense}
@@ -652,6 +787,8 @@ export default function TripsPage() {
                   key={trip.id}
                   trip={trip}
                   tripTransactions={getTransactionsForTrip(trip.id!)}
+                  tripExpenses={allTripExpenses.filter((e) => e.tripId === trip.id)}
+                  tripSettlements={allTripSettlements.filter((s) => s.tripId === trip.id)}
                   onDelete={removeTrip}
                   onClose={endTrip}
                   onAddExpense={handleAddExpense}
