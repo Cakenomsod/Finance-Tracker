@@ -96,6 +96,7 @@ export function TripExpenseFormV2({
   const [submitting, setSubmitting] = React.useState(false)
   const [errors, setErrors] = React.useState<string[]>([])
   const [currency, setCurrency] = React.useState<'THB' | 'JPY'>(initialData?.currency || 'THB')
+  const [receiptTaxMode, setReceiptTaxMode] = React.useState<'exclusive' | 'inclusive'>('exclusive')
   const [receiptTax, setReceiptTax] = React.useState(
     initialData?.taxAmount 
       ? String(initialData.taxAmount) 
@@ -108,21 +109,42 @@ export function TripExpenseFormV2({
   const isReceiptActive = inputMode === 'receipt' && receiptItems.some(item => (parseFloat(item.price) || 0) > 0)
 
   let totalBaseAmount = 0
-  receiptItems.forEach(item => {
-    totalBaseAmount += parseFloat(item.price) || 0
-  })
-
   let totalTaxAmount = parseFloat(receiptTax) || 0
-  let totalReceiptAmount = totalBaseAmount + totalTaxAmount
+  let totalReceiptAmount = 0
+
+  if (isReceiptActive) {
+    if (receiptTaxMode === 'exclusive') {
+      receiptItems.forEach(item => {
+        totalBaseAmount += parseFloat(item.price) || 0
+      })
+      totalReceiptAmount = totalBaseAmount + totalTaxAmount
+    } else {
+      // Inclusive: sum of item prices is the total receipt amount
+      receiptItems.forEach(item => {
+        totalReceiptAmount += parseFloat(item.price) || 0
+      })
+      totalBaseAmount = Math.max(0, totalReceiptAmount - totalTaxAmount)
+    }
+  }
 
   const itemShares: Record<string, number> = {}
   tripMembers.forEach(m => { itemShares[m.key] = 0 })
 
   receiptItems.forEach(item => {
-    const p = parseFloat(item.price) || 0
-    // Distribute tax proportionally to this item's price relative to totalBaseAmount
-    const t = totalBaseAmount > 0 ? (p / totalBaseAmount) * totalTaxAmount : 0
-    const itemTotal = p + t
+    const rawVal = parseFloat(item.price) || 0
+    let p = 0
+    let t = 0
+    let itemTotal = 0
+
+    if (receiptTaxMode === 'exclusive') {
+      p = rawVal
+      t = totalBaseAmount > 0 ? (p / totalBaseAmount) * totalTaxAmount : 0
+      itemTotal = p + t
+    } else {
+      itemTotal = rawVal
+      t = totalReceiptAmount > 0 ? (itemTotal / totalReceiptAmount) * totalTaxAmount : 0
+      p = Math.max(0, itemTotal - t)
+    }
 
     if (itemTotal > 0 && item.splitWith.length > 0) {
       const share = itemTotal / item.splitWith.length
@@ -242,18 +264,28 @@ export function TripExpenseFormV2({
 
       if (isReceiptActive) {
         payload.items = receiptItems.map(item => {
-          const p = parseFloat(item.price) || 0
-          const t = totalBaseAmount > 0 ? (p / totalBaseAmount) * totalTaxAmount : 0
+          const rawVal = parseFloat(item.price) || 0
+          let p = 0
+          let t = 0
+          if (receiptTaxMode === 'exclusive') {
+            p = rawVal
+            t = totalBaseAmount > 0 ? (p / totalBaseAmount) * totalTaxAmount : 0
+          } else {
+            const itemTotal = rawVal
+            t = totalReceiptAmount > 0 ? (itemTotal / totalReceiptAmount) * totalTaxAmount : 0
+            p = Math.max(0, itemTotal - t)
+          }
           return {
             name: item.name || 'Item',
             category: item.category,
-            price: p,
+            price: parseFloat(p.toFixed(2)),
             tax: parseFloat(t.toFixed(2)),
             splitWith: item.splitWith,
           }
         })
         payload.baseAmount = totalBaseAmount
         payload.taxAmount = totalTaxAmount
+        payload.taxMode = receiptTaxMode
       } else {
         payload.baseAmount = parseFloat(subtotal) || total || 0
         payload.taxAmount = parseFloat(tax) || 0
@@ -409,8 +441,38 @@ export function TripExpenseFormV2({
       {/* Receipt Items (Only in Receipt Mode) */}
       {inputMode === 'receipt' && (
         <div className="space-y-4 border rounded-lg p-3 bg-muted/20 overflow-hidden">
-          <div className="flex items-center justify-between">
-            <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Receipt Items</h4>
+          <div className="flex items-center justify-between flex-wrap gap-2 pb-1">
+            <div className="flex items-center gap-3">
+              <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Receipt Items</h4>
+              {/* Premium Tax Mode Switch Toggle */}
+              <div className="inline-flex rounded-lg border p-0.5 bg-muted/60 text-[10px] shrink-0 select-none">
+                <button
+                  type="button"
+                  onClick={() => setReceiptTaxMode('exclusive')}
+                  className={cn(
+                    "px-2 py-0.5 rounded-md font-medium transition-all",
+                    receiptTaxMode === 'exclusive'
+                      ? "bg-background text-foreground shadow-sm font-semibold"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  ยังไม่รวมภาษี (Exclusive)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setReceiptTaxMode('inclusive')}
+                  className={cn(
+                    "px-2 py-0.5 rounded-md font-medium transition-all",
+                    receiptTaxMode === 'inclusive'
+                      ? "bg-background text-foreground shadow-sm font-semibold"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  รวมภาษีแล้ว (Inclusive)
+                </button>
+              </div>
+            </div>
+            
             <Button
               type="button"
               variant="outline"
@@ -424,9 +486,20 @@ export function TripExpenseFormV2({
 
           <div className="space-y-3">
             {receiptItems.map((item, idx) => {
-              const p = parseFloat(item.price) || 0
-              const t = totalBaseAmount > 0 ? (p / totalBaseAmount) * totalTaxAmount : 0
-              const itemTotal = p + t
+              const rawVal = parseFloat(item.price) || 0
+              let p = 0
+              let t = 0
+              let itemTotal = 0
+
+              if (receiptTaxMode === 'exclusive') {
+                p = rawVal
+                t = totalBaseAmount > 0 ? (p / totalBaseAmount) * totalTaxAmount : 0
+                itemTotal = p + t
+              } else {
+                itemTotal = rawVal
+                t = totalReceiptAmount > 0 ? (itemTotal / totalReceiptAmount) * totalTaxAmount : 0
+                p = Math.max(0, itemTotal - t)
+              }
 
               return (
                 <div key={idx} className="border-b pb-3 last:border-b-0 last:pb-0 pt-2">
@@ -462,12 +535,12 @@ export function TripExpenseFormV2({
 
                     {/* Price Input */}
                     <div className="relative w-24 shrink-0">
-                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-[10px]">
                         {currency === 'THB' ? '฿' : '¥'}
                       </span>
                       <Input
                         type="number"
-                        placeholder="Price"
+                        placeholder={receiptTaxMode === 'exclusive' ? "Excl. Tax" : "Incl. Tax"}
                         className="pl-6 pr-1 h-9 text-xs font-medium"
                         value={item.price}
                         onChange={e => {

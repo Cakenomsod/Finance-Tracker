@@ -79,6 +79,7 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
 
   const [subtotal, setSubtotal] = React.useState(initialData && initialData.items && initialData.items.length === 0 && initialData.baseAmount ? String(initialData.baseAmount) : '')
   const [tax, setTax] = React.useState(initialData && initialData.items && initialData.items.length === 0 && initialData.taxAmount ? String(initialData.taxAmount) : '')
+  const [receiptTaxMode, setReceiptTaxMode] = React.useState<'exclusive' | 'inclusive'>('exclusive')
   const [receiptTax, setReceiptTax] = React.useState(
     initialData?.taxAmount 
       ? String(initialData.taxAmount) 
@@ -104,13 +105,23 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
   const isReceiptActive = inputMode === 'receipt' && receiptItems.some(item => (parseFloat(item.price) || 0) > 0)
   
   let totalBase = 0
-  if (isReceiptActive) {
-    receiptItems.forEach(item => {
-      totalBase += parseFloat(item.price) || 0
-    })
-  }
   let totalTax = isReceiptActive ? (parseFloat(receiptTax) || 0) : 0
-  let calculatedTotal = totalBase + totalTax
+  let calculatedTotal = 0
+
+  if (isReceiptActive) {
+    if (receiptTaxMode === 'exclusive') {
+      receiptItems.forEach(item => {
+        totalBase += parseFloat(item.price) || 0
+      })
+      calculatedTotal = totalBase + totalTax
+    } else {
+      // Inclusive: sum of items is the total receipt amount
+      receiptItems.forEach(item => {
+        calculatedTotal += parseFloat(item.price) || 0
+      })
+      totalBase = Math.max(0, calculatedTotal - totalTax)
+    }
+  }
 
   const handleSubmit = async (values: TransactionFormValues) => {
     setIsSubmitting(true)
@@ -140,18 +151,28 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
 
       if (isReceiptActive) {
         transactionData.items = receiptItems.map(item => {
-          const p = parseFloat(item.price) || 0
-          const t = totalBase > 0 ? (p / totalBase) * totalTax : 0
+          const rawVal = parseFloat(item.price) || 0
+          let p = 0
+          let t = 0
+          if (receiptTaxMode === 'exclusive') {
+            p = rawVal
+            t = totalBase > 0 ? (p / totalBase) * totalTax : 0
+          } else {
+            const itemTotal = rawVal
+            t = calculatedTotal > 0 ? (itemTotal / calculatedTotal) * totalTax : 0
+            p = Math.max(0, itemTotal - t)
+          }
           return {
             name: item.name || 'Item',
             category: item.category,
-            price: p,
+            price: parseFloat(p.toFixed(2)),
             tax: parseFloat(t.toFixed(2)),
             splitWith: []
           }
         })
         transactionData.baseAmount = totalBase
         transactionData.taxAmount = totalTax
+        transactionData.taxMode = receiptTaxMode
       } else {
         transactionData.baseAmount = parseFloat(subtotal) || rawAmount || 0
         transactionData.taxAmount = parseFloat(tax) || 0
@@ -454,8 +475,38 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
         {/* Receipt Items (Only in Receipt Mode) */}
         {inputMode === 'receipt' && (
           <div className="space-y-4 border rounded-lg p-3 bg-muted/20 overflow-hidden">
-            <div className="flex items-center justify-between">
-              <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Receipt Items</h4>
+            <div className="flex items-center justify-between flex-wrap gap-2 pb-1">
+              <div className="flex items-center gap-3">
+                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Receipt Items</h4>
+                {/* Premium Tax Mode Switch Toggle */}
+                <div className="inline-flex rounded-lg border p-0.5 bg-muted/60 text-[10px] shrink-0 select-none">
+                  <button
+                    type="button"
+                    onClick={() => setReceiptTaxMode('exclusive')}
+                    className={cn(
+                      "px-2 py-0.5 rounded-md font-medium transition-all",
+                      receiptTaxMode === 'exclusive'
+                        ? "bg-background text-foreground shadow-sm font-semibold"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    ยังไม่รวมภาษี (Exclusive)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setReceiptTaxMode('inclusive')}
+                    className={cn(
+                      "px-2 py-0.5 rounded-md font-medium transition-all",
+                      receiptTaxMode === 'inclusive'
+                        ? "bg-background text-foreground shadow-sm font-semibold"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    รวมภาษีแล้ว (Inclusive)
+                  </button>
+                </div>
+              </div>
+
               <Button
                 type="button"
                 variant="outline"
@@ -469,9 +520,20 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
 
             <div className="space-y-3">
               {receiptItems.map((item, idx) => {
-                const p = parseFloat(item.price) || 0
-                const t = totalBase > 0 ? (p / totalBase) * totalTax : 0
-                const itemTotal = p + t
+                const rawVal = parseFloat(item.price) || 0
+                let p = 0
+                let t = 0
+                let itemTotal = 0
+
+                if (receiptTaxMode === 'exclusive') {
+                  p = rawVal
+                  t = totalBase > 0 ? (p / totalBase) * totalTax : 0
+                  itemTotal = p + t
+                } else {
+                  itemTotal = rawVal
+                  t = calculatedTotal > 0 ? (itemTotal / calculatedTotal) * totalTax : 0
+                  p = Math.max(0, itemTotal - t)
+                }
 
                 return (
                   <div key={idx} className="border-b pb-3 last:border-b-0 last:pb-0 pt-2">
@@ -512,7 +574,7 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
                         </span>
                         <Input
                           type="number"
-                          placeholder="Price"
+                          placeholder={receiptTaxMode === 'exclusive' ? "Excl. Tax" : "Incl. Tax"}
                           className="pl-6 pr-1 h-9 text-xs font-medium"
                           value={item.price}
                           onChange={e => {
