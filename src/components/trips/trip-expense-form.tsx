@@ -93,6 +93,7 @@ export function TripExpenseFormV2({
 
   const [submitting, setSubmitting] = React.useState(false)
   const [errors, setErrors] = React.useState<string[]>([])
+  const [currency, setCurrency] = React.useState<'THB' | 'JPY'>(initialData?.currency || 'THB')
 
   // --- Real-time Receipt calculations ---
   const isReceiptActive = inputMode === 'receipt' && receiptItems.some(item => (parseFloat(item.price) || 0) > 0)
@@ -164,6 +165,7 @@ export function TripExpenseFormV2({
     if (!total || total <= 0) errs.push('กรุณากรอกจำนวนเงิน')
     if (!category) errs.push('กรุณาเลือกหมวดหมู่')
 
+    const curSymbol = currency === 'THB' ? '฿' : '¥'
     const finalPayers: TripExpensePayer[] = payers.map((p, i) => ({
       userId: p.key,
       displayName: p.displayName,
@@ -173,7 +175,7 @@ export function TripExpenseFormV2({
     }))
 
     const paidTotal = finalPayers.reduce((s, p) => s + p.amount, 0)
-    if (Math.abs(paidTotal - total) > 1) errs.push(`ยอดที่จ่าย (฿${paidTotal.toFixed(0)}) ไม่ตรงกับยอดรวม (฿${total.toFixed(0)})`)
+    if (Math.abs(paidTotal - total) > 1) errs.push(`ยอดที่จ่าย (${curSymbol}${paidTotal.toFixed(0)}) ไม่ตรงกับยอดรวม (${curSymbol}${total.toFixed(0)})`)
 
     let finalShares: TripExpenseShare[] = []
 
@@ -200,7 +202,7 @@ export function TripExpenseFormV2({
       finalShares = tripMembers
         .filter(m => customShares[m.key] && parseFloat(customShares[m.key]) > 0)
         .map(m => ({ userId: m.key, displayName: m.displayName, amount: parseFloat(customShares[m.key]) }))
-      if (Math.abs(customTotal - total) > 1) errs.push(`ยอดแบ่ง (฿${customTotal.toFixed(0)}) ไม่ตรงกับยอดรวม (฿${total.toFixed(0)})`)
+      if (Math.abs(customTotal - total) > 1) errs.push(`ยอดแบ่ง (${curSymbol}${customTotal.toFixed(0)}) ไม่ตรงกับยอดรวม (${curSymbol}${total.toFixed(0)})`)
     }
 
     setErrors(errs)
@@ -223,6 +225,7 @@ export function TripExpenseFormV2({
         splitMode,
         payers: result.payers,
         shares: result.shares,
+        currency,
       }
 
       if (isReceiptActive) {
@@ -275,6 +278,29 @@ export function TripExpenseFormV2({
         </button>
       </div>
 
+      {/* Currency Selector */}
+      <div className="space-y-1.5">
+        <Label>สกุลเงิน (Currency)</Label>
+        <div className="flex gap-2">
+          <Button
+            type="button"
+            variant={currency === 'THB' ? 'default' : 'outline'}
+            className="flex-1 text-xs gap-1 h-9 font-medium"
+            onClick={() => setCurrency('THB')}
+          >
+            ฿ บาท (THB)
+          </Button>
+          <Button
+            type="button"
+            variant={currency === 'JPY' ? 'default' : 'outline'}
+            className="flex-1 text-xs gap-1 h-9 font-medium"
+            onClick={() => setCurrency('JPY')}
+          >
+            ¥ เยน (JPY)
+          </Button>
+        </div>
+      </div>
+
       {/* Description */}
       <div className="space-y-1.5">
         <Label>รายละเอียด</Label>
@@ -285,7 +311,7 @@ export function TripExpenseFormV2({
       {/* Amount + Category + Date */}
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">
-          <Label>ยอดรวม (฿)</Label>
+          <Label>ยอดรวม ({currency === 'THB' ? '฿' : '¥'})</Label>
           <Input type="number" step="0.01" placeholder="0.00"
             disabled={isReceiptActive}
             value={isReceiptActive ? totalReceiptAmount.toFixed(2) : totalAmount} 
@@ -368,7 +394,9 @@ export function TripExpenseFormV2({
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
                     <div className="relative w-24">
-                      <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-muted-foreground text-[10px]">฿</span>
+                      <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-muted-foreground text-[10px]">
+                        {currency === 'THB' ? '฿' : '¥'}
+                      </span>
                       <Input
                         type="number"
                         placeholder="Price"
@@ -397,7 +425,7 @@ export function TripExpenseFormV2({
                     </div>
 
                     <span className="text-[11px] font-semibold text-muted-foreground tabular-nums">
-                      = ฿{((parseFloat(item.price) || 0) + (parseFloat(item.tax) || 0)).toLocaleString()}
+                      = {currency === 'THB' ? '฿' : '¥'}{((parseFloat(item.price) || 0) + (parseFloat(item.tax) || 0)).toLocaleString()}
                     </span>
                   </div>
 

@@ -169,7 +169,8 @@ function TripCard({
   members.forEach((m) => { net[m] = 0; paid[m] = 0 })
 
   tripTransactions.forEach((tx) => {
-    const amount = Math.abs(tx.amount)
+    const factor = tx.currency === 'JPY' ? 0.22 : 1
+    const amount = Math.abs(tx.amount) * factor
     const payer = tx.paidBy || members[0]
     const split = tx.splitWith
 
@@ -199,11 +200,12 @@ function TripCard({
   members.forEach((m) => { newPaid[m] = 0; newShare[m] = 0 })
 
   tripExpenses.forEach((ex) => {
+    const factor = ex.currency === 'JPY' ? 0.22 : 1
     ex.payers.forEach((p) => {
-      if (newPaid[p.userId] !== undefined) newPaid[p.userId] += p.amount
+      if (newPaid[p.userId] !== undefined) newPaid[p.userId] += p.amount * factor
     })
     ex.shares.forEach((s) => {
-      if (newShare[s.userId] !== undefined) newShare[s.userId] += s.amount
+      if (newShare[s.userId] !== undefined) newShare[s.userId] += s.amount * factor
     })
   })
 
@@ -243,8 +245,8 @@ function TripCard({
   })
 
   const settlements = calculateSettlements(participants)
-  const totalLegacyExpenses = tripTransactions.reduce((sum, tx) => sum + Math.abs(tx.amount), 0)
-  const totalNewExpenses = tripExpenses.reduce((sum, ex) => sum + ex.totalAmount, 0)
+  const totalLegacyExpenses = tripTransactions.reduce((sum, tx) => sum + (tx.currency === 'JPY' ? Math.abs(tx.amount) * 0.22 : Math.abs(tx.amount)), 0)
+  const totalNewExpenses = tripExpenses.reduce((sum, ex) => sum + (ex.currency === 'JPY' ? ex.totalAmount * 0.22 : ex.totalAmount), 0)
   const totalExpenses = totalLegacyExpenses + totalNewExpenses
 
   // Find "Me" balance
@@ -420,9 +422,16 @@ function TripCard({
                       </p>
                     </div>
                   </div>
-                  <span className="font-semibold tabular-nums text-sm">
-                    ฿{Math.abs(tx.amount).toLocaleString()}
-                  </span>
+                  <div className="text-right">
+                    <span className="font-semibold tabular-nums text-sm block">
+                      {tx.currency === 'JPY' ? '¥' : '฿'}{Math.abs(tx.amount).toLocaleString()}
+                    </span>
+                    {tx.currency === 'JPY' && (
+                      <span className="text-[10px] text-muted-foreground block font-normal">
+                        (฿{(Math.abs(tx.amount) * 0.22).toLocaleString()})
+                      </span>
+                    )}
+                  </div>
                 </div>
               ))}
               {tripTransactions.length > 5 && (
@@ -578,11 +587,11 @@ export default function TripsPage() {
 
   // Stats
   const totalLegacyExpenses = allTripTransactions.reduce(
-    (sum, tx) => sum + Math.abs(tx.amount),
+    (sum, tx) => sum + (tx.currency === 'JPY' ? Math.abs(tx.amount) * 0.22 : Math.abs(tx.amount)),
     0
   )
   const totalNewExpenses = allTripExpenses.reduce(
-    (sum, ex) => sum + ex.totalAmount,
+    (sum, ex) => sum + (ex.currency === 'JPY' ? ex.totalAmount * 0.22 : ex.totalAmount),
     0
   )
   const totalTripExpenses = totalLegacyExpenses + totalNewExpenses

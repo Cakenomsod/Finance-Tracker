@@ -40,7 +40,7 @@ export function useTripExpenses(tripId: string) {
   }, [tripId]);
 
   const totalExpenses = useMemo(
-    () => expenses.reduce((sum, e) => sum + e.totalAmount, 0),
+    () => expenses.reduce((sum, e) => sum + (e.currency === 'JPY' ? e.totalAmount * 0.22 : e.totalAmount), 0),
     [expenses]
   );
 
@@ -52,11 +52,12 @@ export function useTripExpenses(tripId: string) {
     memberIds.forEach(id => { paid[id] = 0; share[id] = 0; });
 
     expenses.forEach(expense => {
+      const factor = expense.currency === 'JPY' ? 0.22 : 1;
       expense.payers.forEach(p => {
-        if (paid[p.userId] !== undefined) paid[p.userId] += p.amount;
+        if (paid[p.userId] !== undefined) paid[p.userId] += p.amount * factor;
       });
       expense.shares.forEach(s => {
-        if (share[s.userId] !== undefined) share[s.userId] += s.amount;
+        if (share[s.userId] !== undefined) share[s.userId] += s.amount * factor;
       });
     });
 

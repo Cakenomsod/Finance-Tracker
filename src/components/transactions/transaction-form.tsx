@@ -48,6 +48,7 @@ interface TransactionFormProps {
 export function TransactionForm({ initialData, onSubmit, onCancel }: TransactionFormProps) {
   const [isSubmitting, setIsSubmitting] = React.useState(false)
   const { activeTrips } = useTrips()
+  const [currency, setCurrency] = React.useState<'THB' | 'JPY'>(initialData?.currency || 'THB')
 
   const [inputMode, setInputMode] = React.useState<'standard' | 'receipt'>(
     initialData?.items && initialData.items.length > 0 ? 'receipt' : 'standard'
@@ -127,6 +128,7 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
         tripId: values.tripId && values.tripId !== 'none' ? values.tripId : null,
         receiptUrl: initialData?.receiptUrl || null,
         source: initialData?.source || 'manual',
+        currency,
       }
 
       if (isReceiptActive) {
@@ -184,6 +186,29 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
           </button>
         </div>
 
+        {/* Currency Selector */}
+        <div className="space-y-1.5">
+          <FormLabel>สกุลเงิน (Currency)</FormLabel>
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant={currency === 'THB' ? 'default' : 'outline'}
+              className="flex-1 text-xs gap-1 h-9 font-medium"
+              onClick={() => setCurrency('THB')}
+            >
+              ฿ บาท (THB)
+            </Button>
+            <Button
+              type="button"
+              variant={currency === 'JPY' ? 'default' : 'outline'}
+              className="flex-1 text-xs gap-1 h-9 font-medium"
+              onClick={() => setCurrency('JPY')}
+            >
+              ¥ เยน (JPY)
+            </Button>
+          </div>
+        </div>
+
         <FormField
           control={form.control}
           name="type"
@@ -230,7 +255,7 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
             name="amount"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Amount (฿)</FormLabel>
+                <FormLabel>Amount ({currency === 'THB' ? '฿' : '¥'})</FormLabel>
                 <FormControl>
                   <Input 
                     type="number" 
@@ -403,7 +428,9 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
 
                   <div className="flex items-center gap-2">
                     <div className="relative w-24">
-                      <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-muted-foreground text-[10px]">฿</span>
+                      <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-muted-foreground text-[10px]">
+                        {currency === 'THB' ? '฿' : '¥'}
+                      </span>
                       <Input
                         type="number"
                         placeholder="Price"
@@ -432,7 +459,7 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
                     </div>
 
                     <span className="text-[11px] font-semibold text-muted-foreground tabular-nums ml-2">
-                      = ฿{((parseFloat(item.price) || 0) + (parseFloat(item.tax) || 0)).toLocaleString()}
+                      = {currency === 'THB' ? '฿' : '¥'}{((parseFloat(item.price) || 0) + (parseFloat(item.tax) || 0)).toLocaleString()}
                     </span>
                   </div>
                 </div>

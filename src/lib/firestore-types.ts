@@ -39,6 +39,7 @@ export interface Transaction {
   items?: ReceiptItem[];
   baseAmount?: number;
   taxAmount?: number;
+  currency?: 'THB' | 'JPY';
 }
 
 // debts/{debtId}
@@ -108,6 +109,7 @@ export interface TripExpense {
   items?: ReceiptItem[];
   baseAmount?: number;
   taxAmount?: number;
+  currency?: 'THB' | 'JPY';
 }
 
 // trip_settlements/{settlementId}

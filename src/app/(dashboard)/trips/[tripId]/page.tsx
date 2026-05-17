@@ -100,7 +100,9 @@ export default function TripDetailPage() {
 
     if (ex.isLegacy) {
       // Legacy transaction
-      const amount = Math.abs(ex.amount)
+      const rawTx = ex.rawTx
+      const factor = rawTx?.currency === 'JPY' ? 0.22 : 1
+      const amount = Math.abs(ex.amount) * factor
       const payer = ex.paidBy || members[0]
       const split = ex.splitWith
 
@@ -119,11 +121,12 @@ export default function TripDetailPage() {
       // New trip expense
       const rawEx = ex.rawEx
       if (rawEx) {
+        const factor = rawEx.currency === 'JPY' ? 0.22 : 1
         rawEx.payers?.forEach((p: any) => {
-          if (net[p.userId] !== undefined) net[p.userId] += p.amount
+          if (net[p.userId] !== undefined) net[p.userId] += p.amount * factor
         })
         rawEx.shares?.forEach((s: any) => {
-          if (net[s.userId] !== undefined) net[s.userId] -= s.amount
+          if (net[s.userId] !== undefined) net[s.userId] -= s.amount * factor
         })
       }
     }
@@ -159,8 +162,8 @@ export default function TripDetailPage() {
   }, [members])
 
   // --- Calculations ---
-  const totalLegacyExpenses = tripTxs.reduce((s, tx) => s + Math.abs(tx.amount), 0)
-  const totalNewExpenses = tripExpenses.reduce((s, ex) => s + ex.totalAmount, 0)
+  const totalLegacyExpenses = tripTxs.reduce((s, tx) => s + (tx.currency === 'JPY' ? Math.abs(tx.amount) * 0.22 : Math.abs(tx.amount)), 0)
+  const totalNewExpenses = tripExpenses.reduce((s, ex) => s + (ex.currency === 'JPY' ? ex.totalAmount * 0.22 : ex.totalAmount), 0)
   const totalExpenses = totalLegacyExpenses + totalNewExpenses
 
   // Calculate each person's net balance based on legacy transactions + new expenses + settlements
@@ -171,7 +174,8 @@ export default function TripDetailPage() {
     members.forEach((m) => { net[m] = 0; paid[m] = 0 })
 
     tripTxs.forEach((tx) => {
-      const amount = Math.abs(tx.amount)
+      const factor = tx.currency === 'JPY' ? 0.22 : 1
+      const amount = Math.abs(tx.amount) * factor
       const payer = tx.paidBy || members[0]
       const split = tx.splitWith // null = solo, 'all' = everyone, 'Name' = specific
 
@@ -583,6 +587,7 @@ export default function TripDetailPage() {
                 <div className="space-y-3">
                   {filteredExpenses.map((ex) => {
                     const txDate = ex.date?.seconds ? new Date(ex.date.seconds * 1000) : new Date()
+                    const isJpy = ex.rawTx?.currency === 'JPY' || ex.rawEx?.currency === 'JPY'
                     return (
                       <div key={ex.id} className="group flex flex-col justify-start rounded-lg border p-4 transition-all hover:shadow-sm">
                         <div className="flex items-center justify-between">
@@ -613,7 +618,16 @@ export default function TripDetailPage() {
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
-                            <span className="font-semibold tabular-nums">฿{ex.amount.toLocaleString()}</span>
+                            <div className="text-right">
+                              <span className="font-semibold tabular-nums block">
+                                {isJpy ? '¥' : '฿'}{ex.amount.toLocaleString()}
+                              </span>
+                              {isJpy && (
+                                <span className="text-[10px] text-muted-foreground block font-normal">
+                                  (฿{(ex.amount * 0.22).toLocaleString()})
+                                </span>
+                              )}
+                            </div>
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
                                 <Button variant="ghost" size="icon" className="size-8 opacity-0 group-hover:opacity-100">
@@ -678,9 +692,16 @@ export default function TripDetailPage() {
                                       </div>
                                     </div>
                                     <div className="text-right font-medium tabular-nums shrink-0">
-                                      <span>฿{itemTotal.toLocaleString()}</span>
+                                      <span>{isJpy ? '¥' : '฿'}{itemTotal.toLocaleString()}</span>
+                                      {isJpy && (
+                                        <span className="text-[9px] text-muted-foreground block font-normal">
+                                          (฿{(itemTotal * 0.22).toLocaleString()})
+                                        </span>
+                                      )}
                                       {item.tax > 0 ? (
-                                        <span className="text-[9px] text-muted-foreground block">(สินค้า ฿{item.price} + ภาษี ฿{item.tax})</span>
+                                        <span className="text-[9px] text-muted-foreground block">
+                                          ({isJpy ? 'สินค้า ¥' : 'สินค้า ฿'}{item.price.toLocaleString()} + {isJpy ? 'ภาษี ¥' : 'ภาษี ฿'}{item.tax.toLocaleString()})
+                                        </span>
                                       ) : (
                                         <span className="text-[9px] text-green-600 block">Tax free</span>
                                       )}
@@ -690,9 +711,11 @@ export default function TripDetailPage() {
                               })}
                             </div>
                             {ex.rawEx.baseAmount !== undefined && (
-                              <div className="flex justify-between text-[10px] text-muted-foreground pt-1.5 border-t">
-                                <span>ราคาสินค้ารวม: ฿{ex.rawEx.baseAmount.toLocaleString()} · ภาษีรวม: ฿{(ex.rawEx.taxAmount || 0).toLocaleString()}</span>
-                                <span className="font-semibold text-foreground">ยอดรวมทั้งหมด: ฿{ex.amount.toLocaleString()}</span>
+                              <div className="flex justify-between text-[10px] text-muted-foreground pt-1.5 border-t flex-wrap gap-1">
+                                <span>ราคาสินค้ารวม: {isJpy ? '¥' : '฿'}{ex.rawEx.baseAmount.toLocaleString()} · ภาษีรวม: {isJpy ? '¥' : '฿'}{(ex.rawEx.taxAmount || 0).toLocaleString()}</span>
+                                <span className="font-semibold text-foreground">
+                                  ยอดรวมทั้งหมด: {isJpy ? '¥' : '฿'}{ex.amount.toLocaleString()} {isJpy && `(฿${(ex.amount * 0.22).toLocaleString()})`}
+                                </span>
                               </div>
                             )}
                           </div>
@@ -881,6 +904,7 @@ export default function TripDetailPage() {
                       const transfers = calculateExpenseTransfers(ex)
                       if (transfers.length === 0) return null
 
+                      const isJpy = ex.rawTx?.currency === 'JPY' || ex.rawEx?.currency === 'JPY'
                       return (
                         <div key={ex.id || `${ex.description}-${ex.date?.seconds}`} className="rounded-lg border p-4 space-y-3">
                           <div className="flex items-center justify-between border-b pb-2">
@@ -890,7 +914,14 @@ export default function TripDetailPage() {
                                 {ex.isLegacy ? 'Legacy Transaction' : ex.category || 'Expense'} • {ex.date?.seconds ? new Date(ex.date.seconds * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ''}
                               </p>
                             </div>
-                            <span className="text-sm font-bold tabular-nums">฿{ex.amount.toLocaleString()}</span>
+                            <span className="text-sm font-bold tabular-nums text-right">
+                              {isJpy ? '¥' : '฿'}{ex.amount.toLocaleString()}
+                              {isJpy && (
+                                <span className="text-[10px] text-muted-foreground block font-normal">
+                                  (฿{(ex.amount * 0.22).toLocaleString()})
+                                </span>
+                              )}
+                            </span>
                           </div>
                           
                           <div className="space-y-2">
@@ -910,6 +941,11 @@ export default function TripDetailPage() {
                                   <div className="flex items-center gap-3">
                                     <div className="text-right">
                                       <span className="font-semibold tabular-nums block">฿{t.amount.toLocaleString()}</span>
+                                      {isJpy && (
+                                        <span className="text-[9px] text-muted-foreground block">
+                                          (¥{(t.amount / 0.22).toLocaleString()})
+                                        </span>
+                                      )}
                                       {debtState.status === 'partial' && (
                                         <span className="text-[10px] text-muted-foreground block">Paid ฿{debtState.paidAmount.toLocaleString()}</span>
                                       )}

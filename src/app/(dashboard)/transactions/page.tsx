@@ -109,24 +109,30 @@ export default function TransactionsPage() {
 
   // Merge legacy transactions and trip expenses
   const allCombined = React.useMemo(() => {
-    const legacy = transactions.map(tx => ({
-      id: tx.id,
-      description: tx.description,
-      amount: tx.amount,
-      category: tx.category,
-      date: tx.date,
-      paidBy: tx.paidBy || 'Me',
-      isLegacy: true,
-      rawTx: tx,
-      rawEx: null
-    }))
+    const legacy = transactions.map(tx => {
+      const factor = tx.currency === 'JPY' ? 0.22 : 1
+      return {
+        id: tx.id,
+        description: tx.description,
+        amount: tx.amount,
+        amountThb: tx.amount * factor,
+        category: tx.category,
+        date: tx.date,
+        paidBy: tx.paidBy || 'Me',
+        isLegacy: true,
+        rawTx: tx,
+        rawEx: null
+      }
+    })
 
     const newExps = allTripExpenses.map(ex => {
+      const factor = ex.currency === 'JPY' ? 0.22 : 1
       const payersStr = ex.payers.map(p => p.displayName).join(', ')
       return {
         id: ex.id,
         description: ex.description,
         amount: -ex.totalAmount, // Expenses are negative in transaction view
+        amountThb: -ex.totalAmount * factor,
         category: ex.category || 'Other',
         date: ex.date,
         paidBy: payersStr,
@@ -426,8 +432,22 @@ export default function TransactionsPage() {
                       transaction.amount > 0 ? 'text-primary' : 'text-foreground'
                     )}
                   >
-                    {transaction.amount > 0 ? '+' : ''}฿
-                    {Math.abs(transaction.amount).toLocaleString()}
+                    {(() => {
+                      const isJpy = transaction.rawTx?.currency === 'JPY' || transaction.rawEx?.currency === 'JPY'
+                      return (
+                        <>
+                          <span className="block">
+                            {transaction.amount > 0 ? '+' : ''}{isJpy ? '¥' : '฿'}
+                            {Math.abs(transaction.amount).toLocaleString()}
+                          </span>
+                          {isJpy && (
+                            <span className="text-[10px] text-muted-foreground block font-normal">
+                              ({transaction.amount > 0 ? '+' : ''}฿{(Math.abs(transaction.amount) * 0.22).toLocaleString()})
+                            </span>
+                          )}
+                        </>
+                      )
+                    })()}
                   </TableCell>
                   <TableCell>
                     <DropdownMenu>
@@ -478,8 +498,8 @@ export default function TransactionsPage() {
             <div className="text-sm text-muted-foreground">Total Income</div>
             <div className="mt-1 text-2xl font-bold text-primary">
               +฿{allCombined
-                .filter((t) => t.amount > 0)
-                .reduce((sum, t) => sum + t.amount, 0)
+                .filter((t) => t.amountThb > 0)
+                .reduce((sum, t) => sum + t.amountThb, 0)
                 .toLocaleString()}
             </div>
           </CardContent>
@@ -490,8 +510,8 @@ export default function TransactionsPage() {
             <div className="mt-1 text-2xl font-bold text-destructive">
               -฿{Math.abs(
                 allCombined
-                  .filter((t) => t.amount < 0)
-                  .reduce((sum, t) => sum + t.amount, 0)
+                  .filter((t) => t.amountThb < 0)
+                  .reduce((sum, t) => sum + t.amountThb, 0)
               ).toLocaleString()}
             </div>
           </CardContent>
@@ -500,8 +520,8 @@ export default function TransactionsPage() {
           <CardContent className="pt-6">
             <div className="text-sm text-muted-foreground">Net Balance</div>
             <div className="mt-1 text-2xl font-bold">
-              {allCombined.reduce((sum, t) => sum + t.amount, 0) >= 0 ? '+' : ''}฿
-              {allCombined.reduce((sum, t) => sum + t.amount, 0).toLocaleString()}
+              {allCombined.reduce((sum, t) => sum + t.amountThb, 0) >= 0 ? '+' : ''}฿
+              {allCombined.reduce((sum, t) => sum + t.amountThb, 0).toLocaleString()}
             </div>
           </CardContent>
         </Card>
