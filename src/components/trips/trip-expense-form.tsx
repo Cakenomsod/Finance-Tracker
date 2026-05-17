@@ -253,7 +253,7 @@ export function TripExpenseFormV2({
       const payload: any = {
         description,
         totalAmount: total,
-        category: isReceiptActive ? (receiptItems[0]?.category || category) : category,
+        category: category,
         date: Timestamp.fromDate(new Date(date)),
         note: note || undefined,
         splitMode,

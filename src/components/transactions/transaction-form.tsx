@@ -138,7 +138,7 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
       const transactionData: any = {
         amount: finalAmount,
         type: values.type,
-        category: isReceiptActive ? (receiptItems[0]?.category || values.category) : values.category,
+        category: values.category,
         description: values.description,
         date: Timestamp.fromDate(new Date(values.date)),
         paidBy: values.paidBy || 'Me',
