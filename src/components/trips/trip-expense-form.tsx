@@ -46,6 +46,8 @@ export function TripExpenseFormV2({
 }: TripExpenseFormV2Props) {
   const [description, setDescription] = React.useState(initialData?.description || '')
   const [totalAmount, setTotalAmount] = React.useState(initialData ? String(initialData.totalAmount) : '')
+  const [subtotal, setSubtotal] = React.useState(initialData && initialData.items && initialData.items.length === 0 && initialData.baseAmount ? String(initialData.baseAmount) : '')
+  const [tax, setTax] = React.useState(initialData && initialData.items && initialData.items.length === 0 && initialData.taxAmount ? String(initialData.taxAmount) : '')
   const [category, setCategory] = React.useState(initialData?.category || '')
   const [date, setDate] = React.useState(
     initialData?.date?.seconds
@@ -94,23 +96,33 @@ export function TripExpenseFormV2({
   const [submitting, setSubmitting] = React.useState(false)
   const [errors, setErrors] = React.useState<string[]>([])
   const [currency, setCurrency] = React.useState<'THB' | 'JPY'>(initialData?.currency || 'THB')
+  const [receiptTax, setReceiptTax] = React.useState(
+    initialData?.taxAmount 
+      ? String(initialData.taxAmount) 
+      : (initialData?.items?.reduce((sum, item) => sum + (item.tax || 0), 0) || 0) > 0
+        ? String(initialData?.items?.reduce((sum, item) => sum + (item.tax || 0), 0))
+        : ''
+  )
 
   // --- Real-time Receipt calculations ---
   const isReceiptActive = inputMode === 'receipt' && receiptItems.some(item => (parseFloat(item.price) || 0) > 0)
 
-  let totalReceiptAmount = 0
   let totalBaseAmount = 0
-  let totalTaxAmount = 0
+  receiptItems.forEach(item => {
+    totalBaseAmount += parseFloat(item.price) || 0
+  })
+
+  let totalTaxAmount = parseFloat(receiptTax) || 0
+  let totalReceiptAmount = totalBaseAmount + totalTaxAmount
+
   const itemShares: Record<string, number> = {}
   tripMembers.forEach(m => { itemShares[m.key] = 0 })
 
   receiptItems.forEach(item => {
     const p = parseFloat(item.price) || 0
-    const t = parseFloat(item.tax) || 0
+    // Distribute tax proportionally to this item's price relative to totalBaseAmount
+    const t = totalBaseAmount > 0 ? (p / totalBaseAmount) * totalTaxAmount : 0
     const itemTotal = p + t
-    totalBaseAmount += p
-    totalTaxAmount += t
-    totalReceiptAmount += itemTotal
 
     if (itemTotal > 0 && item.splitWith.length > 0) {
       const share = itemTotal / item.splitWith.length
@@ -229,15 +241,22 @@ export function TripExpenseFormV2({
       }
 
       if (isReceiptActive) {
-        payload.items = receiptItems.map(item => ({
-          name: item.name || 'Item',
-          category: item.category,
-          price: parseFloat(item.price) || 0,
-          tax: parseFloat(item.tax) || 0,
-          splitWith: item.splitWith,
-        }))
+        payload.items = receiptItems.map(item => {
+          const p = parseFloat(item.price) || 0
+          const t = totalBaseAmount > 0 ? (p / totalBaseAmount) * totalTaxAmount : 0
+          return {
+            name: item.name || 'Item',
+            category: item.category,
+            price: p,
+            tax: parseFloat(t.toFixed(2)),
+            splitWith: item.splitWith,
+          }
+        })
         payload.baseAmount = totalBaseAmount
         payload.taxAmount = totalTaxAmount
+      } else {
+        payload.baseAmount = parseFloat(subtotal) || total || 0
+        payload.taxAmount = parseFloat(tax) || 0
       }
 
       await onSubmit(payload)
@@ -309,15 +328,70 @@ export function TripExpenseFormV2({
       </div>
 
       {/* Amount + Category + Date */}
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-1.5">
-          <Label>ยอดรวม ({currency === 'THB' ? '฿' : '¥'})</Label>
-          <Input type="number" step="0.01" placeholder="0.00"
-            disabled={isReceiptActive}
-            value={isReceiptActive ? totalReceiptAmount.toFixed(2) : totalAmount} 
-            onChange={e => setTotalAmount(e.target.value)} />
+      {inputMode === 'standard' && (
+        <div className="grid grid-cols-3 gap-3 border p-3 rounded-lg bg-muted/20">
+          <div className="space-y-1.5">
+            <Label className="text-xs">ราคาสินค้า ({currency === 'THB' ? '฿' : '¥'})</Label>
+            <Input 
+              type="number" 
+              step="0.01" 
+              placeholder="0.00"
+              value={subtotal}
+              onChange={e => {
+                const val = e.target.value
+                setSubtotal(val)
+                const sub = parseFloat(val) || 0
+                const tx = parseFloat(tax) || 0
+                setTotalAmount(sub > 0 || tx > 0 ? (sub + tx).toString() : '')
+              }}
+              className="h-9 text-xs"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">ภาษี ({currency === 'THB' ? '฿' : '¥'})</Label>
+            <Input 
+              type="number" 
+              step="0.01" 
+              placeholder="0.00"
+              value={tax}
+              onChange={e => {
+                const val = e.target.value
+                setTax(val)
+                const sub = parseFloat(subtotal) || 0
+                const tx = parseFloat(val) || 0
+                setTotalAmount(sub > 0 || tx > 0 ? (sub + tx).toString() : '')
+              }}
+              className="h-9 text-xs"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs font-semibold text-primary">ยอดรวม ({currency === 'THB' ? '฿' : '¥'})</Label>
+            <Input 
+              type="number" 
+              step="0.01" 
+              placeholder="0.00"
+              value={totalAmount}
+              onChange={e => {
+                setTotalAmount(e.target.value)
+                setSubtotal('')
+                setTax('')
+              }}
+              className="h-9 text-xs font-semibold border-primary/40 focus-visible:ring-primary"
+            />
+          </div>
         </div>
-        <div className="space-y-1.5">
+      )}
+
+      <div className="grid grid-cols-2 gap-3">
+        {inputMode === 'receipt' && (
+          <div className="space-y-1.5">
+            <Label>ยอดรวม ({currency === 'THB' ? '฿' : '¥'})</Label>
+            <Input type="number" step="0.01" placeholder="0.00"
+              disabled={true}
+              value={totalReceiptAmount.toFixed(2)} />
+          </div>
+        )}
+        <div className={cn("space-y-1.5", inputMode === 'standard' && "col-span-2")}>
           <Label>หมวดหมู่</Label>
           <Select value={category} onValueChange={setCategory}>
             <SelectTrigger><SelectValue placeholder="เลือก..." /></SelectTrigger>
@@ -334,7 +408,7 @@ export function TripExpenseFormV2({
 
       {/* Receipt Items (Only in Receipt Mode) */}
       {inputMode === 'receipt' && (
-        <div className="space-y-3 border rounded-lg p-3 bg-muted/20 overflow-hidden">
+        <div className="space-y-4 border rounded-lg p-3 bg-muted/20 overflow-hidden">
           <div className="flex items-center justify-between">
             <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Receipt Items</h4>
             <Button
@@ -349,125 +423,163 @@ export function TripExpenseFormV2({
           </div>
 
           <div className="space-y-3">
-            {receiptItems.map((item, idx) => (
-              <div key={idx} className="border-b pb-3 last:border-b-0 last:pb-0 pt-2">
-                <div className="flex items-center gap-2 w-full overflow-hidden">
-                  {/* Name Input - Premium Sizing */}
-                  <Input
-                    placeholder="Product Name"
-                    className="flex-grow min-w-[120px] h-9 text-xs shrink"
-                    value={item.name}
-                    onChange={e => {
-                      const next = [...receiptItems]
-                      next[idx].name = e.target.value
-                      setReceiptItems(next)
-                    }}
-                  />
-                  
-                  {/* Category Selector */}
-                  <Select
-                    value={item.category}
-                    onValueChange={val => {
-                      const next = [...receiptItems]
-                      next[idx].category = val
-                      setReceiptItems(next)
-                    }}
-                  >
-                    <SelectTrigger className="w-24 sm:w-28 h-9 text-xs shrink-0">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {categories.map(c => <SelectItem key={c} value={c} className="text-xs">{c}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
+            {receiptItems.map((item, idx) => {
+              const p = parseFloat(item.price) || 0
+              const t = totalBaseAmount > 0 ? (p / totalBaseAmount) * totalTaxAmount : 0
+              const itemTotal = p + t
 
-                  {/* Price Input */}
-                  <div className="relative w-20 shrink-0">
-                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">
-                      {currency === 'THB' ? '฿' : '¥'}
-                    </span>
+              return (
+                <div key={idx} className="border-b pb-3 last:border-b-0 last:pb-0 pt-2">
+                  <div className="flex items-center gap-2 w-full overflow-hidden">
+                    {/* Name Input - Premium Sizing */}
                     <Input
-                      type="number"
-                      placeholder="Price"
-                      className="pl-6 pr-1 h-9 text-xs"
-                      value={item.price}
+                      placeholder="Product Name"
+                      className="flex-grow min-w-[120px] h-9 text-xs shrink"
+                      value={item.name}
                       onChange={e => {
                         const next = [...receiptItems]
-                        next[idx].price = e.target.value
+                        next[idx].name = e.target.value
                         setReceiptItems(next)
                       }}
                     />
-                  </div>
 
-                  {/* Tax Input */}
-                  <div className="relative w-16 shrink-0">
-                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground text-[10px]">Tax</span>
-                    <Input
-                      type="number"
-                      placeholder="0"
-                      className="pl-8 pr-1 h-9 text-xs"
-                      value={item.tax}
-                      onChange={e => {
+                    {/* Category Selector */}
+                    <Select
+                      value={item.category}
+                      onValueChange={val => {
                         const next = [...receiptItems]
-                        next[idx].tax = e.target.value
+                        next[idx].category = val
                         setReceiptItems(next)
                       }}
-                    />
-                  </div>
-
-                  {/* Calculated Total */}
-                  <span className="text-xs font-semibold text-muted-foreground tabular-nums shrink-0">
-                    ={currency === 'THB' ? '฿' : '¥'}{((parseFloat(item.price) || 0) + (parseFloat(item.tax) || 0)).toLocaleString()}
-                  </span>
-
-                  {/* Split buttons */}
-                  <div className="flex items-center gap-0.5 shrink-0 flex-wrap">
-                    {tripMembers.map(m => {
-                      const included = item.splitWith.includes(m.key)
-                      const initials = m.displayName.split(' ').map((w) => w[0]).join('').toUpperCase().substring(0, 2)
-                      return (
-                        <button
-                          key={m.key}
-                          type="button"
-                          title={m.displayName}
-                          onClick={() => {
-                            const next = [...receiptItems]
-                            const currentSplit = next[idx].splitWith
-                            if (currentSplit.includes(m.key)) {
-                              next[idx].splitWith = currentSplit.filter(k => k !== m.key)
-                            } else {
-                              next[idx].splitWith = [...currentSplit, m.key]
-                            }
-                            setReceiptItems(next)
-                          }}
-                          className={cn(
-                            "size-6 rounded-full text-[9px] font-bold border transition-all shrink-0 flex items-center justify-center",
-                            included 
-                              ? "bg-primary text-primary-foreground border-primary" 
-                              : "bg-background text-muted-foreground border-muted-foreground/30 hover:bg-muted"
-                          )}
-                        >
-                          {initials}
-                        </button>
-                      )
-                    })}
-                  </div>
-
-                  {/* Delete Product Button */}
-                  {receiptItems.length > 1 && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="size-8 shrink-0 hover:bg-destructive/10 hover:text-destructive"
-                      onClick={() => setReceiptItems(receiptItems.filter((_, i) => i !== idx))}
                     >
-                      <Minus className="size-4" />
-                    </Button>
-                  )}
+                      <SelectTrigger className="w-24 sm:w-28 h-9 text-xs shrink-0">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {categories.map(c => <SelectItem key={c} value={c} className="text-xs">{c}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+
+                    {/* Price Input */}
+                    <div className="relative w-24 shrink-0">
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">
+                        {currency === 'THB' ? '฿' : '¥'}
+                      </span>
+                      <Input
+                        type="number"
+                        placeholder="Price"
+                        className="pl-6 pr-1 h-9 text-xs font-medium"
+                        value={item.price}
+                        onChange={e => {
+                          const next = [...receiptItems]
+                          next[idx].price = e.target.value
+                          setReceiptItems(next)
+                        }}
+                      />
+                    </div>
+
+                    {/* Calculated Total (Price + Proportional Tax) */}
+                    <span className="text-xs font-semibold text-muted-foreground tabular-nums shrink-0 min-w-[60px] text-right">
+                      ={currency === 'THB' ? '฿' : '¥'}{itemTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+
+                    {/* Split buttons */}
+                    <div className="flex items-center gap-0.5 shrink-0 flex-wrap">
+                      {tripMembers.map(m => {
+                        const included = item.splitWith.includes(m.key)
+                        const initials = m.displayName.split(' ').map((w) => w[0]).join('').toUpperCase().substring(0, 2)
+                        return (
+                          <button
+                            key={m.key}
+                            type="button"
+                            title={m.displayName}
+                            onClick={() => {
+                              const next = [...receiptItems]
+                              const currentSplit = next[idx].splitWith
+                              if (currentSplit.includes(m.key)) {
+                                next[idx].splitWith = currentSplit.filter(k => k !== m.key)
+                              } else {
+                                next[idx].splitWith = [...currentSplit, m.key]
+                              }
+                              setReceiptItems(next)
+                            }}
+                            className={cn(
+                              "size-6 rounded-full text-[9px] font-bold border transition-all shrink-0 flex items-center justify-center",
+                              included
+                                ? "bg-primary text-primary-foreground border-primary"
+                                : "bg-background text-muted-foreground border-muted-foreground/30 hover:bg-muted"
+                            )}
+                          >
+                            {initials}
+                          </button>
+                        )
+                      })}
+                    </div>
+
+                    {/* Delete Product Button */}
+                    {receiptItems.length > 1 && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="size-8 shrink-0 hover:bg-destructive/10 hover:text-destructive"
+                        onClick={() => setReceiptItems(receiptItems.filter((_, i) => i !== idx))}
+                      >
+                        <Minus className="size-4" />
+                      </Button>
+                    )}
+                  </div>
                 </div>
+              )
+            })}
+          </div>
+
+          {/* Receipt Level Summary & Tax Breakdown */}
+          <div className="grid grid-cols-3 gap-3 border-t pt-4 mt-2">
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">ราคาสินค้ารวม (Subtotal)</Label>
+              <div className="relative">
+                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">
+                  {currency === 'THB' ? '฿' : '¥'}
+                </span>
+                <Input
+                  type="number"
+                  disabled
+                  className="pl-6 h-9 text-xs bg-muted/50 font-medium tabular-nums"
+                  value={totalBaseAmount.toFixed(2)}
+                />
               </div>
-            ))}
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground font-semibold text-primary">ภาษีรวมทั้งใบเสร็จ (Tax)</Label>
+              <div className="relative">
+                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">
+                  {currency === 'THB' ? '฿' : '¥'}
+                </span>
+                <Input
+                  type="number"
+                  step="0.01"
+                  placeholder="0.00"
+                  className="pl-6 h-9 text-xs font-semibold border-primary/40 focus-visible:ring-primary"
+                  value={receiptTax}
+                  onChange={e => setReceiptTax(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground font-bold text-foreground">ยอดรวมสุทธิ (Total)</Label>
+              <div className="relative">
+                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">
+                  {currency === 'THB' ? '฿' : '¥'}
+                </span>
+                <Input
+                  type="number"
+                  disabled
+                  className="pl-6 h-9 text-xs bg-muted/30 font-bold tabular-nums text-foreground border-muted-foreground/30"
+                  value={totalReceiptAmount.toFixed(2)}
+                />
+              </div>
+            </div>
           </div>
         </div>
       )}

@@ -70,7 +70,7 @@ export default function TripDetailPage() {
   const tripTxs = transactions.filter((tx) => tx.tripId === tripId)
   // Record Payment Dialog state
   const [isRecordPaymentOpen, setIsRecordPaymentOpen] = React.useState(false)
-  const [recordPaymentData, setRecordPaymentData] = React.useState<{from: string, to: string, amount: number} | null>(null)
+  const [recordPaymentData, setRecordPaymentData] = React.useState<{ from: string, to: string, amount: number } | null>(null)
   const [settlementAmount, setSettlementAmount] = React.useState<string>('')
 
   const loading = tripsLoading || txLoading
@@ -112,7 +112,7 @@ export default function TripDetailPage() {
       if (involved.length === 0) return []
 
       const share = amount / involved.length
-      
+
       net[payer] += amount - share
       involved.forEach(m => {
         if (m !== payer) net[m] -= share
@@ -221,20 +221,20 @@ export default function TripDetailPage() {
     return members.map((member) => {
       const legacyPaid = paid[member] || 0
       const legacyNet = net[member] || 0
-      
+
       const newBal = newBalances.find(b => b.userId === member)
       const newPaid = newBal?.totalPaid || 0
       const newNet = newBal?.netBalance || 0
-      
+
       const settlementNet = settlementsNet[member] || 0
 
       const initials = getDisplayName(member).split(' ').map((w) => w[0]).join('').toUpperCase().substring(0, 2)
-      
-      return { 
+
+      return {
         name: member, // keep key as 'name' for backward compatibility
         displayName: getDisplayName(member),
-        initials, 
-        paid: legacyPaid + newPaid, 
+        initials,
+        paid: legacyPaid + newPaid,
         netBalance: Math.round(legacyNet + newNet + settlementNet)
       }
     })
@@ -305,7 +305,7 @@ export default function TripDetailPage() {
       transfers.forEach(t => {
         const key = `${t.from}-${t.to}`
         const available = pool[t.from]?.[t.to] || 0
-        
+
         if (available >= t.amount) {
           exStates[key] = {
             status: 'paid',
@@ -339,10 +339,10 @@ export default function TripDetailPage() {
     const matchSearch = !expenseSearch ||
       ex.description?.toLowerCase().includes(expenseSearch.toLowerCase()) ||
       ex.category?.toLowerCase().includes(expenseSearch.toLowerCase())
-    
-    const matchPaidBy = expenseFilterPaidBy === 'all' || 
+
+    const matchPaidBy = expenseFilterPaidBy === 'all' ||
       (ex.isLegacy ? ex.paidBy === expenseFilterPaidBy : ex.paidBy.includes(getDisplayName(expenseFilterPaidBy)))
-      
+
     return matchSearch && matchPaidBy
   })
 
@@ -635,7 +635,7 @@ export default function TripDetailPage() {
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
-                                <DropdownMenuItem onClick={() => { 
+                                <DropdownMenuItem onClick={() => {
                                   if (ex.isLegacy) {
                                     alert('Legacy transactions cannot be edited directly. Please delete and create a new expense.')
                                   } else {
@@ -801,7 +801,7 @@ export default function TripDetailPage() {
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
-              {participants.map((p) => {
+                {participants.map((p) => {
                   const balance = p.netBalance
                   return (
                     <div key={p.name} className="flex items-center justify-between rounded-lg border p-4">
@@ -867,8 +867,8 @@ export default function TripDetailPage() {
                           <div className="flex items-center gap-4">
                             <span className="text-lg font-bold tabular-nums">฿{s.amount.toLocaleString()}</span>
                             {trip.status === 'active' && (
-                              <Button 
-                                size="sm" 
+                              <Button
+                                size="sm"
                                 variant="outline"
                                 onClick={() => {
                                   setRecordPaymentData(s)
@@ -923,7 +923,7 @@ export default function TripDetailPage() {
                               )}
                             </span>
                           </div>
-                          
+
                           <div className="space-y-2">
                             {transfers.map((t, index) => {
                               const fromName = getDisplayName(t.from)
@@ -976,7 +976,7 @@ export default function TripDetailPage() {
                         </div>
                       )
                     })}
-                    
+
                     {allExpensesCombined.every(ex => calculateExpenseTransfers(ex).length === 0) && (
                       <div className="py-8 text-center text-muted-foreground">
                         No active itemized debts for the current expenses! 🎉
@@ -1160,16 +1160,16 @@ export default function TripDetailPage() {
                 <Label>Amount to Settle (฿)</Label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">฿</span>
-                  <Input 
-                    type="number" 
-                    step="0.01" 
+                  <Input
+                    type="number"
+                    step="0.01"
                     className="pl-8 text-lg font-bold"
                     value={settlementAmount}
                     onChange={(e) => setSettlementAmount(e.target.value)}
                   />
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Total owed: ฿{recordPaymentData.amount.toLocaleString()}. 
+                  Total owed: ฿{recordPaymentData.amount.toLocaleString()}.
                   You can pay a smaller amount for partial settlement.
                 </p>
               </div>

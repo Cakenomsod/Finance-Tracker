@@ -22,6 +22,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
+import { Label } from '@/components/ui/label'
 import { Transaction } from '@/lib/firestore-types'
 import { Timestamp } from 'firebase/firestore'
 import { useTrips } from '@/hooks/use-trips'
@@ -76,6 +77,16 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
     ? new Date(initialData.date.seconds * 1000).toISOString().split('T')[0]
     : new Date().toISOString().split('T')[0];
 
+  const [subtotal, setSubtotal] = React.useState(initialData && initialData.items && initialData.items.length === 0 && initialData.baseAmount ? String(initialData.baseAmount) : '')
+  const [tax, setTax] = React.useState(initialData && initialData.items && initialData.items.length === 0 && initialData.taxAmount ? String(initialData.taxAmount) : '')
+  const [receiptTax, setReceiptTax] = React.useState(
+    initialData?.taxAmount 
+      ? String(initialData.taxAmount) 
+      : (initialData?.items?.reduce((sum, item) => sum + (item.tax || 0), 0) || 0) > 0
+        ? String(initialData?.items?.reduce((sum, item) => sum + (item.tax || 0), 0))
+        : ''
+  )
+
   const form = useForm<TransactionFormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -92,18 +103,14 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
 
   const isReceiptActive = inputMode === 'receipt' && receiptItems.some(item => (parseFloat(item.price) || 0) > 0)
   
-  let calculatedTotal = 0
   let totalBase = 0
-  let totalTax = 0
   if (isReceiptActive) {
     receiptItems.forEach(item => {
-      const p = parseFloat(item.price) || 0
-      const t = parseFloat(item.tax) || 0
-      totalBase += p
-      totalTax += t
-      calculatedTotal += (p + t)
+      totalBase += parseFloat(item.price) || 0
     })
   }
+  let totalTax = isReceiptActive ? (parseFloat(receiptTax) || 0) : 0
+  let calculatedTotal = totalBase + totalTax
 
   const handleSubmit = async (values: TransactionFormValues) => {
     setIsSubmitting(true)
@@ -132,15 +139,22 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
       }
 
       if (isReceiptActive) {
-        transactionData.items = receiptItems.map(item => ({
-          name: item.name || 'Item',
-          category: item.category,
-          price: parseFloat(item.price) || 0,
-          tax: parseFloat(item.tax) || 0,
-          splitWith: []
-        }))
+        transactionData.items = receiptItems.map(item => {
+          const p = parseFloat(item.price) || 0
+          const t = totalBase > 0 ? (p / totalBase) * totalTax : 0
+          return {
+            name: item.name || 'Item',
+            category: item.category,
+            price: p,
+            tax: parseFloat(t.toFixed(2)),
+            splitWith: []
+          }
+        })
         transactionData.baseAmount = totalBase
         transactionData.taxAmount = totalTax
+      } else {
+        transactionData.baseAmount = parseFloat(subtotal) || rawAmount || 0
+        transactionData.taxAmount = parseFloat(tax) || 0
       }
 
       await onSubmit(transactionData)
@@ -249,33 +263,103 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
           )}
         />
 
+        {/* If inputMode is standard, show separate Price and Tax next to Total! */}
+        {inputMode === 'standard' && (
+          <div className="grid grid-cols-3 gap-3 border p-3 rounded-lg bg-muted/20">
+            <div className="space-y-1.5">
+              <Label className="text-xs">ราคาสินค้า ({currency === 'THB' ? '฿' : '¥'})</Label>
+              <Input 
+                type="number" 
+                step="0.01" 
+                placeholder="0.00"
+                value={subtotal}
+                onChange={e => {
+                  const val = e.target.value
+                  setSubtotal(val)
+                  const sub = parseFloat(val) || 0
+                  const tx = parseFloat(tax) || 0
+                  const nextAmount = sub > 0 || tx > 0 ? (sub + tx).toString() : ''
+                  form.setValue('amount', nextAmount)
+                }}
+                className="h-9 text-xs"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">ภาษี ({currency === 'THB' ? '฿' : '¥'})</Label>
+              <Input 
+                type="number" 
+                step="0.01" 
+                placeholder="0.00"
+                value={tax}
+                onChange={e => {
+                  const val = e.target.value
+                  setTax(val)
+                  const sub = parseFloat(subtotal) || 0
+                  const tx = parseFloat(val) || 0
+                  const nextAmount = sub > 0 || tx > 0 ? (sub + tx).toString() : ''
+                  form.setValue('amount', nextAmount)
+                }}
+                className="h-9 text-xs"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-primary">ยอดรวม ({currency === 'THB' ? '฿' : '¥'})</Label>
+              <FormField
+                control={form.control}
+                name="amount"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormControl>
+                      <Input 
+                        type="number" 
+                        step="0.01" 
+                        placeholder="0.00" 
+                        value={field.value}
+                        onChange={e => {
+                          field.onChange(e)
+                          setSubtotal('')
+                          setTax('')
+                        }}
+                        className="h-9 text-xs font-semibold border-primary/40 focus-visible:ring-primary"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-2 gap-4">
-          <FormField
-            control={form.control}
-            name="amount"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Amount ({currency === 'THB' ? '฿' : '¥'})</FormLabel>
-                <FormControl>
-                  <Input 
-                    type="number" 
-                    step="0.01" 
-                    placeholder="0.00" 
-                    disabled={isReceiptActive}
-                    value={isReceiptActive ? calculatedTotal.toFixed(2) : field.value}
-                    onChange={field.onChange} 
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
+          {inputMode === 'receipt' && (
+            <FormField
+              control={form.control}
+              name="amount"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Amount ({currency === 'THB' ? '฿' : '¥'})</FormLabel>
+                  <FormControl>
+                    <Input 
+                      type="number" 
+                      step="0.01" 
+                      placeholder="0.00" 
+                      disabled={true}
+                      value={calculatedTotal.toFixed(2)}
+                      onChange={field.onChange} 
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          )}
 
           <FormField
             control={form.control}
             name="category"
             render={({ field }) => (
-              <FormItem>
+              <FormItem className={cn(inputMode === 'standard' && "col-span-2")}>
                 <FormLabel>Category</FormLabel>
                 <Select onValueChange={field.onChange} defaultValue={field.value}>
                   <FormControl>
@@ -369,7 +453,7 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
 
         {/* Receipt Items (Only in Receipt Mode) */}
         {inputMode === 'receipt' && (
-          <div className="space-y-3 border rounded-lg p-3 bg-muted/20 overflow-hidden">
+          <div className="space-y-4 border rounded-lg p-3 bg-muted/20 overflow-hidden">
             <div className="flex items-center justify-between">
               <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Receipt Items</h4>
               <Button
@@ -384,92 +468,130 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
             </div>
 
             <div className="space-y-3">
-              {receiptItems.map((item, idx) => (
-                <div key={idx} className="border-b pb-3 last:border-b-0 last:pb-0 pt-2">
-                  <div className="flex items-center gap-2 w-full overflow-hidden">
-                    {/* Name Input - Premium Sizing */}
-                    <Input
-                      placeholder="Product Name"
-                      className="flex-grow min-w-[120px] h-9 text-xs shrink"
-                      value={item.name}
-                      onChange={e => {
-                        const next = [...receiptItems]
-                        next[idx].name = e.target.value
-                        setReceiptItems(next)
-                      }}
-                    />
-                    
-                    {/* Category Selector */}
-                    <Select
-                      value={item.category}
-                      onValueChange={val => {
-                        const next = [...receiptItems]
-                        next[idx].category = val
-                        setReceiptItems(next)
-                      }}
-                    >
-                      <SelectTrigger className="w-24 sm:w-28 h-9 text-xs shrink-0">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {categories.map(c => <SelectItem key={c} value={c} className="text-xs">{c}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
+              {receiptItems.map((item, idx) => {
+                const p = parseFloat(item.price) || 0
+                const t = totalBase > 0 ? (p / totalBase) * totalTax : 0
+                const itemTotal = p + t
 
-                    {/* Price Input */}
-                    <div className="relative w-20 shrink-0">
-                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">
-                        {currency === 'THB' ? '฿' : '¥'}
-                      </span>
+                return (
+                  <div key={idx} className="border-b pb-3 last:border-b-0 last:pb-0 pt-2">
+                    <div className="flex items-center gap-2 w-full overflow-hidden">
+                      {/* Name Input - Premium Sizing */}
                       <Input
-                        type="number"
-                        placeholder="Price"
-                        className="pl-6 pr-1 h-9 text-xs"
-                        value={item.price}
+                        placeholder="Product Name"
+                        className="flex-grow min-w-[120px] h-9 text-xs shrink"
+                        value={item.name}
                         onChange={e => {
                           const next = [...receiptItems]
-                          next[idx].price = e.target.value
+                          next[idx].name = e.target.value
                           setReceiptItems(next)
                         }}
                       />
-                    </div>
-
-                    {/* Tax Input */}
-                    <div className="relative w-16 shrink-0">
-                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground text-[10px]">Tax</span>
-                      <Input
-                        type="number"
-                        placeholder="0"
-                        className="pl-8 pr-1 h-9 text-xs"
-                        value={item.tax}
-                        onChange={e => {
+                      
+                      {/* Category Selector */}
+                      <Select
+                        value={item.category}
+                        onValueChange={val => {
                           const next = [...receiptItems]
-                          next[idx].tax = e.target.value
+                          next[idx].category = val
                           setReceiptItems(next)
                         }}
-                      />
-                    </div>
-
-                    {/* Calculated Total */}
-                    <span className="text-xs font-semibold text-muted-foreground tabular-nums shrink-0">
-                      ={currency === 'THB' ? '฿' : '¥'}{((parseFloat(item.price) || 0) + (parseFloat(item.tax) || 0)).toLocaleString()}
-                    </span>
-
-                    {/* Delete Product Button */}
-                    {receiptItems.length > 1 && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="size-8 shrink-0 hover:bg-destructive/10 hover:text-destructive"
-                        onClick={() => setReceiptItems(receiptItems.filter((_, i) => i !== idx))}
                       >
-                        <Minus className="size-4" />
-                      </Button>
-                    )}
+                        <SelectTrigger className="w-24 sm:w-28 h-9 text-xs shrink-0">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {categories.map(c => <SelectItem key={c} value={c} className="text-xs">{c}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+
+                      {/* Price Input */}
+                      <div className="relative w-24 shrink-0">
+                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">
+                          {currency === 'THB' ? '฿' : '¥'}
+                        </span>
+                        <Input
+                          type="number"
+                          placeholder="Price"
+                          className="pl-6 pr-1 h-9 text-xs font-medium"
+                          value={item.price}
+                          onChange={e => {
+                            const next = [...receiptItems]
+                            next[idx].price = e.target.value
+                            setReceiptItems(next)
+                          }}
+                        />
+                      </div>
+
+                      {/* Calculated Total (Price + Proportional Tax) */}
+                      <span className="text-xs font-semibold text-muted-foreground tabular-nums shrink-0 min-w-[60px] text-right">
+                        ={currency === 'THB' ? '฿' : '¥'}{itemTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+
+                      {/* Delete Product Button */}
+                      {receiptItems.length > 1 && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="size-8 shrink-0 hover:bg-destructive/10 hover:text-destructive"
+                          onClick={() => setReceiptItems(receiptItems.filter((_, i) => i !== idx))}
+                        >
+                          <Minus className="size-4" />
+                        </Button>
+                      )}
+                    </div>
                   </div>
+                )
+              })}
+            </div>
+
+            {/* Receipt Level Summary & Tax Breakdown */}
+            <div className="grid grid-cols-3 gap-3 border-t pt-4 mt-2">
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">ราคาสินค้ารวม (Subtotal)</Label>
+                <div className="relative">
+                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">
+                    {currency === 'THB' ? '฿' : '¥'}
+                  </span>
+                  <Input
+                    type="number"
+                    disabled
+                    className="pl-6 h-9 text-xs bg-muted/50 font-medium tabular-nums"
+                    value={totalBase.toFixed(2)}
+                  />
                 </div>
-              ))}
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground font-semibold text-primary">ภาษีรวมทั้งใบเสร็จ (Tax)</Label>
+                <div className="relative">
+                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">
+                    {currency === 'THB' ? '฿' : '¥'}
+                  </span>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    placeholder="0.00"
+                    className="pl-6 h-9 text-xs font-semibold border-primary/40 focus-visible:ring-primary"
+                    value={receiptTax}
+                    onChange={e => setReceiptTax(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground font-bold text-foreground">ยอดรวมสุทธิ (Total)</Label>
+                <div className="relative">
+                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">
+                    {currency === 'THB' ? '฿' : '¥'}
+                  </span>
+                  <Input
+                    type="number"
+                    disabled
+                    className="pl-6 h-9 text-xs bg-muted/30 font-bold tabular-nums text-foreground border-muted-foreground/30"
+                    value={calculatedTotal.toFixed(2)}
+                  />
+                </div>
+              </div>
             </div>
           </div>
         )}
