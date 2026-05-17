@@ -95,11 +95,13 @@ export const closeTrip = async (id: string) => {
 // --- Trip Expenses ---
 
 export const createTripExpense = async (data: Omit<TripExpense, 'id' | 'createdAt'>) => {
-  return await addDoc(tripExpensesRef, { ...data, createdAt: serverTimestamp() });
+  const cleanData = Object.fromEntries(Object.entries(data).filter(([_, v]) => v !== undefined));
+  return await addDoc(tripExpensesRef, { ...cleanData, createdAt: serverTimestamp() });
 };
 
 export const updateTripExpense = async (id: string, data: Partial<Omit<TripExpense, 'id' | 'createdAt'>>) => {
-  return await updateDoc(doc(db, 'trip_expenses', id), data);
+  const cleanData = Object.fromEntries(Object.entries(data).filter(([_, v]) => v !== undefined));
+  return await updateDoc(doc(db, 'trip_expenses', id), cleanData);
 };
 
 export const deleteTripExpense = async (id: string) => {
@@ -109,7 +111,8 @@ export const deleteTripExpense = async (id: string) => {
 // --- Trip Settlements ---
 
 export const createTripSettlement = async (data: Omit<TripSettlement, 'id' | 'createdAt'>) => {
-  return await addDoc(tripSettlementsRef, { ...data, createdAt: serverTimestamp() });
+  const cleanData = Object.fromEntries(Object.entries(data).filter(([_, v]) => v !== undefined));
+  return await addDoc(tripSettlementsRef, { ...cleanData, createdAt: serverTimestamp() });
 };
 
 export const deleteTripSettlement = async (id: string) => {

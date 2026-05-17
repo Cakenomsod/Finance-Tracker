@@ -23,14 +23,18 @@ export function useTripExpenses(tripId: string) {
 
     const q = query(
       collection(db, 'trip_expenses'),
-      where('tripId', '==', tripId),
-      orderBy('date', 'desc')
+      where('tripId', '==', tripId)
     );
 
     const unsub = onSnapshot(q, (snap) => {
-      setExpenses(snap.docs.map(d => ({ id: d.id, ...d.data() } as TripExpense)));
+      const docs = snap.docs.map(d => ({ id: d.id, ...d.data() } as TripExpense));
+      docs.sort((a, b) => b.date.toMillis() - a.date.toMillis());
+      setExpenses(docs);
       setLoading(false);
-    }, () => setLoading(false));
+    }, (err) => {
+      console.error("Error fetching trip expenses:", err);
+      setLoading(false);
+    });
 
     return () => unsub();
   }, [tripId]);

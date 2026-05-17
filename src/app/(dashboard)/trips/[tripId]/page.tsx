@@ -163,6 +163,57 @@ export default function TripDetailPage() {
     })
   }, [tripTxs, members, calcBalances, paymentHistory])
 
+  const allExpensesCombined = React.useMemo(() => {
+    const legacy = tripTxs.map(tx => ({
+      id: tx.id,
+      description: tx.description,
+      amount: Math.abs(tx.amount),
+      category: tx.category,
+      date: tx.date,
+      paidBy: tx.paidBy,
+      splitLabel: !tx.splitWith ? '🙋 Solo' : tx.splitWith === 'all' ? '👥 All' : `🤝 ${tx.splitWith}`,
+      isLegacy: true,
+      rawTx: tx,
+      rawEx: null
+    }))
+
+    const newExps = tripExpenses.map(ex => {
+      const payersStr = ex.payers.map(p => p.displayName).join(', ')
+      const splitLabel = ex.splitMode === 'solo' ? '🙋 Solo' : ex.splitMode === 'equal' ? '⚖️ Equal' : '✏️ Custom'
+      return {
+        id: ex.id,
+        description: ex.description,
+        amount: ex.totalAmount,
+        category: ex.category,
+        date: ex.date,
+        paidBy: payersStr,
+        splitLabel,
+        isLegacy: false,
+        rawTx: null,
+        rawEx: ex
+      }
+    })
+
+    const combined = [...legacy, ...newExps]
+    combined.sort((a, b) => {
+      const dateA = a.date?.seconds || 0
+      const dateB = b.date?.seconds || 0
+      return dateB - dateA
+    })
+    return combined
+  }, [tripTxs, tripExpenses])
+
+  const filteredExpenses = allExpensesCombined.filter((ex) => {
+    const matchSearch = !expenseSearch ||
+      ex.description?.toLowerCase().includes(expenseSearch.toLowerCase()) ||
+      ex.category?.toLowerCase().includes(expenseSearch.toLowerCase())
+    
+    const matchPaidBy = expenseFilterPaidBy === 'all' || 
+      (ex.isLegacy ? ex.paidBy === expenseFilterPaidBy : ex.paidBy.includes(getDisplayName(expenseFilterPaidBy)))
+      
+    return matchSearch && matchPaidBy
+  })
+
   // Settlements — greedy min-transfer algorithm
   const settlements = React.useMemo(() => {
     const result: { from: string; to: string; amount: number }[] = []
@@ -184,14 +235,14 @@ export default function TripDetailPage() {
   // Category breakdown for this trip
   const categoryData = React.useMemo(() => {
     const catMap = new Map<string, number>()
-    tripTxs.filter((tx) => tx.amount < 0).forEach((tx) => {
-      const cat = tx.category || 'Others'
-      catMap.set(cat, (catMap.get(cat) || 0) + Math.abs(tx.amount))
+    allExpensesCombined.forEach((ex) => {
+      const cat = ex.category || 'Others'
+      catMap.set(cat, (catMap.get(cat) || 0) + Math.abs(ex.amount))
     })
     return Array.from(catMap.entries())
       .map(([name, value]) => ({ name, value: Math.round(value) }))
       .sort((a, b) => b.value - a.value)
-  }, [tripTxs])
+  }, [allExpensesCombined])
 
   // Per-person bar chart data
   const perPersonData = participants.map((p) => ({
@@ -202,15 +253,6 @@ export default function TripDetailPage() {
 
   const meParticipant = participants.find((p) => p.name === user?.uid || p.name.toLowerCase() === 'me')
   const myBalance = meParticipant ? meParticipant.netBalance : 0
-
-  // Filtered expenses for the Expenses tab
-  const filteredTripTxs = tripTxs.filter((tx) => {
-    const matchSearch = !expenseSearch ||
-      tx.description?.toLowerCase().includes(expenseSearch.toLowerCase()) ||
-      tx.category?.toLowerCase().includes(expenseSearch.toLowerCase())
-    const matchPaidBy = expenseFilterPaidBy === 'all' || tx.paidBy === expenseFilterPaidBy
-    return matchSearch && matchPaidBy
-  })
 
   const startDate = trip?.startDate?.seconds ? new Date(trip.startDate.seconds * 1000) : null
   const endDate = trip?.endDate?.seconds ? new Date(trip.endDate.seconds * 1000) : null
@@ -332,7 +374,7 @@ export default function TripDetailPage() {
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Receipt className="size-4" /> Transactions
             </div>
-            <p className="mt-2 text-3xl font-bold">{tripTxs.length}</p>
+            <p className="mt-2 text-3xl font-bold">{allExpensesCombined.length}</p>
           </CardContent>
         </Card>
         <Card>
@@ -340,7 +382,7 @@ export default function TripDetailPage() {
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <BarChart3 className="size-4" /> Shared Splits
             </div>
-            <p className="mt-2 text-3xl font-bold">{tripTxs.filter(tx => tx.splitWith).length}</p>
+            <p className="mt-2 text-3xl font-bold">{allExpensesCombined.filter(ex => !ex.splitLabel.includes('Solo')).length}</p>
           </CardContent>
         </Card>
       </div>
@@ -367,7 +409,7 @@ export default function TripDetailPage() {
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <CardTitle>All Expenses</CardTitle>
-                  <CardDescription>{filteredTripTxs.length} / {tripTxs.length} transactions</CardDescription>
+                  <CardDescription>{filteredExpenses.length} / {allExpensesCombined.length} transactions</CardDescription>
                 </div>
                 <div className="flex gap-2">
                   <div className="relative">
@@ -402,32 +444,34 @@ export default function TripDetailPage() {
               </div>
             </CardHeader>
             <CardContent>
-              {tripTxs.length === 0 ? (
+              {allExpensesCombined.length === 0 ? (
                 <div className="py-8 text-center text-muted-foreground">
                   ยังไม่มีรายการ กดปุ่ม Add Expense เพื่อเพิ่ม
                 </div>
-              ) : filteredTripTxs.length === 0 ? (
+              ) : filteredExpenses.length === 0 ? (
                 <div className="py-8 text-center text-muted-foreground">ไม่พบรายการที่ค้นหา</div>
               ) : (
                 <div className="space-y-3">
-                  {filteredTripTxs.map((tx) => {
-                    const txDate = tx.date?.seconds ? new Date(tx.date.seconds * 1000) : new Date()
-                    const splitLabel = !tx.splitWith ? '🙋 Solo' : tx.splitWith === 'all' ? '👥 All' : `🤝 ${tx.splitWith}`
+                  {filteredExpenses.map((ex) => {
+                    const txDate = ex.date?.seconds ? new Date(ex.date.seconds * 1000) : new Date()
                     return (
-                      <div key={tx.id} className="group flex items-center justify-between rounded-lg border p-4 transition-all hover:shadow-sm">
+                      <div key={ex.id} className="group flex items-center justify-between rounded-lg border p-4 transition-all hover:shadow-sm">
                         <div className="flex items-center gap-3">
                           <div className="flex size-10 items-center justify-center rounded-lg bg-muted">
                             <Receipt className="size-4 text-muted-foreground" />
                           </div>
                           <div>
-                            <p className="font-medium">{tx.description}</p>
+                            <div className="flex items-center gap-2">
+                              <p className="font-medium">{ex.description}</p>
+                              {ex.isLegacy && <Badge variant="outline" className="text-[10px] h-4 px-1">Legacy</Badge>}
+                            </div>
                             <p className="text-xs text-muted-foreground">
-                              จ่ายโดย {tx.paidBy || 'Me'} · {tx.category} · {splitLabel} · {txDate.toLocaleDateString('th-TH', { month: 'short', day: 'numeric' })}
+                              จ่ายโดย {ex.paidBy || 'Me'} · {ex.category} · {ex.splitLabel} · {txDate.toLocaleDateString('th-TH', { month: 'short', day: 'numeric' })}
                             </p>
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
-                          <span className="font-semibold tabular-nums">฿{Math.abs(tx.amount).toLocaleString()}</span>
+                          <span className="font-semibold tabular-nums">฿{ex.amount.toLocaleString()}</span>
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button variant="ghost" size="icon" className="size-8 opacity-0 group-hover:opacity-100">
@@ -435,11 +479,25 @@ export default function TripDetailPage() {
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => { setEditingTx(tx); setIsAddExpenseOpen(true) }}>
+                              <DropdownMenuItem onClick={() => { 
+                                if (ex.isLegacy) {
+                                  // Can't edit legacy via new form easily without full conversion
+                                  alert('Legacy transactions cannot be edited directly. Please delete and create a new expense.')
+                                } else {
+                                  setEditingTx(ex.rawEx as any)
+                                  setIsAddExpenseOpen(true)
+                                }
+                              }}>
                                 <Edit2 className="mr-2 size-4" /> Edit
                               </DropdownMenuItem>
                               <DropdownMenuSeparator />
-                              <DropdownMenuItem className="text-destructive" onClick={() => removeTransaction(tx.id!)}>
+                              <DropdownMenuItem className="text-destructive" onClick={() => {
+                                if (ex.isLegacy) {
+                                  removeTransaction(ex.id!)
+                                } else {
+                                  removeExpense(ex.id!)
+                                }
+                              }}>
                                 <Trash2 className="mr-2 size-4" /> Delete
                               </DropdownMenuItem>
                             </DropdownMenuContent>
