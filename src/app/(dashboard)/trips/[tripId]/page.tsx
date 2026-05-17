@@ -64,6 +64,7 @@ export default function TripDetailPage() {
   const [editTripMembers, setEditTripMembers] = React.useState<PickedMember[]>([])
   const [expenseSearch, setExpenseSearch] = React.useState('')
   const [expenseFilterPaidBy, setExpenseFilterPaidBy] = React.useState('all')
+  const [expandedReceipts, setExpandedReceipts] = React.useState<Record<string, boolean>>({})
 
   const trip = trips.find((t) => t.id === tripId)
   const tripTxs = transactions.filter((tx) => tx.tripId === tripId)
@@ -583,54 +584,119 @@ export default function TripDetailPage() {
                   {filteredExpenses.map((ex) => {
                     const txDate = ex.date?.seconds ? new Date(ex.date.seconds * 1000) : new Date()
                     return (
-                      <div key={ex.id} className="group flex items-center justify-between rounded-lg border p-4 transition-all hover:shadow-sm">
-                        <div className="flex items-center gap-3">
-                          <div className="flex size-10 items-center justify-center rounded-lg bg-muted">
-                            <Receipt className="size-4 text-muted-foreground" />
-                          </div>
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <p className="font-medium">{ex.description}</p>
-                              {ex.isLegacy && <Badge variant="outline" className="text-[10px] h-4 px-1">Legacy</Badge>}
+                      <div key={ex.id} className="group flex flex-col justify-start rounded-lg border p-4 transition-all hover:shadow-sm">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="flex size-10 items-center justify-center rounded-lg bg-muted shrink-0">
+                              <Receipt className="size-4 text-muted-foreground" />
                             </div>
-                            <p className="text-xs text-muted-foreground">
-                              จ่ายโดย {ex.paidBy || 'Me'} · {ex.category} · {ex.splitLabel} · {txDate.toLocaleDateString('th-TH', { month: 'short', day: 'numeric' })}
-                            </p>
+                            <div>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <p className="font-medium">{ex.description}</p>
+                                {ex.isLegacy && <Badge variant="outline" className="text-[10px] h-4 px-1">Legacy</Badge>}
+                                {ex.rawEx?.items && ex.rawEx.items.length > 0 && (
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    onClick={() => {
+                                      setExpandedReceipts(prev => ({ ...prev, [ex.id!]: !prev[ex.id!] }))
+                                    }}
+                                    className="h-5 px-1.5 text-[9px] text-muted-foreground hover:bg-muted flex items-center gap-1 ml-1"
+                                  >
+                                    {expandedReceipts[ex.id!] ? 'ซ่อนรายการ ▲' : 'ดูรายการใบเสร็จ ▼'}
+                                  </Button>
+                                )}
+                              </div>
+                              <p className="text-xs text-muted-foreground">
+                                จ่ายโดย {ex.paidBy || 'Me'} · {ex.category} · {ex.splitLabel} · {txDate.toLocaleDateString('th-TH', { month: 'short', day: 'numeric' })}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold tabular-nums">฿{ex.amount.toLocaleString()}</span>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" className="size-8 opacity-0 group-hover:opacity-100">
+                                  <MoreHorizontal className="size-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => { 
+                                  if (ex.isLegacy) {
+                                    alert('Legacy transactions cannot be edited directly. Please delete and create a new expense.')
+                                  } else {
+                                    setEditingExpense(ex.rawEx as TripExpense)
+                                    setIsAddExpenseOpen(true)
+                                  }
+                                }}>
+                                  <Edit2 className="mr-2 size-4" /> Edit
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem className="text-destructive" onClick={() => {
+                                  if (ex.isLegacy) {
+                                    removeTransaction(ex.id!)
+                                  } else {
+                                    removeExpense(ex.id!)
+                                  }
+                                }}>
+                                  <Trash2 className="mr-2 size-4" /> Delete
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-semibold tabular-nums">฿{ex.amount.toLocaleString()}</span>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon" className="size-8 opacity-0 group-hover:opacity-100">
-                                <MoreHorizontal className="size-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => { 
-                                if (ex.isLegacy) {
-                                  // Can't edit legacy via new form easily without full conversion
-                                  alert('Legacy transactions cannot be edited directly. Please delete and create a new expense.')
-                                } else {
-                                  setEditingExpense(ex.rawEx as TripExpense)
-                                  setIsAddExpenseOpen(true)
-                                }
-                              }}>
-                                <Edit2 className="mr-2 size-4" /> Edit
-                              </DropdownMenuItem>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem className="text-destructive" onClick={() => {
-                                if (ex.isLegacy) {
-                                  removeTransaction(ex.id!)
-                                } else {
-                                  removeExpense(ex.id!)
-                                }
-                              }}>
-                                <Trash2 className="mr-2 size-4" /> Delete
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </div>
+
+                        {/* Expandable Receipt breakdown details */}
+                        {expandedReceipts[ex.id!] && ex.rawEx?.items && (
+                          <div className="mt-3 border-t pt-3 space-y-2 text-xs">
+                            <div className="flex justify-between text-[10px] uppercase font-semibold tracking-wider text-muted-foreground">
+                              <span>รายการสินค้า</span>
+                              <span>ราคา & ภาษี</span>
+                            </div>
+                            <div className="space-y-1.5">
+                              {ex.rawEx.items.map((item: any, i: number) => {
+                                const itemTotal = item.price + (item.tax || 0)
+                                return (
+                                  <div key={i} className="flex items-center justify-between py-1 border-b border-muted/50 last:border-0">
+                                    <div className="space-y-0.5">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="font-medium text-foreground">{item.name || 'สินค้า'}</span>
+                                        <span className="text-[9px] bg-muted px-1.5 py-0.5 rounded text-muted-foreground">{item.category}</span>
+                                      </div>
+                                      <div className="flex items-center gap-1 mt-0.5">
+                                        <span className="text-[9px] text-muted-foreground">คนหาร:</span>
+                                        <div className="flex gap-0.5">
+                                          {(item.splitWith || []).map((k: string) => {
+                                            const initials = getDisplayName(k).split(' ').map((w) => w[0]).join('').toUpperCase().substring(0, 2)
+                                            return (
+                                              <span key={k} title={getDisplayName(k)} className="size-4 rounded-full bg-primary/10 text-primary border border-primary/20 text-[8px] font-bold flex items-center justify-center shrink-0">
+                                                {initials}
+                                              </span>
+                                            )
+                                          })}
+                                        </div>
+                                      </div>
+                                    </div>
+                                    <div className="text-right font-medium tabular-nums shrink-0">
+                                      <span>฿{itemTotal.toLocaleString()}</span>
+                                      {item.tax > 0 ? (
+                                        <span className="text-[9px] text-muted-foreground block">(สินค้า ฿{item.price} + ภาษี ฿{item.tax})</span>
+                                      ) : (
+                                        <span className="text-[9px] text-green-600 block">Tax free</span>
+                                      )}
+                                    </div>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                            {ex.rawEx.baseAmount !== undefined && (
+                              <div className="flex justify-between text-[10px] text-muted-foreground pt-1.5 border-t">
+                                <span>ราคาสินค้ารวม: ฿{ex.rawEx.baseAmount.toLocaleString()} · ภาษีรวม: ฿{(ex.rawEx.taxAmount || 0).toLocaleString()}</span>
+                                <span className="font-semibold text-foreground">ยอดรวมทั้งหมด: ฿{ex.amount.toLocaleString()}</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     )
                   })}

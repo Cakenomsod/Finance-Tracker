@@ -26,12 +26,20 @@ interface TripExpenseFormV2Props {
   onCancel: () => void
 }
 
-type SplitMode = 'equal' | 'custom' | 'solo'
+type SplitMode = 'equal' | 'custom' | 'solo' | 'item'
 
 const categories = [
   'Food & Dining', 'Transport', 'Shopping', 'Entertainment',
   'Bills & Utilities', 'Health & Fitness', 'Accommodation', 'Activities', 'Others',
 ]
+
+interface ReceiptItemInput {
+  name: string
+  category: string
+  price: string
+  tax: string
+  splitWith: string[]
+}
 
 export function TripExpenseFormV2({
   tripMembers, myUserId, initialData, onSubmit, onCancel,
@@ -47,6 +55,22 @@ export function TripExpenseFormV2({
   const [note, setNote] = React.useState(initialData?.note || '')
   const [splitMode, setSplitMode] = React.useState<SplitMode>(
     (initialData?.splitMode as SplitMode) || 'equal'
+  )
+
+  const [inputMode, setInputMode] = React.useState<'standard' | 'receipt'>(
+    initialData?.items && initialData.items.length > 0 ? 'receipt' : 'standard'
+  )
+
+  const [receiptItems, setReceiptItems] = React.useState<ReceiptItemInput[]>(
+    initialData?.items?.map(item => ({
+      name: item.name,
+      category: item.category,
+      price: String(item.price),
+      tax: String(item.tax),
+      splitWith: item.splitWith || tripMembers.map(m => m.key),
+    })) || [
+      { name: '', category: 'Food & Dining', price: '', tax: '', splitWith: tripMembers.map(m => m.key) }
+    ]
   )
 
   // Payers state: [{key, displayName, amount}]
@@ -70,7 +94,35 @@ export function TripExpenseFormV2({
   const [submitting, setSubmitting] = React.useState(false)
   const [errors, setErrors] = React.useState<string[]>([])
 
-  const total = parseFloat(totalAmount) || 0
+  // --- Real-time Receipt calculations ---
+  const isReceiptActive = inputMode === 'receipt' && receiptItems.some(item => (parseFloat(item.price) || 0) > 0)
+
+  let totalReceiptAmount = 0
+  let totalBaseAmount = 0
+  let totalTaxAmount = 0
+  const itemShares: Record<string, number> = {}
+  tripMembers.forEach(m => { itemShares[m.key] = 0 })
+
+  receiptItems.forEach(item => {
+    const p = parseFloat(item.price) || 0
+    const t = parseFloat(item.tax) || 0
+    const itemTotal = p + t
+    totalBaseAmount += p
+    totalTaxAmount += t
+    totalReceiptAmount += itemTotal
+
+    if (itemTotal > 0 && item.splitWith.length > 0) {
+      const share = itemTotal / item.splitWith.length
+      item.splitWith.forEach(memberKey => {
+        if (itemShares[memberKey] !== undefined) {
+          itemShares[memberKey] += share
+        }
+      })
+    }
+  })
+
+  const manualTotal = parseFloat(totalAmount) || 0
+  const total = isReceiptActive ? totalReceiptAmount : manualTotal
 
   // --- Payers helpers ---
   const addPayer = () => {
@@ -127,6 +179,16 @@ export function TripExpenseFormV2({
 
     if (splitMode === 'solo') {
       finalShares = finalPayers.map(p => ({ userId: p.userId, displayName: p.displayName, amount: p.amount }))
+    } else if (splitMode === 'item') {
+      if (!isReceiptActive) {
+        errs.push('กรุณากรอกรายการสินค้าเพื่อใช้โหมดแบ่งจ่ายรายชิ้น')
+      } else {
+        finalShares = tripMembers.map(m => ({
+          userId: m.key,
+          displayName: m.displayName,
+          amount: parseFloat((itemShares[m.key] || 0).toFixed(2))
+        }))
+      }
     } else if (splitMode === 'equal') {
       if (equalIncluded.size === 0) errs.push('กรุณาเลือกอย่างน้อย 1 คน')
       const share = parseFloat((total / equalIncluded.size).toFixed(2))
@@ -152,16 +214,30 @@ export function TripExpenseFormV2({
     if (!result) return
     setSubmitting(true)
     try {
-      await onSubmit({
+      const payload: any = {
         description,
         totalAmount: total,
-        category,
+        category: isReceiptActive ? (receiptItems[0]?.category || category) : category,
         date: Timestamp.fromDate(new Date(date)),
         note: note || undefined,
         splitMode,
         payers: result.payers,
         shares: result.shares,
-      })
+      }
+
+      if (isReceiptActive) {
+        payload.items = receiptItems.map(item => ({
+          name: item.name || 'Item',
+          category: item.category,
+          price: parseFloat(item.price) || 0,
+          tax: parseFloat(item.tax) || 0,
+          splitWith: item.splitWith,
+        }))
+        payload.baseAmount = totalBaseAmount
+        payload.taxAmount = totalTaxAmount
+      }
+
+      await onSubmit(payload)
     } finally {
       setSubmitting(false)
     }
@@ -169,6 +245,36 @@ export function TripExpenseFormV2({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5 py-2">
+      {/* Input Mode Selector */}
+      <div className="flex gap-1 p-1 bg-muted rounded-lg">
+        <button
+          type="button"
+          onClick={() => {
+            setInputMode('standard')
+            if (splitMode === 'item') setSplitMode('equal')
+          }}
+          className={cn(
+            "flex-1 py-1.5 text-xs font-medium rounded-md transition-all",
+            inputMode === 'standard' ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+          )}
+        >
+          Standard Input
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setInputMode('receipt')
+            setSplitMode('item')
+          }}
+          className={cn(
+            "flex-1 py-1.5 text-xs font-medium rounded-md transition-all",
+            inputMode === 'receipt' ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+          )}
+        >
+          🧾 Receipt Input
+        </button>
+      </div>
+
       {/* Description */}
       <div className="space-y-1.5">
         <Label>รายละเอียด</Label>
@@ -181,7 +287,9 @@ export function TripExpenseFormV2({
         <div className="space-y-1.5">
           <Label>ยอดรวม (฿)</Label>
           <Input type="number" step="0.01" placeholder="0.00"
-            value={totalAmount} onChange={e => setTotalAmount(e.target.value)} />
+            disabled={isReceiptActive}
+            value={isReceiptActive ? totalReceiptAmount.toFixed(2) : totalAmount} 
+            onChange={e => setTotalAmount(e.target.value)} />
         </div>
         <div className="space-y-1.5">
           <Label>หมวดหมู่</Label>
@@ -197,6 +305,142 @@ export function TripExpenseFormV2({
         <Label>วันที่</Label>
         <Input type="date" value={date} onChange={e => setDate(e.target.value)} />
       </div>
+
+      {/* Receipt Items (Only in Receipt Mode) */}
+      {inputMode === 'receipt' && (
+        <div className="space-y-3 border rounded-lg p-3 bg-muted/20">
+          <div className="flex items-center justify-between">
+            <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Receipt Items</h4>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setReceiptItems([...receiptItems, { name: '', category: 'Food & Dining', price: '', tax: '', splitWith: tripMembers.map(m => m.key) }])}
+              className="h-7 text-xs gap-1"
+            >
+              <Plus className="size-3" /> Add Product
+            </Button>
+          </div>
+
+          <div className="space-y-3">
+            {receiptItems.map((item, idx) => (
+              <div key={idx} className="border-b pb-3 last:border-b-0 last:pb-0 space-y-2">
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Product Name (e.g. Pizza)"
+                    className="flex-1 h-8 text-xs"
+                    value={item.name}
+                    onChange={e => {
+                      const next = [...receiptItems]
+                      next[idx].name = e.target.value
+                      setReceiptItems(next)
+                    }}
+                  />
+                  <Select
+                    value={item.category}
+                    onValueChange={val => {
+                      const next = [...receiptItems]
+                      next[idx].category = val
+                      setReceiptItems(next)
+                    }}
+                  >
+                    <SelectTrigger className="w-28 h-8 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {categories.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  
+                  {receiptItems.length > 1 && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="size-8 shrink-0 hover:bg-destructive/10 hover:text-destructive"
+                      onClick={() => setReceiptItems(receiptItems.filter((_, i) => i !== idx))}
+                    >
+                      <Minus className="size-3" />
+                    </Button>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <div className="relative w-24">
+                      <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-muted-foreground text-[10px]">฿</span>
+                      <Input
+                        type="number"
+                        placeholder="Price"
+                        className="pl-4 h-7 text-xs"
+                        value={item.price}
+                        onChange={e => {
+                          const next = [...receiptItems]
+                          next[idx].price = e.target.value
+                          setReceiptItems(next)
+                        }}
+                      />
+                    </div>
+                    <div className="relative w-20">
+                      <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-muted-foreground text-[10px]">Tax</span>
+                      <Input
+                        type="number"
+                        placeholder="0"
+                        className="pl-6 h-7 text-xs"
+                        value={item.tax}
+                        onChange={e => {
+                          const next = [...receiptItems]
+                          next[idx].tax = e.target.value
+                          setReceiptItems(next)
+                        }}
+                      />
+                    </div>
+
+                    <span className="text-[11px] font-semibold text-muted-foreground tabular-nums">
+                      = ฿{((parseFloat(item.price) || 0) + (parseFloat(item.tax) || 0)).toLocaleString()}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] text-muted-foreground mr-1">For:</span>
+                    <div className="flex gap-0.5">
+                      {tripMembers.map(m => {
+                        const included = item.splitWith.includes(m.key)
+                        const initials = m.displayName.split(' ').map((w) => w[0]).join('').toUpperCase().substring(0, 2)
+                        return (
+                          <button
+                            key={m.key}
+                            type="button"
+                            title={m.displayName}
+                            onClick={() => {
+                              const next = [...receiptItems]
+                              const currentSplit = next[idx].splitWith
+                              if (currentSplit.includes(m.key)) {
+                                next[idx].splitWith = currentSplit.filter(k => k !== m.key)
+                              } else {
+                                next[idx].splitWith = [...currentSplit, m.key]
+                              }
+                              setReceiptItems(next)
+                            }}
+                            className={cn(
+                              "size-5 rounded-full text-[9px] font-bold border transition-all shrink-0 flex items-center justify-center",
+                              included 
+                                ? "bg-primary text-primary-foreground border-primary" 
+                                : "bg-background text-muted-foreground border-muted-foreground/30 hover:bg-muted"
+                            )}
+                          >
+                            {initials}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Payers */}
       <div className="space-y-2">
@@ -247,8 +491,9 @@ export function TripExpenseFormV2({
       {/* Split Mode */}
       <div className="space-y-3">
         <Label>แบ่งจ่ายแบบไหน?</Label>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {[
+            ...(inputMode === 'receipt' ? [{ value: 'item', label: '🧾 หารแยกสินค้า' }] : []),
             { value: 'equal', label: '⚖️ เฉลี่ยเท่ากัน' },
             { value: 'custom', label: '✏️ กำหนดเอง' },
             { value: 'solo', label: '🙋 คนเดียว' },
@@ -256,7 +501,7 @@ export function TripExpenseFormV2({
             <button key={opt.value} type="button"
               onClick={() => setSplitMode(opt.value as SplitMode)}
               className={cn(
-                'flex-1 rounded-lg border px-2 py-2 text-xs font-medium transition-all',
+                'flex-1 rounded-lg border px-2 py-2 text-xs font-medium transition-all min-w-[80px]',
                 splitMode === opt.value
                   ? 'bg-primary text-primary-foreground border-primary'
                   : 'border-border hover:border-primary/50'
@@ -265,6 +510,21 @@ export function TripExpenseFormV2({
             </button>
           ))}
         </div>
+
+        {/* Itemised Split Summary */}
+        {splitMode === 'item' && (
+          <div className="space-y-1.5">
+            <p className="text-xs text-muted-foreground font-medium">สรุปการหารรายชิ้น:</p>
+            <div className="space-y-1 bg-muted/30 p-2.5 rounded-lg text-xs text-muted-foreground">
+              {tripMembers.map(m => (
+                <div key={m.key} className="flex justify-between">
+                  <span>{m.displayName}</span>
+                  <span className="font-semibold tabular-nums text-foreground">฿{(itemShares[m.key] || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Equal — member toggles */}
         {splitMode === 'equal' && (
@@ -339,6 +599,9 @@ export function TripExpenseFormV2({
           {payers.map((p, i) => (
             <p key={i}>💳 {p.displayName} จ่าย ฿{parseFloat(p.amount || (i === payers.length - 1 ? String(lastPayerSuggestion) : '0')).toFixed(0)}</p>
           ))}
+          {splitMode === 'item' && (
+            <p>🧾 หารแยกรายชิ้นตามรายการใบเสร็จ</p>
+          )}
           {splitMode === 'equal' && equalIncluded.size > 0 && (
             <p>⚖️ หาร {equalIncluded.size} คน → คนละ ฿{equalShareAmount.toFixed(0)}</p>
           )}

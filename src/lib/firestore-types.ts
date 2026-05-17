@@ -13,6 +13,14 @@ export interface UserProfile {
   updatedAt: Timestamp;
 }
 
+export interface ReceiptItem {
+  name: string;
+  category: string;
+  price: number;
+  tax: number;
+  splitWith: string[]; // List of member userIds sharing this specific item
+}
+
 // transactions/{txId}
 export interface Transaction {
   id?: string;
@@ -28,6 +36,9 @@ export interface Transaction {
   receiptUrl: string | null;
   source: 'manual' | 'line' | 'ocr';
   createdAt: Timestamp;
+  items?: ReceiptItem[];
+  baseAmount?: number;
+  taxAmount?: number;
 }
 
 // debts/{debtId}
@@ -94,6 +105,9 @@ export interface TripExpense {
   shares: TripExpenseShare[];
   splitMode: 'equal' | 'custom' | 'solo';
   createdAt: Timestamp;
+  items?: ReceiptItem[];
+  baseAmount?: number;
+  taxAmount?: number;
 }
 
 // trip_settlements/{settlementId}
