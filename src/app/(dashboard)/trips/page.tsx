@@ -629,7 +629,7 @@ export default function TripsPage() {
               New Trip
             </Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="max-h-[90vh] overflow-y-auto overflow-x-hidden sm:max-w-[680px]">
             <DialogHeader>
               <DialogTitle>Create New Trip</DialogTitle>
               <DialogDescription>
@@ -826,7 +826,7 @@ export default function TripsPage() {
           if (!open) setExpenseTripId(null)
         }}
       >
-        <DialogContent>
+        <DialogContent className="max-h-[90vh] overflow-y-auto overflow-x-hidden sm:max-w-[680px]">
           <DialogHeader>
             <DialogTitle>Add Trip Expense</DialogTitle>
             <DialogDescription>

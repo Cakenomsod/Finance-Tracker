@@ -334,7 +334,7 @@ export function TripExpenseFormV2({
 
       {/* Receipt Items (Only in Receipt Mode) */}
       {inputMode === 'receipt' && (
-        <div className="space-y-3 border rounded-lg p-3 bg-muted/20">
+        <div className="space-y-3 border rounded-lg p-3 bg-muted/20 overflow-hidden">
           <div className="flex items-center justify-between">
             <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Receipt Items</h4>
             <Button
@@ -350,11 +350,12 @@ export function TripExpenseFormV2({
 
           <div className="space-y-3">
             {receiptItems.map((item, idx) => (
-              <div key={idx} className="border-b pb-3 last:border-b-0 last:pb-0 space-y-2">
-                <div className="flex gap-2">
+              <div key={idx} className="border-b pb-3 last:border-b-0 last:pb-0 pt-2">
+                <div className="flex items-center gap-2 w-full overflow-hidden">
+                  {/* Name Input - Premium Sizing */}
                   <Input
-                    placeholder="Product Name (e.g. Pizza)"
-                    className="flex-1 h-8 text-xs"
+                    placeholder="Product Name"
+                    className="flex-grow min-w-[120px] h-9 text-xs shrink"
                     value={item.name}
                     onChange={e => {
                       const next = [...receiptItems]
@@ -362,6 +363,8 @@ export function TripExpenseFormV2({
                       setReceiptItems(next)
                     }}
                   />
+                  
+                  {/* Category Selector */}
                   <Select
                     value={item.category}
                     onValueChange={val => {
@@ -370,14 +373,87 @@ export function TripExpenseFormV2({
                       setReceiptItems(next)
                     }}
                   >
-                    <SelectTrigger className="w-28 h-8 text-xs">
+                    <SelectTrigger className="w-24 sm:w-28 h-9 text-xs shrink-0">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {categories.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                      {categories.map(c => <SelectItem key={c} value={c} className="text-xs">{c}</SelectItem>)}
                     </SelectContent>
                   </Select>
-                  
+
+                  {/* Price Input */}
+                  <div className="relative w-20 shrink-0">
+                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">
+                      {currency === 'THB' ? '฿' : '¥'}
+                    </span>
+                    <Input
+                      type="number"
+                      placeholder="Price"
+                      className="pl-6 pr-1 h-9 text-xs"
+                      value={item.price}
+                      onChange={e => {
+                        const next = [...receiptItems]
+                        next[idx].price = e.target.value
+                        setReceiptItems(next)
+                      }}
+                    />
+                  </div>
+
+                  {/* Tax Input */}
+                  <div className="relative w-16 shrink-0">
+                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground text-[10px]">Tax</span>
+                    <Input
+                      type="number"
+                      placeholder="0"
+                      className="pl-8 pr-1 h-9 text-xs"
+                      value={item.tax}
+                      onChange={e => {
+                        const next = [...receiptItems]
+                        next[idx].tax = e.target.value
+                        setReceiptItems(next)
+                      }}
+                    />
+                  </div>
+
+                  {/* Calculated Total */}
+                  <span className="text-xs font-semibold text-muted-foreground tabular-nums shrink-0">
+                    ={currency === 'THB' ? '฿' : '¥'}{((parseFloat(item.price) || 0) + (parseFloat(item.tax) || 0)).toLocaleString()}
+                  </span>
+
+                  {/* Split buttons */}
+                  <div className="flex items-center gap-0.5 shrink-0 flex-wrap">
+                    {tripMembers.map(m => {
+                      const included = item.splitWith.includes(m.key)
+                      const initials = m.displayName.split(' ').map((w) => w[0]).join('').toUpperCase().substring(0, 2)
+                      return (
+                        <button
+                          key={m.key}
+                          type="button"
+                          title={m.displayName}
+                          onClick={() => {
+                            const next = [...receiptItems]
+                            const currentSplit = next[idx].splitWith
+                            if (currentSplit.includes(m.key)) {
+                              next[idx].splitWith = currentSplit.filter(k => k !== m.key)
+                            } else {
+                              next[idx].splitWith = [...currentSplit, m.key]
+                            }
+                            setReceiptItems(next)
+                          }}
+                          className={cn(
+                            "size-6 rounded-full text-[9px] font-bold border transition-all shrink-0 flex items-center justify-center",
+                            included 
+                              ? "bg-primary text-primary-foreground border-primary" 
+                              : "bg-background text-muted-foreground border-muted-foreground/30 hover:bg-muted"
+                          )}
+                        >
+                          {initials}
+                        </button>
+                      )
+                    })}
+                  </div>
+
+                  {/* Delete Product Button */}
                   {receiptItems.length > 1 && (
                     <Button
                       type="button"
@@ -386,83 +462,9 @@ export function TripExpenseFormV2({
                       className="size-8 shrink-0 hover:bg-destructive/10 hover:text-destructive"
                       onClick={() => setReceiptItems(receiptItems.filter((_, i) => i !== idx))}
                     >
-                      <Minus className="size-3" />
+                      <Minus className="size-4" />
                     </Button>
                   )}
-                </div>
-
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    <div className="relative w-24">
-                      <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-muted-foreground text-[10px]">
-                        {currency === 'THB' ? '฿' : '¥'}
-                      </span>
-                      <Input
-                        type="number"
-                        placeholder="Price"
-                        className="pl-4 h-7 text-xs"
-                        value={item.price}
-                        onChange={e => {
-                          const next = [...receiptItems]
-                          next[idx].price = e.target.value
-                          setReceiptItems(next)
-                        }}
-                      />
-                    </div>
-                    <div className="relative w-20">
-                      <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-muted-foreground text-[10px]">Tax</span>
-                      <Input
-                        type="number"
-                        placeholder="0"
-                        className="pl-6 h-7 text-xs"
-                        value={item.tax}
-                        onChange={e => {
-                          const next = [...receiptItems]
-                          next[idx].tax = e.target.value
-                          setReceiptItems(next)
-                        }}
-                      />
-                    </div>
-
-                    <span className="text-[11px] font-semibold text-muted-foreground tabular-nums">
-                      = {currency === 'THB' ? '฿' : '¥'}{((parseFloat(item.price) || 0) + (parseFloat(item.tax) || 0)).toLocaleString()}
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-1">
-                    <span className="text-[10px] text-muted-foreground mr-1">For:</span>
-                    <div className="flex gap-0.5">
-                      {tripMembers.map(m => {
-                        const included = item.splitWith.includes(m.key)
-                        const initials = m.displayName.split(' ').map((w) => w[0]).join('').toUpperCase().substring(0, 2)
-                        return (
-                          <button
-                            key={m.key}
-                            type="button"
-                            title={m.displayName}
-                            onClick={() => {
-                              const next = [...receiptItems]
-                              const currentSplit = next[idx].splitWith
-                              if (currentSplit.includes(m.key)) {
-                                next[idx].splitWith = currentSplit.filter(k => k !== m.key)
-                              } else {
-                                next[idx].splitWith = [...currentSplit, m.key]
-                              }
-                              setReceiptItems(next)
-                            }}
-                            className={cn(
-                              "size-5 rounded-full text-[9px] font-bold border transition-all shrink-0 flex items-center justify-center",
-                              included 
-                                ? "bg-primary text-primary-foreground border-primary" 
-                                : "bg-background text-muted-foreground border-muted-foreground/30 hover:bg-muted"
-                            )}
-                          >
-                            {initials}
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </div>
                 </div>
               </div>
             ))}
@@ -529,7 +531,7 @@ export function TripExpenseFormV2({
             <button key={opt.value} type="button"
               onClick={() => setSplitMode(opt.value as SplitMode)}
               className={cn(
-                'flex-1 rounded-lg border px-2 py-2 text-xs font-medium transition-all min-w-[80px]',
+                'flex-1 rounded-lg border px-2 py-2 text-xs font-medium transition-all min-w-[80px] whitespace-nowrap',
                 splitMode === opt.value
                   ? 'bg-primary text-primary-foreground border-primary'
                   : 'border-border hover:border-primary/50'

@@ -369,7 +369,7 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
 
         {/* Receipt Items (Only in Receipt Mode) */}
         {inputMode === 'receipt' && (
-          <div className="space-y-3 border rounded-lg p-3 bg-muted/20">
+          <div className="space-y-3 border rounded-lg p-3 bg-muted/20 overflow-hidden">
             <div className="flex items-center justify-between">
               <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Receipt Items</h4>
               <Button
@@ -385,11 +385,12 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
 
             <div className="space-y-3">
               {receiptItems.map((item, idx) => (
-                <div key={idx} className="border-b pb-3 last:border-b-0 last:pb-0 space-y-2">
-                  <div className="flex gap-2">
+                <div key={idx} className="border-b pb-3 last:border-b-0 last:pb-0 pt-2">
+                  <div className="flex items-center gap-2 w-full overflow-hidden">
+                    {/* Name Input - Premium Sizing */}
                     <Input
-                      placeholder="Product Name (e.g. Pizza)"
-                      className="flex-1 h-8 text-xs"
+                      placeholder="Product Name"
+                      className="flex-grow min-w-[120px] h-9 text-xs shrink"
                       value={item.name}
                       onChange={e => {
                         const next = [...receiptItems]
@@ -397,6 +398,8 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
                         setReceiptItems(next)
                       }}
                     />
+                    
+                    {/* Category Selector */}
                     <Select
                       value={item.category}
                       onValueChange={val => {
@@ -405,36 +408,23 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
                         setReceiptItems(next)
                       }}
                     >
-                      <SelectTrigger className="w-28 h-8 text-xs">
+                      <SelectTrigger className="w-24 sm:w-28 h-9 text-xs shrink-0">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {categories.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                        {categories.map(c => <SelectItem key={c} value={c} className="text-xs">{c}</SelectItem>)}
                       </SelectContent>
                     </Select>
-                    
-                    {receiptItems.length > 1 && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="size-8 shrink-0 hover:bg-destructive/10 hover:text-destructive"
-                        onClick={() => setReceiptItems(receiptItems.filter((_, i) => i !== idx))}
-                      >
-                        <Minus className="size-3" />
-                      </Button>
-                    )}
-                  </div>
 
-                  <div className="flex items-center gap-2">
-                    <div className="relative w-24">
-                      <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-muted-foreground text-[10px]">
+                    {/* Price Input */}
+                    <div className="relative w-20 shrink-0">
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">
                         {currency === 'THB' ? '฿' : '¥'}
                       </span>
                       <Input
                         type="number"
                         placeholder="Price"
-                        className="pl-4 h-7 text-xs"
+                        className="pl-6 pr-1 h-9 text-xs"
                         value={item.price}
                         onChange={e => {
                           const next = [...receiptItems]
@@ -443,12 +433,14 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
                         }}
                       />
                     </div>
-                    <div className="relative w-20">
-                      <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-muted-foreground text-[10px]">Tax</span>
+
+                    {/* Tax Input */}
+                    <div className="relative w-16 shrink-0">
+                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground text-[10px]">Tax</span>
                       <Input
                         type="number"
                         placeholder="0"
-                        className="pl-6 h-7 text-xs"
+                        className="pl-8 pr-1 h-9 text-xs"
                         value={item.tax}
                         onChange={e => {
                           const next = [...receiptItems]
@@ -458,9 +450,23 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
                       />
                     </div>
 
-                    <span className="text-[11px] font-semibold text-muted-foreground tabular-nums ml-2">
-                      = {currency === 'THB' ? '฿' : '¥'}{((parseFloat(item.price) || 0) + (parseFloat(item.tax) || 0)).toLocaleString()}
+                    {/* Calculated Total */}
+                    <span className="text-xs font-semibold text-muted-foreground tabular-nums shrink-0">
+                      ={currency === 'THB' ? '฿' : '¥'}{((parseFloat(item.price) || 0) + (parseFloat(item.tax) || 0)).toLocaleString()}
                     </span>
+
+                    {/* Delete Product Button */}
+                    {receiptItems.length > 1 && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="size-8 shrink-0 hover:bg-destructive/10 hover:text-destructive"
+                        onClick={() => setReceiptItems(receiptItems.filter((_, i) => i !== idx))}
+                      >
+                        <Minus className="size-4" />
+                      </Button>
+                    )}
                   </div>
                 </div>
               ))}

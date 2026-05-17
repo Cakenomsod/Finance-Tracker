@@ -1028,9 +1028,8 @@ export default function TripDetailPage() {
         </TabsContent>
       </Tabs>
 
-      {/* Edit Trip Dialog */}
       <Dialog open={isEditTripOpen} onOpenChange={setIsEditTripOpen}>
-        <DialogContent>
+        <DialogContent className="max-h-[90vh] overflow-y-auto overflow-x-hidden sm:max-w-[680px]">
           <DialogHeader>
             <DialogTitle>Edit Trip</DialogTitle>
             <DialogDescription>Update trip details and members</DialogDescription>
@@ -1119,9 +1118,8 @@ export default function TripDetailPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Add/Edit Expense Dialog */}
       <Dialog open={isAddExpenseOpen} onOpenChange={(open) => { setIsAddExpenseOpen(open); if (!open) setEditingExpense(null) }}>
-        <DialogContent>
+        <DialogContent className="max-h-[90vh] overflow-y-auto overflow-x-hidden sm:max-w-[680px]">
           <DialogHeader>
             <DialogTitle>{editingExpense ? 'Edit Expense' : 'Add Trip Expense'}</DialogTitle>
             <DialogDescription>
