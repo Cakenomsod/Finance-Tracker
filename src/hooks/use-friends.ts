@@ -7,6 +7,7 @@ import {
   respondFriendRequest,
   deleteFriendRequest,
   searchUserByEmail,
+  getUserProfile,
 } from '@/lib/firestore';
 import { useAuth } from './use-auth';
 
@@ -19,6 +20,7 @@ export interface Friend {
 export function useFriends() {
   const { user } = useAuth();
   const [requests, setRequests] = useState<FriendRequest[]>([]);
+  const [profiles, setProfiles] = useState<Record<string, { displayName: string; photoURL: string | null }>>({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -57,6 +59,45 @@ export function useFriends() {
 
   // Derived lists
   const accepted = requests.filter(r => r.status === 'accepted');
+
+  useEffect(() => {
+    if (!user || accepted.length === 0) return;
+    
+    const fetchProfiles = async () => {
+      const pendingUids = accepted
+        .map(r => r.fromUserId === user.uid ? r.toUserId : r.fromUserId)
+        .filter(uid => !profiles[uid]);
+      
+      if (pendingUids.length === 0) return;
+      
+      const newProfiles = { ...profiles };
+      let updated = false;
+      
+      for (const uid of pendingUids) {
+        if (!newProfiles[uid]) {
+          try {
+            const profile = await getUserProfile(uid);
+            if (profile) {
+              newProfiles[uid] = {
+                displayName: profile.displayName || 'User',
+                photoURL: profile.photoURL,
+              };
+              updated = true;
+            }
+          } catch (e) {
+            console.error("Error loading user profile:", e);
+          }
+        }
+      }
+      
+      if (updated) {
+        setProfiles(newProfiles);
+      }
+    };
+    
+    fetchProfiles();
+  }, [accepted, user]);
+
   const pendingReceived = requests.filter(
     r => r.status === 'pending' && r.toUserId === user?.uid
   );
@@ -66,11 +107,22 @@ export function useFriends() {
 
   // Friends = accepted requests, extract the "other" person
   const friends: Friend[] = accepted.map(r => {
+    const friendUid = r.fromUserId === user?.uid ? r.toUserId : r.fromUserId;
+    const cached = profiles[friendUid];
+
     if (r.fromUserId === user?.uid) {
-      // We sent the request; toUser is the friend (we may not have their profile cached)
-      return { uid: r.toUserId, displayName: '—', photoURL: null };
+      // We sent the request; toUser is the friend
+      return {
+        uid: r.toUserId,
+        displayName: cached?.displayName || r.toDisplayName || '—',
+        photoURL: cached?.photoURL || r.toPhotoURL || null
+      };
     }
-    return { uid: r.fromUserId, displayName: r.fromDisplayName, photoURL: r.fromPhotoURL };
+    return {
+      uid: r.fromUserId,
+      displayName: cached?.displayName || r.fromDisplayName || '—',
+      photoURL: cached?.photoURL || r.fromPhotoURL || null
+    };
   });
 
   const addFriend = async (email: string) => {
@@ -81,7 +133,9 @@ export function useFriends() {
     await sendFriendRequest(
       user.uid, found.uid,
       user.displayName || user.email || 'User',
-      user.photoURL || null
+      user.photoURL || null,
+      found.displayName || found.email || 'User',
+      found.photoURL || null
     );
     return found;
   };

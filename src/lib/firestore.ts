@@ -125,7 +125,9 @@ export const sendFriendRequest = async (
   fromUserId: string,
   toUserId: string,
   fromDisplayName: string,
-  fromPhotoURL: string | null
+  fromPhotoURL: string | null,
+  toDisplayName: string,
+  toPhotoURL: string | null
 ) => {
   // Check if already sent or already friends
   const existing = await getDocs(
@@ -141,6 +143,8 @@ export const sendFriendRequest = async (
     toUserId,
     fromDisplayName,
     fromPhotoURL,
+    toDisplayName,
+    toPhotoURL,
     status: 'pending',
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),

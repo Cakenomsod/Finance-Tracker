@@ -112,13 +112,14 @@ export interface TripSettlement {
   createdAt: Timestamp;
 }
 
-// friend_requests/{requestId}
 export interface FriendRequest {
   id?: string;
   fromUserId: string;
   toUserId: string;
   fromDisplayName: string;
   fromPhotoURL: string | null;
+  toDisplayName?: string;
+  toPhotoURL?: string | null;
   status: 'pending' | 'accepted' | 'declined';
   createdAt: Timestamp;
   updatedAt: Timestamp;
