@@ -7,7 +7,7 @@ export interface UserProfile {
   email: string;
   photoURL: string | null;
   partnerId: string | null;
-  currency: string;         // default: "THB"
+  currency: string;
   defaultCategories: string[];
   createdAt: Timestamp;
   updatedAt: Timestamp;
@@ -40,19 +40,88 @@ export interface Debt {
   status: 'pending' | 'settled';
   settledAt: Timestamp | null;
   createdAt: Timestamp;
+  // Extended fields (optional — backward compatible)
+  tripId?: string;
+  sourceExpenseId?: string;
+  paidAmount?: number;
+  remainingAmount?: number;
 }
 
 // trips/{tripId}
+export interface MemberProfile {
+  displayName: string;
+  photoURL: string | null;
+}
+
 export interface Trip {
   id?: string;
   name: string;
   description: string;
+  /** userId[] for new trips; kept as string[] for legacy name-based trips */
   members: string[];
+  /** Cached profile info keyed by userId. Absent in legacy name-based trips. */
+  memberProfiles?: Record<string, MemberProfile>;
   startDate: Timestamp;
   endDate: Timestamp;
   status: 'active' | 'closed';
   createdBy: string;
   createdAt: Timestamp;
+}
+
+// trip_expenses/{expenseId}
+export interface TripExpensePayer {
+  userId: string;
+  displayName: string;
+  amount: number;
+}
+
+export interface TripExpenseShare {
+  userId: string;
+  displayName: string;
+  amount: number;
+}
+
+export interface TripExpense {
+  id?: string;
+  tripId: string;
+  userId: string;          // creator
+  description: string;
+  totalAmount: number;
+  category: string;
+  date: Timestamp;
+  note?: string;
+  payers: TripExpensePayer[];
+  shares: TripExpenseShare[];
+  splitMode: 'equal' | 'custom' | 'solo';
+  createdAt: Timestamp;
+}
+
+// trip_settlements/{settlementId}
+export interface TripSettlement {
+  id?: string;
+  userId: string;          // creator / confirmer
+  tripId?: string;         // null = cross-trip or non-trip
+  fromUserId: string;
+  fromDisplayName: string;
+  toUserId: string;
+  toDisplayName: string;
+  amount: number;
+  date: Timestamp;
+  note?: string;
+  isPartial: boolean;
+  createdAt: Timestamp;
+}
+
+// friend_requests/{requestId}
+export interface FriendRequest {
+  id?: string;
+  fromUserId: string;
+  toUserId: string;
+  fromDisplayName: string;
+  fromPhotoURL: string | null;
+  status: 'pending' | 'accepted' | 'declined';
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
 }
 
 // categories/{categoryId}

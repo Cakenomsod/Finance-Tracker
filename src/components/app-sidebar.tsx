@@ -17,6 +17,8 @@ import {
   Plus,
   ChevronDown,
   Wallet,
+  UserPlus2,
+  Bell,
 } from 'lucide-react'
 
 import {
@@ -47,12 +49,15 @@ import {
 import { cn } from '@/lib/utils'
 
 import { useAuth } from '@/hooks/use-auth'
+import { useFriends } from '@/hooks/use-friends'
+import { Badge } from '@/components/ui/badge'
 
 const mainNavItems = [
   { title: 'Dashboard', icon: LayoutDashboard, href: '/' },
   { title: 'Transactions', icon: Receipt, href: '/transactions' },
   { title: 'Debts & Shared', icon: Users, href: '/debts' },
   { title: 'Trip Mode', icon: Plane, href: '/trips' },
+  { title: 'Friends', icon: UserPlus2, href: '/friends' },
 ]
 
 const insightsNavItems = [
@@ -68,6 +73,8 @@ const integrationNavItems = [
 export function AppSidebar({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const { user, signOut } = useAuth()
+  const { pendingReceived } = useFriends()
+  const pendingCount = pendingReceived.length
 
   return (
     <SidebarProvider>
@@ -99,12 +106,17 @@ export function AppSidebar({ children }: { children: React.ReactNode }) {
                   <SidebarMenuItem key={item.href}>
                     <SidebarMenuButton
                       asChild
-                      isActive={pathname === item.href}
+                      isActive={pathname === item.href || pathname.startsWith(item.href + '/')}
                       tooltip={item.title}
                     >
-                      <Link href={item.href}>
+                      <Link href={item.href} className="relative flex items-center gap-2">
                         <item.icon className="size-4" />
                         <span>{item.title}</span>
+                        {item.href === '/friends' && pendingCount > 0 && (
+                          <Badge className="ml-auto h-5 min-w-5 rounded-full bg-destructive text-destructive-foreground text-[10px] px-1">
+                            {pendingCount}
+                          </Badge>
+                        )}
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>

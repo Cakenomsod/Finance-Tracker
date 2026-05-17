@@ -1,18 +1,23 @@
-import { 
-  collection, 
-  doc, 
-  addDoc, 
-  updateDoc, 
-  deleteDoc, 
-  query, 
-  where, 
-  getDocs, 
+import {
+  collection,
+  doc,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  query,
+  where,
+  getDocs,
+  getDoc,
   serverTimestamp,
   orderBy,
-  Timestamp
+  Timestamp,
+  or,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { Transaction, Debt, Trip, Category } from './firestore-types';
+import {
+  Transaction, Debt, Trip, Category,
+  TripExpense, TripSettlement, FriendRequest,
+} from './firestore-types';
 
 // Collection References
 export const usersRef = collection(db, 'users');
@@ -20,14 +25,14 @@ export const transactionsRef = collection(db, 'transactions');
 export const debtsRef = collection(db, 'debts');
 export const tripsRef = collection(db, 'trips');
 export const categoriesRef = collection(db, 'categories');
+export const tripExpensesRef = collection(db, 'trip_expenses');
+export const tripSettlementsRef = collection(db, 'trip_settlements');
+export const friendRequestsRef = collection(db, 'friend_requests');
 
 // --- Transactions ---
 
 export const createTransaction = async (data: Omit<Transaction, 'id' | 'createdAt'>) => {
-  return await addDoc(transactionsRef, {
-    ...data,
-    createdAt: serverTimestamp(),
-  });
+  return await addDoc(transactionsRef, { ...data, createdAt: serverTimestamp() });
 };
 
 export const getUserTransactions = async (userId: string) => {
@@ -37,13 +42,11 @@ export const getUserTransactions = async (userId: string) => {
 };
 
 export const updateTransaction = async (id: string, data: Partial<Omit<Transaction, 'id' | 'createdAt'>>) => {
-  const docRef = doc(db, 'transactions', id);
-  return await updateDoc(docRef, data);
+  return await updateDoc(doc(db, 'transactions', id), data);
 };
 
 export const deleteTransaction = async (id: string) => {
-  const docRef = doc(db, 'transactions', id);
-  return await deleteDoc(docRef);
+  return await deleteDoc(doc(db, 'transactions', id));
 };
 
 // --- Debts ---
@@ -58,23 +61,17 @@ export const createDebt = async (data: Omit<Debt, 'id' | 'createdAt' | 'status' 
 };
 
 export const updateDebt = async (id: string, data: Partial<Omit<Debt, 'id' | 'createdAt'>>) => {
-  const docRef = doc(db, 'debts', id);
-  return await updateDoc(docRef, data);
+  return await updateDoc(doc(db, 'debts', id), data);
 };
 
 export const deleteDebt = async (id: string) => {
-  const docRef = doc(db, 'debts', id);
-  return await deleteDoc(docRef);
+  return await deleteDoc(doc(db, 'debts', id));
 };
 
 // --- Trips ---
 
 export const createTrip = async (data: Omit<Trip, 'id' | 'createdAt'>) => {
-  return await addDoc(tripsRef, {
-    ...data,
-    createdAt: serverTimestamp(),
-    status: 'active',
-  });
+  return await addDoc(tripsRef, { ...data, createdAt: serverTimestamp(), status: 'active' });
 };
 
 export const getUserTrips = async (userId: string) => {
@@ -84,27 +81,100 @@ export const getUserTrips = async (userId: string) => {
 };
 
 export const updateTrip = async (id: string, data: Partial<Omit<Trip, 'id' | 'createdAt'>>) => {
-  const docRef = doc(db, 'trips', id);
-  return await updateDoc(docRef, data);
+  return await updateDoc(doc(db, 'trips', id), data);
 };
 
 export const deleteTrip = async (id: string) => {
-  const docRef = doc(db, 'trips', id);
-  return await deleteDoc(docRef);
+  return await deleteDoc(doc(db, 'trips', id));
 };
 
 export const closeTrip = async (id: string) => {
-  const docRef = doc(db, 'trips', id);
-  return await updateDoc(docRef, { status: 'closed' });
+  return await updateDoc(doc(db, 'trips', id), { status: 'closed' });
+};
+
+// --- Trip Expenses ---
+
+export const createTripExpense = async (data: Omit<TripExpense, 'id' | 'createdAt'>) => {
+  return await addDoc(tripExpensesRef, { ...data, createdAt: serverTimestamp() });
+};
+
+export const updateTripExpense = async (id: string, data: Partial<Omit<TripExpense, 'id' | 'createdAt'>>) => {
+  return await updateDoc(doc(db, 'trip_expenses', id), data);
+};
+
+export const deleteTripExpense = async (id: string) => {
+  return await deleteDoc(doc(db, 'trip_expenses', id));
+};
+
+// --- Trip Settlements ---
+
+export const createTripSettlement = async (data: Omit<TripSettlement, 'id' | 'createdAt'>) => {
+  return await addDoc(tripSettlementsRef, { ...data, createdAt: serverTimestamp() });
+};
+
+export const deleteTripSettlement = async (id: string) => {
+  return await deleteDoc(doc(db, 'trip_settlements', id));
+};
+
+// --- Friend Requests ---
+
+export const sendFriendRequest = async (
+  fromUserId: string,
+  toUserId: string,
+  fromDisplayName: string,
+  fromPhotoURL: string | null
+) => {
+  // Check if already sent or already friends
+  const existing = await getDocs(
+    query(friendRequestsRef,
+      where('fromUserId', '==', fromUserId),
+      where('toUserId', '==', toUserId)
+    )
+  );
+  if (!existing.empty) throw new Error('Friend request already sent');
+
+  return await addDoc(friendRequestsRef, {
+    fromUserId,
+    toUserId,
+    fromDisplayName,
+    fromPhotoURL,
+    status: 'pending',
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+};
+
+export const respondFriendRequest = async (requestId: string, status: 'accepted' | 'declined') => {
+  return await updateDoc(doc(db, 'friend_requests', requestId), {
+    status,
+    updatedAt: serverTimestamp(),
+  });
+};
+
+export const deleteFriendRequest = async (requestId: string) => {
+  return await deleteDoc(doc(db, 'friend_requests', requestId));
+};
+
+/** Search user by exact email */
+export const searchUserByEmail = async (email: string) => {
+  const q = query(usersRef, where('email', '==', email.toLowerCase().trim()));
+  const snapshot = await getDocs(q);
+  if (snapshot.empty) return null;
+  const docSnap = snapshot.docs[0];
+  return { uid: docSnap.id, ...docSnap.data() } as { uid: string; displayName: string; email: string; photoURL: string | null };
+};
+
+/** Get user profile by uid */
+export const getUserProfile = async (uid: string) => {
+  const snap = await getDoc(doc(db, 'users', uid));
+  if (!snap.exists()) return null;
+  return { uid: snap.id, ...snap.data() } as { uid: string; displayName: string; email: string; photoURL: string | null };
 };
 
 // --- Categories ---
 
 export const createCategory = async (data: Omit<Category, 'id' | 'createdAt'>) => {
-  return await addDoc(categoriesRef, {
-    ...data,
-    createdAt: serverTimestamp(),
-  });
+  return await addDoc(categoriesRef, { ...data, createdAt: serverTimestamp() });
 };
 
 export const getUserCategories = async (userId: string) => {
