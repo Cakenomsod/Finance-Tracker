@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import {
   ArrowLeft, Receipt, Users, Calendar, MapPin, ArrowRight,
   Plus, Edit2, Trash2, MoreHorizontal, Lock, Plane,
-  BarChart3, DollarSign,
+  BarChart3, DollarSign, CheckCircle2,
 } from 'lucide-react'
 import {
   Bar, BarChart, Pie, PieChart, Cell, XAxis, YAxis,
@@ -32,11 +32,13 @@ import { cn } from '@/lib/utils'
 import { useTrips } from '@/hooks/use-trips'
 import { useTransactions } from '@/hooks/use-transactions'
 import { useAuth } from '@/hooks/use-auth'
-import { TripExpenseForm } from '@/components/trips/trip-expense-form'
-import { MemberTagInput } from '@/components/trips/member-tag-input'
+import { useTripExpenses } from '@/hooks/use-trip-expenses'
+import { useTripSettlements } from '@/hooks/use-trip-settlements'
+import { TripExpenseFormV2 } from '@/components/trips/trip-expense-form'
+import { MemberPicker, PickedMember } from '@/components/trips/member-picker'
 import { Transaction } from '@/lib/firestore-types'
 import { Timestamp } from 'firebase/firestore'
-import { Search, Filter } from 'lucide-react'
+import { Search } from 'lucide-react'
 
 const chartConfig = {
   amount: { label: 'Amount', color: 'var(--chart-1)' },
@@ -59,27 +61,48 @@ export default function TripDetailPage() {
   const [isAddExpenseOpen, setIsAddExpenseOpen] = React.useState(false)
   const [isEditTripOpen, setIsEditTripOpen] = React.useState(false)
   const [editingTx, setEditingTx] = React.useState<Transaction | null>(null)
-  const [editTripMembers, setEditTripMembers] = React.useState<string[]>([])
+  const [editTripMembers, setEditTripMembers] = React.useState<PickedMember[]>([])
   const [expenseSearch, setExpenseSearch] = React.useState('')
   const [expenseFilterPaidBy, setExpenseFilterPaidBy] = React.useState('all')
 
   const trip = trips.find((t) => t.id === tripId)
   const tripTxs = transactions.filter((tx) => tx.tripId === tripId)
+  // Record Payment Dialog state
+  const [isRecordPaymentOpen, setIsRecordPaymentOpen] = React.useState(false)
+  const [recordPaymentData, setRecordPaymentData] = React.useState<{from: string, to: string, amount: number} | null>(null)
+
   const loading = tripsLoading || txLoading
 
+  // --- Trip Expenses (new system) ---
+  const { expenses: tripExpenses, calcBalances, addExpense, editExpense, removeExpense } = useTripExpenses(tripId)
+  const { settlements: paymentHistory, recordSettlement } = useTripSettlements(tripId)
+
+  /** Get display name from memberProfiles or fallback to key */
+  const getDisplayName = (key: string) =>
+    trip?.memberProfiles?.[key]?.displayName || key
+
+  /** Members as {key, displayName} array for forms */
+  const memberObjects = (trip?.members || []).map(k => ({ key: k, displayName: getDisplayName(k) }))
+
   // --- Calculations ---
-  const totalExpenses = tripTxs.reduce((s, tx) => s + Math.abs(tx.amount), 0)
+  const totalLegacyExpenses = tripTxs.reduce((s, tx) => s + Math.abs(tx.amount), 0)
+  const totalNewExpenses = tripExpenses.reduce((s, ex) => s + ex.totalAmount, 0)
+  const totalExpenses = totalLegacyExpenses + totalNewExpenses
   const members = trip?.members || []
 
-  // FIXED: calculate each person's net balance based on splitWith per transaction
+  // Calculate each person's net balance based on legacy transactions + new expenses + settlements
   const participants = React.useMemo(() => {
+    // 1. Calculate legacy (transactions)
     const net: Record<string, number> = {}
-    members.forEach((m) => { net[m] = 0 })
+    const paid: Record<string, number> = {}
+    members.forEach((m) => { net[m] = 0; paid[m] = 0 })
 
     tripTxs.forEach((tx) => {
       const amount = Math.abs(tx.amount)
       const payer = tx.paidBy || members[0]
       const split = tx.splitWith // null = solo, 'all' = everyone, 'Name' = specific
+
+      if (paid[payer] !== undefined) paid[payer] += amount
 
       if (!split) {
         // Solo: only paidBy bears the cost, no effect on others
@@ -105,12 +128,40 @@ export default function TripDetailPage() {
       })
     })
 
-    return members.map((member) => {
-      const paid = tripTxs.filter((tx) => tx.paidBy === member).reduce((s, tx) => s + Math.abs(tx.amount), 0)
-      const initials = member.split(' ').map((w) => w[0]).join('').toUpperCase().substring(0, 2)
-      return { name: member, initials, paid, netBalance: Math.round(net[member] || 0) }
+    // 2. Add new expenses
+    const displayNames = Object.fromEntries(members.map(m => [m, getDisplayName(m)]))
+    const newBalances = calcBalances(members, displayNames)
+
+    // 3. Subtract settled amounts
+    const settlementsNet: Record<string, number> = {}
+    members.forEach(m => { settlementsNet[m] = 0 })
+    paymentHistory.forEach(s => {
+      if (settlementsNet[s.fromUserId] !== undefined) settlementsNet[s.fromUserId] += s.amount
+      if (settlementsNet[s.toUserId] !== undefined) settlementsNet[s.toUserId] -= s.amount
     })
-  }, [tripTxs, members])
+
+    // 4. Merge all
+    return members.map((member) => {
+      const legacyPaid = paid[member] || 0
+      const legacyNet = net[member] || 0
+      
+      const newBal = newBalances.find(b => b.userId === member)
+      const newPaid = newBal?.totalPaid || 0
+      const newNet = newBal?.netBalance || 0
+      
+      const settlementNet = settlementsNet[member] || 0
+
+      const initials = getDisplayName(member).split(' ').map((w) => w[0]).join('').toUpperCase().substring(0, 2)
+      
+      return { 
+        name: member, // keep key as 'name' for backward compatibility
+        displayName: getDisplayName(member),
+        initials, 
+        paid: legacyPaid + newPaid, 
+        netBalance: Math.round(legacyNet + newNet + settlementNet)
+      }
+    })
+  }, [tripTxs, members, calcBalances, paymentHistory])
 
   // Settlements — greedy min-transfer algorithm
   const settlements = React.useMemo(() => {
@@ -149,7 +200,7 @@ export default function TripDetailPage() {
     net: p.netBalance,
   }))
 
-  const meParticipant = participants.find((p) => p.name.toLowerCase() === 'me')
+  const meParticipant = participants.find((p) => p.name === user?.uid || p.name.toLowerCase() === 'me')
   const myBalance = meParticipant ? meParticipant.netBalance : 0
 
   // Filtered expenses for the Expenses tab
@@ -232,7 +283,14 @@ export default function TripDetailPage() {
                     <Lock className="mr-2 size-4" /> Close Trip
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => {
-                    setEditTripMembers([...trip.members])
+                    // convert trip.members to PickedMember[]
+                    const picked = (trip.members || []).map(key => ({
+                      key,
+                      displayName: getDisplayName(key),
+                      photoURL: trip.memberProfiles?.[key]?.photoURL || null,
+                      isManual: !trip.memberProfiles?.[key],
+                    }))
+                    setEditTripMembers(picked)
                     setIsEditTripOpen(true)
                   }}>
                     <Edit2 className="mr-2 size-4" /> Edit Trip
@@ -497,43 +555,101 @@ export default function TripDetailPage() {
 
         {/* Settlements Tab */}
         <TabsContent value="settlements" className="mt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Settlement Plan</CardTitle>
-              <CardDescription>Minimum transfers to settle all balances</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {settlements.length === 0 ? (
-                <div className="py-8 text-center text-muted-foreground">
-                  {tripTxs.length === 0 ? 'No expenses yet' : 'Everyone is settled up! 🎉'}
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {settlements.map((s, i) => (
-                    <div key={i} className="flex items-center justify-between rounded-lg bg-muted/50 p-4">
-                      <div className="flex items-center gap-3">
-                        <Avatar className="size-9">
-                          <AvatarFallback className="text-xs bg-destructive/20 text-destructive">
-                            {s.from.substring(0, 2).toUpperCase()}
-                          </AvatarFallback>
-                        </Avatar>
-                        <ArrowRight className="size-4 text-muted-foreground" />
-                        <Avatar className="size-9">
-                          <AvatarFallback className="text-xs bg-primary/20 text-primary">
-                            {s.to.substring(0, 2).toUpperCase()}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="ml-2">
-                          <p className="text-sm font-medium">{s.from} → {s.to}</p>
+          <div className="grid gap-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Settlement Plan</CardTitle>
+                <CardDescription>Minimum transfers to settle all balances</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {settlements.length === 0 ? (
+                  <div className="py-8 text-center text-muted-foreground">
+                    {totalExpenses === 0 ? 'No expenses yet' : 'Everyone is settled up! 🎉'}
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {settlements.map((s, i) => {
+                      const fromName = getDisplayName(s.from)
+                      const toName = getDisplayName(s.to)
+                      return (
+                        <div key={i} className="flex items-center justify-between rounded-lg bg-muted/50 p-4">
+                          <div className="flex items-center gap-3">
+                            <Avatar className="size-9">
+                              <AvatarFallback className="text-xs bg-destructive/20 text-destructive">
+                                {fromName.substring(0, 2).toUpperCase()}
+                              </AvatarFallback>
+                            </Avatar>
+                            <ArrowRight className="size-4 text-muted-foreground" />
+                            <Avatar className="size-9">
+                              <AvatarFallback className="text-xs bg-primary/20 text-primary">
+                                {toName.substring(0, 2).toUpperCase()}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div className="ml-2">
+                              <p className="text-sm font-medium">{fromName} → {toName}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-4">
+                            <span className="text-lg font-bold tabular-nums">฿{s.amount.toLocaleString()}</span>
+                            {trip.status === 'active' && (
+                              <Button 
+                                size="sm" 
+                                variant="outline"
+                                onClick={() => {
+                                  setRecordPaymentData(s)
+                                  setIsRecordPaymentOpen(true)
+                                }}
+                              >
+                                Record
+                              </Button>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                      <span className="text-lg font-bold tabular-nums">฿{s.amount.toLocaleString()}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+                      )
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Payment History</CardTitle>
+                <CardDescription>Recorded payments between members</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {paymentHistory.length === 0 ? (
+                  <div className="py-8 text-center text-muted-foreground">
+                    No payments recorded yet
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {paymentHistory.map(s => {
+                      const fromName = getDisplayName(s.fromUserId)
+                      const toName = getDisplayName(s.toUserId)
+                      const date = s.date?.seconds ? new Date(s.date.seconds * 1000) : new Date()
+                      return (
+                        <div key={s.id} className="flex items-center justify-between rounded-lg border p-4">
+                          <div className="flex items-center gap-3">
+                            <div className="flex size-10 items-center justify-center rounded-lg bg-muted">
+                              <CheckCircle2 className="size-4 text-green-500" />
+                            </div>
+                            <div>
+                              <p className="font-medium">{fromName} paid {toName}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {date.toLocaleDateString('th-TH', { month: 'short', day: 'numeric', year: 'numeric' })}
+                              </p>
+                            </div>
+                          </div>
+                          <span className="font-semibold text-green-600 tabular-nums">฿{s.amount.toLocaleString()}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
       </Tabs>
 
@@ -553,12 +669,16 @@ export default function TripDetailPage() {
               const startStr = formData.get('startDate') as string
               const endStr = formData.get('endDate') as string
 
+              const memberProfiles: Record<string, { displayName: string; photoURL: string | null }> =
+                Object.fromEntries(editTripMembers.map(m => [m.key, { displayName: m.displayName, photoURL: m.photoURL || null }]))
+
               await editTrip(trip.id!, {
                 name,
                 description,
                 startDate: startStr ? Timestamp.fromDate(new Date(startStr)) : undefined,
                 endDate: endStr ? Timestamp.fromDate(new Date(endStr)) : undefined,
-                members: editTripMembers,
+                members: editTripMembers.map(m => m.key),
+                memberProfiles,
               })
               setIsEditTripOpen(false)
             }}
@@ -607,11 +727,12 @@ export default function TripDetailPage() {
             </div>
             <div className="space-y-2">
               <Label>สมาชิก</Label>
-              <MemberTagInput
+              <MemberPicker
                 value={editTripMembers}
                 onChange={setEditTripMembers}
+                selfUid={user?.uid}
               />
-              <p className="text-xs text-muted-foreground">ใช้ "Me" สำหรับตัวเอง</p>
+              <p className="text-xs text-muted-foreground">คุณจะถูกเพิ่มเป็นสมาชิกอัตโนมัติ</p>
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setIsEditTripOpen(false)}>
@@ -632,20 +753,59 @@ export default function TripDetailPage() {
               {editingTx ? 'Edit this expense' : 'Add an expense to this trip'}
             </DialogDescription>
           </DialogHeader>
-          <TripExpenseForm
-            tripMembers={members}
-            initialData={editingTx}
+          <TripExpenseFormV2
+            tripMembers={memberObjects}
+            myUserId={user?.uid || ''}
+            initialData={null}
             onSubmit={async (data) => {
-              if (editingTx) {
-                await editTransaction(editingTx.id!, { ...data, tripId })
-              } else {
-                await addTransaction({ ...data, tripId })
-              }
+              await addExpense({ ...data, tripId, userId: user?.uid || '' })
               setIsAddExpenseOpen(false)
               setEditingTx(null)
             }}
             onCancel={() => { setIsAddExpenseOpen(false); setEditingTx(null) }}
           />
+        </DialogContent>
+      </Dialog>
+
+      {/* Record Payment Dialog */}
+      <Dialog open={isRecordPaymentOpen} onOpenChange={setIsRecordPaymentOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Record Payment</DialogTitle>
+            <DialogDescription>
+              Confirm that {recordPaymentData ? getDisplayName(recordPaymentData.from) : ''} paid {recordPaymentData ? getDisplayName(recordPaymentData.to) : ''}.
+            </DialogDescription>
+          </DialogHeader>
+          {recordPaymentData && (
+            <div className="space-y-4 pt-4">
+              <div className="rounded-lg border p-4 bg-muted/30">
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground text-sm">Amount</span>
+                  <span className="text-2xl font-bold tabular-nums">฿{recordPaymentData.amount.toLocaleString()}</span>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setIsRecordPaymentOpen(false)}>
+                  Cancel
+                </Button>
+                <Button onClick={async () => {
+                  await recordSettlement({
+                    tripId,
+                    fromUserId: recordPaymentData.from,
+                    toUserId: recordPaymentData.to,
+                    fromDisplayName: getDisplayName(recordPaymentData.from),
+                    toDisplayName: getDisplayName(recordPaymentData.to),
+                    amount: recordPaymentData.amount,
+                    isPartial: false,
+                    date: Timestamp.now(),
+                  })
+                  setIsRecordPaymentOpen(false)
+                }}>
+                  Confirm Payment
+                </Button>
+              </DialogFooter>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

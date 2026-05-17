@@ -49,8 +49,10 @@ import { cn } from '@/lib/utils'
 import { useTrips } from '@/hooks/use-trips'
 import { useTransactions } from '@/hooks/use-transactions'
 import { useAuth } from '@/hooks/use-auth'
-import { TransactionForm } from '@/components/transactions/transaction-form'
+import { useTripExpenses } from '@/hooks/use-trip-expenses'
 import { Trip, Transaction } from '@/lib/firestore-types'
+import { MemberPicker, PickedMember } from '@/components/trips/member-picker'
+import { TripExpenseFormV2 } from '@/components/trips/trip-expense-form'
 import { Timestamp } from 'firebase/firestore'
 
 // --- Settlement calculation ---
@@ -386,11 +388,17 @@ export default function TripsPage() {
   const [newTripDescription, setNewTripDescription] = React.useState('')
   const [newTripStartDate, setNewTripStartDate] = React.useState('')
   const [newTripEndDate, setNewTripEndDate] = React.useState('')
-  const [newTripMembers, setNewTripMembers] = React.useState('')
+  const [newTripMembers, setNewTripMembers] = React.useState<PickedMember[]>([])
 
   // Add Expense Dialog state
   const [isAddExpenseOpen, setIsAddExpenseOpen] = React.useState(false)
   const [expenseTripId, setExpenseTripId] = React.useState<string | null>(null)
+  const expenseTrip = [...activeTrips, ...closedTrips].find(t => t.id === expenseTripId)
+  const expenseMemberObjects = (expenseTrip?.members || []).map(k => ({
+    key: k,
+    displayName: expenseTrip?.memberProfiles?.[k]?.displayName || k,
+  }))
+  const { addExpense } = useTripExpenses(expenseTripId || '')
 
   const loading = tripsLoading || txLoading
 
@@ -403,36 +411,36 @@ export default function TripsPage() {
 
   const handleCreateTrip = async () => {
     if (!newTripName.trim()) return
+    if (!user) return
 
-    const members = newTripMembers
-      .split('\n')
-      .map((m) => m.trim())
-      .filter(Boolean)
-
-    // Always include "Me" if not already there
-    if (!members.some((m) => m.toLowerCase() === 'me')) {
-      members.unshift('Me')
+    // Always include self
+    const selfMember: PickedMember = {
+      key: user.uid,
+      displayName: user.displayName || user.email || 'Me',
+      photoURL: user.photoURL || null,
     }
+    const allMembers = newTripMembers.some(m => m.key === user.uid)
+      ? newTripMembers
+      : [selfMember, ...newTripMembers]
+
+    const memberProfiles: Record<string, { displayName: string; photoURL: string | null }> =
+      Object.fromEntries(allMembers.map(m => [m.key, { displayName: m.displayName, photoURL: m.photoURL || null }]))
 
     await addTrip({
       name: newTripName.trim(),
       description: newTripDescription.trim(),
-      members,
-      startDate: newTripStartDate
-        ? Timestamp.fromDate(new Date(newTripStartDate))
-        : Timestamp.now(),
-      endDate: newTripEndDate
-        ? Timestamp.fromDate(new Date(newTripEndDate))
-        : Timestamp.now(),
+      members: allMembers.map(m => m.key),
+      memberProfiles,
+      startDate: newTripStartDate ? Timestamp.fromDate(new Date(newTripStartDate)) : Timestamp.now(),
+      endDate: newTripEndDate ? Timestamp.fromDate(new Date(newTripEndDate)) : Timestamp.now(),
     })
 
-    // Reset form
     setIsCreateOpen(false)
     setNewTripName('')
     setNewTripDescription('')
     setNewTripStartDate('')
     setNewTripEndDate('')
-    setNewTripMembers('')
+    setNewTripMembers([])
   }
 
   const handleAddExpense = (tripId: string) => {
@@ -522,15 +530,13 @@ export default function TripsPage() {
                 </div>
               </div>
               <div className="grid gap-2">
-                <Label>Participants</Label>
-                <Textarea
-                  placeholder={`Enter names, one per line\ne.g.\nSarah\nMike\nLisa`}
+                <Label>สมาชิก</Label>
+                <MemberPicker
                   value={newTripMembers}
-                  onChange={(e) => setNewTripMembers(e.target.value)}
+                  onChange={setNewTripMembers}
+                  selfUid={user?.uid}
                 />
-                <p className="text-xs text-muted-foreground">
-                  "Me" will be added automatically
-                </p>
+                <p className="text-xs text-muted-foreground">คุณจะถูกเพิ่มเป็นสมาชิกอัตโนมัติ</p>
               </div>
             </div>
             <DialogFooter>
@@ -682,20 +688,13 @@ export default function TripsPage() {
               participants.
             </DialogDescription>
           </DialogHeader>
-          <TransactionForm
-            initialData={
-              expenseTripId
-                ? ({
-                    tripId: expenseTripId,
-                    type: 'expense',
-                  } as any)
-                : null
-            }
+          <TripExpenseFormV2
+            tripMembers={expenseMemberObjects}
+            myUserId={user?.uid || ''}
+            initialData={null}
             onSubmit={async (data) => {
-              await addTransaction({
-                ...data,
-                tripId: expenseTripId,
-              })
+              if (!expenseTripId || !user) return
+              await addExpense({ ...data, tripId: expenseTripId, userId: user.uid })
               setIsAddExpenseOpen(false)
               setExpenseTripId(null)
             }}

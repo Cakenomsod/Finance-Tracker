@@ -46,8 +46,19 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 import { useDebts } from '@/hooks/use-debts'
+import { useTripDebts } from '@/hooks/use-trip-debts'
 import { useAuth } from '@/hooks/use-auth'
 import { Debt } from '@/lib/firestore-types'
+import { createTripSettlement } from '@/lib/firestore'
+import { Timestamp } from 'firebase/firestore'
+
+interface UIGlobalDebt extends Omit<Debt, 'createdAt'> {
+  fromDisplayName?: string
+  toDisplayName?: string
+  isTripDebt?: boolean
+  tripIds?: string[]
+  createdAt?: any
+}
 
 function DebtCard({
   debt,
@@ -56,7 +67,7 @@ function DebtCard({
   onSettle,
   onDelete,
 }: {
-  debt: Debt
+  debt: UIGlobalDebt
   type: 'owe' | 'owed'
   person: string
   onSettle: (id: string) => void
@@ -84,7 +95,9 @@ function DebtCard({
             </Avatar>
             <div>
               <p className="font-medium">{person}</p>
-              <p className="text-sm text-muted-foreground">{debt.relatedTxIds?.length > 0 ? 'From transaction split' : 'Manual debt'}</p>
+              <p className="text-sm text-muted-foreground">
+                {debt.isTripDebt ? 'From Trips' : debt.relatedTxIds?.length > 0 ? 'From transaction split' : 'Manual debt'}
+              </p>
             </div>
           </div>
           <div className="text-right">
@@ -139,10 +152,16 @@ function DebtCard({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem className="text-destructive" onClick={() => onDelete(debt.id!)}>
-                  <Trash2 className="mr-2 size-4" />
-                  Delete
-                </DropdownMenuItem>
+                {debt.isTripDebt ? (
+                  <DropdownMenuItem disabled>
+                    Auto-generated from trips
+                  </DropdownMenuItem>
+                ) : (
+                  <DropdownMenuItem className="text-destructive" onClick={() => onDelete(debt.id!)}>
+                    <Trash2 className="mr-2 size-4" />
+                    Delete
+                  </DropdownMenuItem>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -155,26 +174,84 @@ function DebtCard({
 export default function DebtsPage() {
   const { user } = useAuth()
   const { debts, loading, addDebt, settleDebt, removeDebt } = useDebts()
+  const { tripDebts, loading: tripLoading } = useTripDebts()
 
   const [isAddOpen, setIsAddOpen] = React.useState(false)
   const [newDebtType, setNewDebtType] = React.useState<'owe' | 'owed'>('owe')
   const [newDebtPerson, setNewDebtPerson] = React.useState('')
   const [newDebtAmount, setNewDebtAmount] = React.useState('')
 
-  if (loading) {
+  if (loading || tripLoading) {
     return <div className="p-6">Loading debts...</div>
   }
 
-  const pendingDebts = debts.filter(d => d.status === 'pending')
+  // Map manual debts
+  const manualPending = debts.filter(d => d.status === 'pending').map(d => ({ ...d } as UIGlobalDebt))
+  
+  // Map trip debts
+  const mappedTripDebts: UIGlobalDebt[] = tripDebts.map(td => {
+    if (td.amount > 0) {
+      // Owed to me
+      return {
+        id: `trip-debt-${td.personId}`,
+        fromUserId: td.personId,
+        fromDisplayName: td.personName,
+        toUserId: user!.uid,
+        amount: td.amount,
+        status: 'pending',
+        isTripDebt: true,
+        tripIds: td.tripIds,
+        relatedTxIds: [],
+        settledAt: null,
+      }
+    } else {
+      // I owe them
+      return {
+        id: `trip-debt-${td.personId}`,
+        fromUserId: user!.uid,
+        toUserId: td.personId,
+        toDisplayName: td.personName,
+        amount: Math.abs(td.amount),
+        status: 'pending',
+        isTripDebt: true,
+        tripIds: td.tripIds,
+        relatedTxIds: [],
+        settledAt: null,
+      }
+    }
+  })
+
+  const allPending = [...manualPending, ...mappedTripDebts]
   const settledDebts = debts.filter(d => d.status === 'settled')
 
-  const youOwe = pendingDebts.filter((d) => d.fromUserId === user?.uid)
-  const owedToYou = pendingDebts.filter((d) => d.toUserId === user?.uid)
+  const youOwe = allPending.filter((d) => d.fromUserId === user?.uid)
+  const owedToYou = allPending.filter((d) => d.toUserId === user?.uid)
 
   const totalOwed = youOwe.reduce((sum, d) => sum + d.amount, 0)
   const totalOwedToYou = owedToYou.reduce((sum, d) => sum + d.amount, 0)
   
   const netBalance = totalOwedToYou - totalOwed
+
+  const handleSettle = async (id: string) => {
+    const debt = allPending.find(d => d.id === id)
+    if (!debt) return
+    
+    if (debt.isTripDebt) {
+      // Create a cross-trip settlement
+      await createTripSettlement({
+        userId: user!.uid,
+        fromUserId: debt.fromUserId,
+        fromDisplayName: debt.fromDisplayName || debt.fromUserId,
+        toUserId: debt.toUserId,
+        toDisplayName: debt.toDisplayName || debt.toUserId,
+        amount: debt.amount,
+        isPartial: false,
+        date: Timestamp.now(),
+      })
+    } else {
+      await settleDebt(id)
+    }
+  }
 
   const handleAddDebt = async () => {
     if (!newDebtPerson || !newDebtAmount || isNaN(parseFloat(newDebtAmount))) return
@@ -343,8 +420,8 @@ export default function DebtsPage() {
                   key={debt.id} 
                   debt={debt} 
                   type="owed" 
-                  person={debt.fromUserId} 
-                  onSettle={settleDebt} 
+                  person={debt.fromDisplayName || debt.fromUserId} 
+                  onSettle={handleSettle} 
                   onDelete={removeDebt} 
                 />
               ))}
@@ -362,8 +439,8 @@ export default function DebtsPage() {
                   key={debt.id} 
                   debt={debt} 
                   type="owe" 
-                  person={debt.toUserId} 
-                  onSettle={settleDebt} 
+                  person={debt.toDisplayName || debt.toUserId} 
+                  onSettle={handleSettle} 
                   onDelete={removeDebt} 
                 />
               ))}

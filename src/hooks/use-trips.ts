@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, query, where, orderBy, onSnapshot } from 'firebase/firestore';
+import { collection, query, where, orderBy, onSnapshot, or } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Trip } from '@/lib/firestore-types';
 import { createTrip, updateTrip, deleteTrip, closeTrip } from '@/lib/firestore';
@@ -20,17 +20,18 @@ export function useTrips() {
 
     setLoading(true);
 
-    // Query trips where the user is the creator OR a member
-    // For simplicity, we listen for trips created by the user.
-    // Members-based query would require an array-contains query.
-    const qCreated = query(
+    // Query trips where the user is the creator OR a member (UID-based)
+    const qTrips = query(
       collection(db, 'trips'),
-      where('createdBy', '==', user.uid),
+      or(
+        where('createdBy', '==', user.uid),
+        where('members', 'array-contains', user.uid)
+      ),
       orderBy('createdAt', 'desc')
     );
 
     const unsubscribe = onSnapshot(
-      qCreated,
+      qTrips,
       (snapshot) => {
         const data = snapshot.docs.map((doc) => ({
           id: doc.id,
