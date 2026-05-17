@@ -181,6 +181,10 @@ export default function DebtsPage() {
   const [newDebtPerson, setNewDebtPerson] = React.useState('')
   const [newDebtAmount, setNewDebtAmount] = React.useState('')
 
+  const [settleDebtData, setSettleDebtData] = React.useState<UIGlobalDebt | null>(null)
+  const [isSettleOpen, setIsSettleOpen] = React.useState(false)
+  const [settleAmount, setSettleAmount] = React.useState<string>('')
+
   if (loading || tripLoading) {
     return <div className="p-6">Loading debts...</div>
   }
@@ -232,25 +236,41 @@ export default function DebtsPage() {
   
   const netBalance = totalOwedToYou - totalOwed
 
-  const handleSettle = async (id: string) => {
+  const handleSettleClick = (id: string) => {
     const debt = allPending.find(d => d.id === id)
     if (!debt) return
+    setSettleDebtData(debt)
+    setSettleAmount(debt.amount.toString())
+    setIsSettleOpen(true)
+  }
+
+  const handleConfirmSettle = async () => {
+    if (!settleDebtData) return
+    const payAmount = parseFloat(settleAmount) || settleDebtData.amount
     
-    if (debt.isTripDebt) {
-      // Create a cross-trip settlement
+    if (settleDebtData.isTripDebt) {
       await createTripSettlement({
         userId: user!.uid,
-        fromUserId: debt.fromUserId,
-        fromDisplayName: debt.fromDisplayName || debt.fromUserId,
-        toUserId: debt.toUserId,
-        toDisplayName: debt.toDisplayName || debt.toUserId,
-        amount: debt.amount,
-        isPartial: false,
+        fromUserId: settleDebtData.fromUserId,
+        fromDisplayName: settleDebtData.fromDisplayName || settleDebtData.fromUserId,
+        toUserId: settleDebtData.toUserId,
+        toDisplayName: settleDebtData.toDisplayName || settleDebtData.toUserId,
+        amount: payAmount,
+        isPartial: payAmount < settleDebtData.amount,
         date: Timestamp.now(),
       })
     } else {
-      await settleDebt(id)
+      // Partial for manual debts is not fully supported yet in UI, but we'll mark as settled if full
+      if (payAmount < settleDebtData.amount) {
+        // Just add a reverse debt to balance it if we wanted to be perfectly accurate,
+        // but since manual debt isn't robust, let's just mark the whole thing for now, or alert.
+        alert("Partial settlement for manual debts is not fully supported yet. Marking as fully settled.")
+      }
+      await settleDebt(settleDebtData.id!)
     }
+    
+    setIsSettleOpen(false)
+    setSettleDebtData(null)
   }
 
   const handleAddDebt = async () => {
@@ -421,7 +441,7 @@ export default function DebtsPage() {
                   debt={debt} 
                   type="owed" 
                   person={debt.fromDisplayName || debt.fromUserId} 
-                  onSettle={handleSettle} 
+                  onSettle={handleSettleClick} 
                   onDelete={removeDebt} 
                 />
               ))}
@@ -440,7 +460,7 @@ export default function DebtsPage() {
                   debt={debt} 
                   type="owe" 
                   person={debt.toDisplayName || debt.toUserId} 
-                  onSettle={handleSettle} 
+                  onSettle={handleSettleClick} 
                   onDelete={removeDebt} 
                 />
               ))}

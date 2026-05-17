@@ -36,7 +36,7 @@ import { useTripExpenses } from '@/hooks/use-trip-expenses'
 import { useTripSettlements } from '@/hooks/use-trip-settlements'
 import { TripExpenseFormV2 } from '@/components/trips/trip-expense-form'
 import { MemberPicker, PickedMember } from '@/components/trips/member-picker'
-import { Transaction } from '@/lib/firestore-types'
+import { Transaction, TripExpense } from '@/lib/firestore-types'
 import { Timestamp } from 'firebase/firestore'
 import { Search } from 'lucide-react'
 
@@ -60,7 +60,7 @@ export default function TripDetailPage() {
 
   const [isAddExpenseOpen, setIsAddExpenseOpen] = React.useState(false)
   const [isEditTripOpen, setIsEditTripOpen] = React.useState(false)
-  const [editingTx, setEditingTx] = React.useState<Transaction | null>(null)
+  const [editingExpense, setEditingExpense] = React.useState<TripExpense | null>(null)
   const [editTripMembers, setEditTripMembers] = React.useState<PickedMember[]>([])
   const [expenseSearch, setExpenseSearch] = React.useState('')
   const [expenseFilterPaidBy, setExpenseFilterPaidBy] = React.useState('all')
@@ -70,6 +70,7 @@ export default function TripDetailPage() {
   // Record Payment Dialog state
   const [isRecordPaymentOpen, setIsRecordPaymentOpen] = React.useState(false)
   const [recordPaymentData, setRecordPaymentData] = React.useState<{from: string, to: string, amount: number} | null>(null)
+  const [settlementAmount, setSettlementAmount] = React.useState<string>('')
 
   const loading = tripsLoading || txLoading
 
@@ -484,7 +485,7 @@ export default function TripDetailPage() {
                                   // Can't edit legacy via new form easily without full conversion
                                   alert('Legacy transactions cannot be edited directly. Please delete and create a new expense.')
                                 } else {
-                                  setEditingTx(ex.rawEx as any)
+                                  setEditingExpense(ex.rawEx as TripExpense)
                                   setIsAddExpenseOpen(true)
                                 }
                               }}>
@@ -655,6 +656,7 @@ export default function TripDetailPage() {
                                 variant="outline"
                                 onClick={() => {
                                   setRecordPaymentData(s)
+                                  setSettlementAmount(s.amount.toString())
                                   setIsRecordPaymentOpen(true)
                                 }}
                               >
@@ -803,24 +805,29 @@ export default function TripDetailPage() {
       </Dialog>
 
       {/* Add/Edit Expense Dialog */}
-      <Dialog open={isAddExpenseOpen} onOpenChange={(open) => { setIsAddExpenseOpen(open); if (!open) setEditingTx(null) }}>
+      <Dialog open={isAddExpenseOpen} onOpenChange={(open) => { setIsAddExpenseOpen(open); if (!open) setEditingExpense(null) }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{editingTx ? 'Edit Expense' : 'Add Trip Expense'}</DialogTitle>
+            <DialogTitle>{editingExpense ? 'Edit Expense' : 'Add Trip Expense'}</DialogTitle>
             <DialogDescription>
-              {editingTx ? 'Edit this expense' : 'Add an expense to this trip'}
+              {editingExpense ? 'Edit this expense' : 'Add an expense to this trip'}
             </DialogDescription>
           </DialogHeader>
           <TripExpenseFormV2
+            key={editingExpense?.id || 'new'}
             tripMembers={memberObjects}
             myUserId={user?.uid || ''}
-            initialData={null}
+            initialData={editingExpense}
             onSubmit={async (data) => {
-              await addExpense({ ...data, tripId, userId: user?.uid || '' })
+              if (editingExpense?.id) {
+                await editExpense(editingExpense.id, data)
+              } else {
+                await addExpense({ ...data, tripId, userId: user?.uid || '' })
+              }
               setIsAddExpenseOpen(false)
-              setEditingTx(null)
+              setEditingExpense(null)
             }}
-            onCancel={() => { setIsAddExpenseOpen(false); setEditingTx(null) }}
+            onCancel={() => { setIsAddExpenseOpen(false); setEditingExpense(null) }}
           />
         </DialogContent>
       </Dialog>
@@ -836,25 +843,37 @@ export default function TripDetailPage() {
           </DialogHeader>
           {recordPaymentData && (
             <div className="space-y-4 pt-4">
-              <div className="rounded-lg border p-4 bg-muted/30">
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground text-sm">Amount</span>
-                  <span className="text-2xl font-bold tabular-nums">฿{recordPaymentData.amount.toLocaleString()}</span>
+              <div className="space-y-2">
+                <Label>Amount to Settle (฿)</Label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">฿</span>
+                  <Input 
+                    type="number" 
+                    step="0.01" 
+                    className="pl-8 text-lg font-bold"
+                    value={settlementAmount}
+                    onChange={(e) => setSettlementAmount(e.target.value)}
+                  />
                 </div>
+                <p className="text-xs text-muted-foreground">
+                  Total owed: ฿{recordPaymentData.amount.toLocaleString()}. 
+                  You can pay a smaller amount for partial settlement.
+                </p>
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setIsRecordPaymentOpen(false)}>
                   Cancel
                 </Button>
                 <Button onClick={async () => {
+                  const payAmount = parseFloat(settlementAmount) || recordPaymentData.amount
                   await recordSettlement({
                     tripId,
                     fromUserId: recordPaymentData.from,
                     toUserId: recordPaymentData.to,
                     fromDisplayName: getDisplayName(recordPaymentData.from),
                     toDisplayName: getDisplayName(recordPaymentData.to),
-                    amount: recordPaymentData.amount,
-                    isPartial: false,
+                    amount: payAmount,
+                    isPartial: payAmount < recordPaymentData.amount,
                     date: Timestamp.now(),
                   })
                   setIsRecordPaymentOpen(false)

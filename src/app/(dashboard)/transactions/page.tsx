@@ -61,6 +61,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
 import { cn } from '@/lib/utils'
 import { useTransactions } from '@/hooks/use-transactions'
+import { useAllTripExpenses } from '@/hooks/use-all-trip-expenses'
 import { TransactionForm } from '@/components/transactions/transaction-form'
 import { Transaction } from '@/lib/firestore-types'
 
@@ -92,7 +93,11 @@ interface ParsedItem {
 }
 
 export default function TransactionsPage() {
-  const { transactions, loading, addTransaction, editTransaction, removeTransaction } = useTransactions()
+  const { transactions, loading: txLoading, addTransaction, editTransaction, removeTransaction } = useTransactions()
+  const { allTripExpenses, loading: tripLoading } = useAllTripExpenses()
+  
+  const loading = txLoading || tripLoading
+
   const [searchQuery, setSearchQuery] = React.useState('')
   const [selectedCategory, setSelectedCategory] = React.useState('All Categories')
   const [selectedRows, setSelectedRows] = React.useState<string[]>([])
@@ -102,8 +107,46 @@ export default function TransactionsPage() {
   const [isAddDialogOpen, setIsAddDialogOpen] = React.useState(false)
   const [editingTransaction, setEditingTransaction] = React.useState<Transaction | null>(null)
 
+  // Merge legacy transactions and trip expenses
+  const allCombined = React.useMemo(() => {
+    const legacy = transactions.map(tx => ({
+      id: tx.id,
+      description: tx.description,
+      amount: tx.amount,
+      category: tx.category,
+      date: tx.date,
+      paidBy: tx.paidBy || 'Me',
+      isLegacy: true,
+      rawTx: tx,
+      rawEx: null
+    }))
+
+    const newExps = allTripExpenses.map(ex => {
+      const payersStr = ex.payers.map(p => p.displayName).join(', ')
+      return {
+        id: ex.id,
+        description: ex.description,
+        amount: -ex.totalAmount, // Expenses are negative in transaction view
+        category: ex.category || 'Other',
+        date: ex.date,
+        paidBy: payersStr,
+        isLegacy: false,
+        rawTx: null,
+        rawEx: ex
+      }
+    })
+
+    const combined = [...legacy, ...newExps]
+    combined.sort((a, b) => {
+      const dateA = a.date?.seconds || 0
+      const dateB = b.date?.seconds || 0
+      return dateB - dateA
+    })
+    return combined
+  }, [transactions, allTripExpenses])
+
   // Filter transactions
-  const filteredTransactions = transactions.filter((t) => {
+  const filteredTransactions = allCombined.filter((t) => {
     const descMatches = t.description?.toLowerCase().includes(searchQuery.toLowerCase()) || false
     const catMatches = t.category?.toLowerCase().includes(searchQuery.toLowerCase()) || false
     const matchesSearch = descMatches || catMatches
@@ -357,7 +400,12 @@ export default function TransactionsPage() {
                   </TableCell>
                   <TableCell>
                     <div>
-                      <p className="font-medium">{transaction.description}</p>
+                      <p className="font-medium">
+                        {transaction.description}
+                        {!transaction.isLegacy && (
+                          <Badge variant="outline" className="ml-2 text-[10px]">Trip Expense</Badge>
+                        )}
+                      </p>
                     </div>
                   </TableCell>
                   <TableCell>
@@ -393,18 +441,26 @@ export default function TransactionsPage() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => {
-                          setEditingTransaction(transaction)
-                          setIsAddDialogOpen(true)
-                        }}>
-                          <Edit2 className="mr-2 size-4" />
-                          Edit
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem className="text-destructive" onClick={() => removeTransaction(transaction.id!)}>
-                          <Trash2 className="mr-2 size-4" />
-                          Delete
-                        </DropdownMenuItem>
+                        {transaction.isLegacy ? (
+                          <>
+                            <DropdownMenuItem onClick={() => {
+                              setEditingTransaction(transaction.rawTx!)
+                              setIsAddDialogOpen(true)
+                            }}>
+                              <Edit2 className="mr-2 size-4" />
+                              Edit
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem className="text-destructive" onClick={() => removeTransaction(transaction.id!)}>
+                              <Trash2 className="mr-2 size-4" />
+                              Delete
+                            </DropdownMenuItem>
+                          </>
+                        ) : (
+                          <DropdownMenuItem disabled>
+                            Go to Trip to edit
+                          </DropdownMenuItem>
+                        )}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </TableCell>
@@ -421,7 +477,7 @@ export default function TransactionsPage() {
           <CardContent className="pt-6">
             <div className="text-sm text-muted-foreground">Total Income</div>
             <div className="mt-1 text-2xl font-bold text-primary">
-              +฿{transactions
+              +฿{allCombined
                 .filter((t) => t.amount > 0)
                 .reduce((sum, t) => sum + t.amount, 0)
                 .toLocaleString()}
@@ -433,7 +489,7 @@ export default function TransactionsPage() {
             <div className="text-sm text-muted-foreground">Total Expenses</div>
             <div className="mt-1 text-2xl font-bold text-destructive">
               -฿{Math.abs(
-                transactions
+                allCombined
                   .filter((t) => t.amount < 0)
                   .reduce((sum, t) => sum + t.amount, 0)
               ).toLocaleString()}
@@ -444,8 +500,8 @@ export default function TransactionsPage() {
           <CardContent className="pt-6">
             <div className="text-sm text-muted-foreground">Net Balance</div>
             <div className="mt-1 text-2xl font-bold">
-              {transactions.reduce((sum, t) => sum + t.amount, 0) >= 0 ? '+' : ''}฿
-              {transactions.reduce((sum, t) => sum + t.amount, 0).toLocaleString()}
+              {allCombined.reduce((sum, t) => sum + t.amount, 0) >= 0 ? '+' : ''}฿
+              {allCombined.reduce((sum, t) => sum + t.amount, 0).toLocaleString()}
             </div>
           </CardContent>
         </Card>

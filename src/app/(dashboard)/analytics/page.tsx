@@ -45,6 +45,7 @@ import {
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart'
 import { cn } from '@/lib/utils'
 import { useTransactions } from '@/hooks/use-transactions'
+import { useAllTripExpenses } from '@/hooks/use-all-trip-expenses'
 import { Transaction } from '@/lib/firestore-types'
 
 const chartConfig = {
@@ -256,19 +257,54 @@ function getFinancialHabits(transactions: Transaction[]) {
 }
 
 export default function AnalyticsPage() {
-  const { transactions, loading } = useTransactions()
+  const { transactions, loading: txLoading } = useTransactions()
+  const { allTripExpenses, loading: tripLoading } = useAllTripExpenses()
   const [timeRange, setTimeRange] = React.useState('6months')
+  
+  const loading = txLoading || tripLoading
+
+  // Merge legacy transactions and trip expenses
+  const allCombined = React.useMemo(() => {
+    const legacy = transactions.map(tx => ({
+      id: tx.id,
+      description: tx.description,
+      amount: tx.amount,
+      category: tx.category,
+      date: tx.date,
+      paidBy: tx.paidBy || 'Me',
+      isLegacy: true,
+    } as any))
+
+    const newExps = allTripExpenses.map(ex => {
+      const payersStr = ex.payers.map(p => p.displayName).join(', ')
+      return {
+        id: ex.id,
+        description: ex.description,
+        amount: -ex.totalAmount, // Expenses are negative
+        category: ex.category || 'Other',
+        date: ex.date,
+        paidBy: payersStr,
+        isLegacy: false,
+      } as any
+    })
+
+    return [...legacy, ...newExps].sort((a, b) => {
+      const dateA = a.date?.seconds || 0
+      const dateB = b.date?.seconds || 0
+      return dateB - dateA
+    })
+  }, [transactions, allTripExpenses])
 
   // Filter transactions by time range
   const filtered = React.useMemo(
-    () => filterByTimeRange(transactions, timeRange),
-    [transactions, timeRange]
+    () => filterByTimeRange(allCombined, timeRange),
+    [allCombined, timeRange]
   )
 
   // Aggregated data
   const monthlyOverview = React.useMemo(() => buildMonthlyOverview(filtered), [filtered])
   const categoryBreakdown = React.useMemo(() => buildCategoryBreakdown(filtered), [filtered])
-  const dailySpending = React.useMemo(() => buildDailySpending(transactions), [transactions])
+  const dailySpending = React.useMemo(() => buildDailySpending(allCombined), [allCombined])
   const weekdayPattern = React.useMemo(() => buildWeekdayPattern(filtered), [filtered])
   const habits = React.useMemo(() => getFinancialHabits(filtered), [filtered])
 
@@ -289,7 +325,7 @@ export default function AnalyticsPage() {
     )
   }
 
-  if (transactions.length === 0) {
+  if (allCombined.length === 0) {
     return (
       <div className="flex flex-col gap-6 p-6">
         <div className="flex flex-col gap-1">
