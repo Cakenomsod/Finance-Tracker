@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, query, where, onSnapshot, orderBy } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, orderBy, or } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { TripSettlement } from '@/lib/firestore-types';
 import { createTripSettlement, deleteTripSettlement } from '@/lib/firestore';
@@ -13,20 +13,26 @@ export function useTripSettlements(tripId?: string) {
   useEffect(() => {
     if (!user) { setSettlements([]); setLoading(false); return; }
 
-    const constraints = tripId
-      ? [where('userId', '==', user.uid), where('tripId', '==', tripId)]
-      : [where('userId', '==', user.uid)];
-
-    const q = query(
-      collection(db, 'trip_settlements'),
-      ...constraints,
-      orderBy('date', 'desc')
-    );
+    const q = tripId
+      ? query(collection(db, 'trip_settlements'), where('tripId', '==', tripId))
+      : query(
+          collection(db, 'trip_settlements'),
+          or(
+            where('fromUserId', '==', user.uid),
+            where('toUserId', '==', user.uid),
+            where('userId', '==', user.uid)
+          )
+        );
 
     const unsub = onSnapshot(q, (snap) => {
-      setSettlements(snap.docs.map(d => ({ id: d.id, ...d.data() } as TripSettlement)));
+      const docs = snap.docs.map(d => ({ id: d.id, ...d.data() } as TripSettlement));
+      docs.sort((a, b) => b.date.toMillis() - a.date.toMillis());
+      setSettlements(docs);
       setLoading(false);
-    }, () => setLoading(false));
+    }, (err) => {
+      console.error("Error fetching trip settlements:", err);
+      setLoading(false);
+    });
 
     return () => unsub();
   }, [user, tripId]);

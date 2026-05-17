@@ -162,7 +162,7 @@ export default function TripDetailPage() {
         netBalance: Math.round(legacyNet + newNet + settlementNet)
       }
     })
-  }, [tripTxs, members, calcBalances, paymentHistory])
+  }, [tripTxs, members, calcBalances, paymentHistory, tripExpenses])
 
   const allExpensesCombined = React.useMemo(() => {
     const legacy = tripTxs.map(tx => ({
@@ -248,6 +248,7 @@ export default function TripDetailPage() {
   // Per-person bar chart data
   const perPersonData = participants.map((p) => ({
     name: p.name,
+    displayName: p.displayName,
     paid: p.paid,
     net: p.netBalance,
   }))
@@ -393,7 +394,7 @@ export default function TripDetailPage() {
         <TabsList>
           <TabsTrigger value="expenses" className="gap-2">
             <Receipt className="size-4" /> Expenses
-            <Badge variant="secondary" className="ml-1 rounded-full">{tripTxs.length}</Badge>
+            <Badge variant="secondary" className="ml-1 rounded-full">{allExpensesCombined.length}</Badge>
           </TabsTrigger>
           <TabsTrigger value="analytics" className="gap-2">
             <BarChart3 className="size-4" /> Analytics
@@ -438,7 +439,7 @@ export default function TripDetailPage() {
                         className={cn('rounded-full border px-3 py-1 text-xs font-medium transition-all',
                           expenseFilterPaidBy === m ? 'bg-primary text-primary-foreground border-primary' : 'hover:border-primary/50'
                         )}
-                      >{m}</button>
+                      >{getDisplayName(m)}</button>
                     ))}
                   </div>
                 </div>
@@ -527,7 +528,7 @@ export default function TripDetailPage() {
                   <ChartContainer config={{ paid: { label: 'Paid', color: 'var(--chart-1)' }, share: { label: 'Share', color: 'var(--chart-4)' } }} className="h-[250px] w-full">
                     <BarChart data={perPersonData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" className="stroke-muted" vertical={false} />
-                      <XAxis dataKey="name" tickLine={false} axisLine={false} className="text-xs fill-muted-foreground" />
+                      <XAxis dataKey="displayName" tickLine={false} axisLine={false} className="text-xs fill-muted-foreground" />
                       <YAxis tickLine={false} axisLine={false} tickFormatter={(v) => `฿${v}`} className="text-xs fill-muted-foreground" />
                       <ChartTooltip content={<ChartTooltipContent />} />
                       <Bar dataKey="paid" fill="var(--chart-1)" radius={[4, 4, 0, 0]} />
@@ -594,7 +595,7 @@ export default function TripDetailPage() {
                           <AvatarFallback className="text-xs bg-muted">{p.initials}</AvatarFallback>
                         </Avatar>
                         <div>
-                          <p className="font-medium">{p.name}</p>
+                          <p className="font-medium">{p.displayName}</p>
                           <p className="text-xs text-muted-foreground">จ่ายไป: ฿{p.paid.toLocaleString()}</p>
                         </div>
                       </div>
