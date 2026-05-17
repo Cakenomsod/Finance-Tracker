@@ -35,7 +35,6 @@ export function useTripDebts() {
     const unsubscribeTrips = onSnapshot(qTrips, (tripSnap) => {
       const activeTrips = tripSnap.docs
         .map(d => ({ id: d.id, ...d.data() } as Trip))
-        .filter(t => t.status === 'active') // Only compute for active trips (or closed if not settled yet? Let's say all for now)
       
       const tripIds = activeTrips.map(t => t.id!)
 
@@ -95,6 +94,10 @@ export function useTripDebts() {
             // Since we need exact person-to-person debts for the Debts page, we MUST use the greedy algorithm per trip.
           })
 
+          const isCurrentUser = (key: string) => {
+            return key === user.uid || key.toLowerCase() === 'me'
+          }
+
           // Let's do per-trip greedy calculation
           const globalDebts: Record<string, { amount: number, name: string, trips: Set<string> }> = {}
 
@@ -135,16 +138,20 @@ export function useTripDebts() {
               const to = creditors[j].id
 
               // If it involves the current user, record it in globalDebts
-              if (from === user.uid) {
+              if (isCurrentUser(from)) {
                 // I owe someone (negative)
-                if (!globalDebts[to]) globalDebts[to] = { amount: 0, name: creditors[j].name, trips: new Set() }
-                globalDebts[to].amount -= amount
-                globalDebts[to].trips.add(trip.id!)
-              } else if (to === user.uid) {
+                if (!isCurrentUser(to)) {
+                  if (!globalDebts[to]) globalDebts[to] = { amount: 0, name: creditors[j].name, trips: new Set() }
+                  globalDebts[to].amount -= amount
+                  globalDebts[to].trips.add(trip.id!)
+                }
+              } else if (isCurrentUser(to)) {
                 // Someone owes me (positive)
-                if (!globalDebts[from]) globalDebts[from] = { amount: 0, name: debtors[i].name, trips: new Set() }
-                globalDebts[from].amount += amount
-                globalDebts[from].trips.add(trip.id!)
+                if (!isCurrentUser(from)) {
+                  if (!globalDebts[from]) globalDebts[from] = { amount: 0, name: debtors[i].name, trips: new Set() }
+                  globalDebts[from].amount += amount
+                  globalDebts[from].trips.add(trip.id!)
+                }
               }
 
               debtors[i].balance += amount

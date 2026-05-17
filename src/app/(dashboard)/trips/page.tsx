@@ -384,9 +384,9 @@ function TripCard({
                   className="flex items-center justify-between rounded-lg bg-muted/50 p-3 text-sm"
                 >
                   <div className="flex items-center gap-2">
-                    <span className="font-medium">{settlement.from}</span>
+                    <span className="font-medium">{getDisplayName(settlement.from)}</span>
                     <ArrowRight className="size-4 text-muted-foreground" />
-                    <span className="font-medium">{settlement.to}</span>
+                    <span className="font-medium">{getDisplayName(settlement.to)}</span>
                   </div>
                   <span className="font-semibold tabular-nums">
                     ฿{settlement.amount.toLocaleString()}

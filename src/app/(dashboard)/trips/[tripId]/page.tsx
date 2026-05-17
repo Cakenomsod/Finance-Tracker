@@ -275,6 +275,61 @@ export default function TripDetailPage() {
     return combined
   }, [tripTxs, tripExpenses])
 
+  const itemizedDebtStates = React.useMemo(() => {
+    const sortedExps = [...allExpensesCombined].sort((a, b) => {
+      const aTime = a.date?.seconds || 0
+      const bTime = b.date?.seconds || 0
+      return aTime - bTime
+    })
+
+    const pool: Record<string, Record<string, number>> = {}
+    paymentHistory.forEach(s => {
+      const from = s.fromUserId
+      const to = s.toUserId
+      if (!pool[from]) pool[from] = {}
+      if (!pool[from][to]) pool[from][to] = 0
+      pool[from][to] += s.amount
+    })
+
+    const states: Record<string, Record<string, { status: 'paid' | 'partial' | 'pending'; paidAmount: number; remainingAmount: number }>> = {}
+
+    sortedExps.forEach(ex => {
+      const transfers = calculateExpenseTransfers(ex)
+      const exStates: Record<string, { status: 'paid' | 'partial' | 'pending'; paidAmount: number; remainingAmount: number }> = {}
+
+      transfers.forEach(t => {
+        const key = `${t.from}-${t.to}`
+        const available = pool[t.from]?.[t.to] || 0
+        
+        if (available >= t.amount) {
+          exStates[key] = {
+            status: 'paid',
+            paidAmount: t.amount,
+            remainingAmount: 0
+          }
+          pool[t.from][t.to] -= t.amount
+        } else if (available > 0.01) {
+          exStates[key] = {
+            status: 'partial',
+            paidAmount: available,
+            remainingAmount: t.amount - available
+          }
+          pool[t.from][t.to] = 0
+        } else {
+          exStates[key] = {
+            status: 'pending',
+            paidAmount: 0,
+            remainingAmount: t.amount
+          }
+        }
+      })
+
+      states[ex.id || `${ex.description}-${ex.date?.seconds}`] = exStates
+    })
+
+    return states
+  }, [allExpensesCombined, paymentHistory, calculateExpenseTransfers])
+
   const filteredExpenses = allExpensesCombined.filter((ex) => {
     const matchSearch = !expenseSearch ||
       ex.description?.toLowerCase().includes(expenseSearch.toLowerCase()) ||
@@ -776,6 +831,9 @@ export default function TripDetailPage() {
                             {transfers.map((t, index) => {
                               const fromName = getDisplayName(t.from)
                               const toName = getDisplayName(t.to)
+                              const exId = ex.id || `${ex.description}-${ex.date?.seconds}`
+                              const debtState = itemizedDebtStates[exId]?.[`${t.from}-${t.to}`] || { status: 'pending', paidAmount: 0, remainingAmount: t.amount }
+
                               return (
                                 <div key={index} className="flex items-center justify-between text-sm bg-muted/30 rounded px-3 py-2">
                                   <div className="flex items-center gap-2">
@@ -784,20 +842,29 @@ export default function TripDetailPage() {
                                     <span className="font-medium text-primary">{toName}</span>
                                   </div>
                                   <div className="flex items-center gap-3">
-                                    <span className="font-semibold tabular-nums">฿{t.amount.toLocaleString()}</span>
-                                    {trip.status === 'active' && (
-                                      <Button
-                                        size="sm"
-                                        variant="ghost"
-                                        className="h-7 px-2 text-xs hover:bg-primary/10 hover:text-primary"
-                                        onClick={() => {
-                                          setRecordPaymentData({ from: t.from, to: t.to, amount: t.amount })
-                                          setSettlementAmount(t.amount.toString())
-                                          setIsRecordPaymentOpen(true)
-                                        }}
-                                      >
-                                        Pay
-                                      </Button>
+                                    <div className="text-right">
+                                      <span className="font-semibold tabular-nums block">฿{t.amount.toLocaleString()}</span>
+                                      {debtState.status === 'partial' && (
+                                        <span className="text-[10px] text-muted-foreground block">Paid ฿{debtState.paidAmount.toLocaleString()}</span>
+                                      )}
+                                    </div>
+                                    {debtState.status === 'paid' ? (
+                                      <Badge className="bg-primary/20 text-primary border-0 text-xs hover:bg-primary/20 pointer-events-none">Paid</Badge>
+                                    ) : (
+                                      trip.status === 'active' && (
+                                        <Button
+                                          size="sm"
+                                          variant="ghost"
+                                          className="h-7 px-2 text-xs hover:bg-primary/10 hover:text-primary"
+                                          onClick={() => {
+                                            setRecordPaymentData({ from: t.from, to: t.to, amount: debtState.remainingAmount })
+                                            setSettlementAmount(debtState.remainingAmount.toString())
+                                            setIsRecordPaymentOpen(true)
+                                          }}
+                                        >
+                                          Pay
+                                        </Button>
+                                      )
                                     )}
                                   </div>
                                 </div>
