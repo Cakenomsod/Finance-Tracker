@@ -19,6 +19,7 @@ import {
   Moon,
   Sun,
   Check,
+  Monitor,
 } from 'lucide-react'
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -90,11 +91,7 @@ export default function SettingsPage() {
     setMounted(true)
   }, [])
 
-  const currentTheme = mounted
-    ? theme === 'system'
-      ? resolvedTheme
-      : theme
-    : undefined
+  const activeTheme = mounted ? theme : undefined
 
   const toggleNotification = (id: string) => {
     setNotifications((prev) =>
@@ -404,13 +401,17 @@ export default function SettingsPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="font-medium">Theme</p>
-                <p className="text-sm text-muted-foreground">Select your preferred theme</p>
+                <p className="text-sm text-muted-foreground">
+                  {activeTheme === 'system' && resolvedTheme
+                    ? `Following system (${resolvedTheme} mode)`
+                    : 'Select your preferred theme'}
+                </p>
               </div>
               <div className="flex gap-2">
                 <Button
-                  variant={currentTheme === 'dark' ? 'outline' : 'ghost'}
+                  variant={activeTheme === 'dark' ? 'outline' : 'ghost'}
                   size="sm"
-                  className={cn('gap-2', currentTheme === 'dark' && 'border-primary')}
+                  className={cn('gap-2', activeTheme === 'dark' && 'border-primary')}
                   onClick={() => setTheme('dark')}
                   disabled={!mounted}
                 >
@@ -418,14 +419,25 @@ export default function SettingsPage() {
                   Dark
                 </Button>
                 <Button
-                  variant={currentTheme === 'light' ? 'outline' : 'ghost'}
+                  variant={activeTheme === 'light' ? 'outline' : 'ghost'}
                   size="sm"
-                  className={cn('gap-2', currentTheme === 'light' && 'border-primary')}
+                  className={cn('gap-2', activeTheme === 'light' && 'border-primary')}
                   onClick={() => setTheme('light')}
                   disabled={!mounted}
                 >
                   <Sun className="size-4" />
                   Light
+                </Button>
+                <Button
+                  variant={activeTheme === 'system' ? 'outline' : 'ghost'}
+                  size="sm"
+                  className={cn('gap-2', activeTheme === 'system' && 'border-primary')}
+                  onClick={() => setTheme('system')}
+                  disabled={!mounted}
+                  title="Sync with device theme"
+                >
+                  <Monitor className="size-4" />
+                  Sync
                 </Button>
               </div>
             </div>
