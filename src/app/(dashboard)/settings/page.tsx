@@ -46,6 +46,7 @@ import {
 } from '@/components/ui/dialog'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { cn } from '@/lib/utils'
+import { useTheme } from 'next-themes'
 
 // Mock data
 const categories = [
@@ -80,8 +81,20 @@ const aiSettings = [
 ]
 
 export default function SettingsPage() {
+  const { theme, setTheme, resolvedTheme } = useTheme()
+  const [mounted, setMounted] = React.useState(false)
   const [notifications, setNotifications] = React.useState(notificationSettings)
   const [aiPrefs, setAiPrefs] = React.useState(aiSettings)
+
+  React.useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  const currentTheme = mounted
+    ? theme === 'system'
+      ? resolvedTheme
+      : theme
+    : undefined
 
   const toggleNotification = (id: string) => {
     setNotifications((prev) =>
@@ -394,11 +407,23 @@ export default function SettingsPage() {
                 <p className="text-sm text-muted-foreground">Select your preferred theme</p>
               </div>
               <div className="flex gap-2">
-                <Button variant="outline" size="sm" className="gap-2">
+                <Button
+                  variant={currentTheme === 'dark' ? 'outline' : 'ghost'}
+                  size="sm"
+                  className={cn('gap-2', currentTheme === 'dark' && 'border-primary')}
+                  onClick={() => setTheme('dark')}
+                  disabled={!mounted}
+                >
                   <Moon className="size-4" />
                   Dark
                 </Button>
-                <Button variant="ghost" size="sm" className="gap-2">
+                <Button
+                  variant={currentTheme === 'light' ? 'outline' : 'ghost'}
+                  size="sm"
+                  className={cn('gap-2', currentTheme === 'light' && 'border-primary')}
+                  onClick={() => setTheme('light')}
+                  disabled={!mounted}
+                >
                   <Sun className="size-4" />
                   Light
                 </Button>
