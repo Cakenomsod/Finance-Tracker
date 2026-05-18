@@ -20,6 +20,8 @@ import {
   Sun,
   Check,
   Monitor,
+  ImageIcon,
+  Loader2,
 } from 'lucide-react'
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -48,6 +50,9 @@ import {
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { cn } from '@/lib/utils'
 import { useTheme } from 'next-themes'
+import { useUserSettings } from '@/hooks/use-user-settings'
+import { AiTextProvider } from '@/lib/firestore-types'
+import { toast } from 'sonner'
 
 // Mock data
 const categories = [
@@ -74,22 +79,32 @@ const notificationSettings = [
   { id: 'debt_reminder', title: 'Debt Reminders', description: 'Remind about pending debts', enabled: true },
 ]
 
-const aiSettings = [
-  { id: 'auto_categorize', title: 'Auto-categorize', description: 'AI automatically assigns categories', enabled: true },
-  { id: 'smart_insights', title: 'Smart Insights', description: 'Generate personalized recommendations', enabled: true },
-  { id: 'natural_language', title: 'Natural Language Input', description: 'Parse natural language expenses', enabled: true },
-  { id: 'spending_prediction', title: 'Spending Predictions', description: 'Predict future spending patterns', enabled: false },
-]
-
 export default function SettingsPage() {
   const { theme, setTheme, resolvedTheme } = useTheme()
+  const { immich, aiTextProvider, localAiBaseUrl, saveImmichSettings, saveAiSettings, loading: settingsLoading } = useUserSettings()
   const [mounted, setMounted] = React.useState(false)
   const [notifications, setNotifications] = React.useState(notificationSettings)
-  const [aiPrefs, setAiPrefs] = React.useState(aiSettings)
+  const [immichBaseUrl, setImmichBaseUrl] = React.useState('')
+  const [immichApiKey, setImmichApiKey] = React.useState('')
+  const [textProvider, setTextProvider] = React.useState<AiTextProvider>('gemma')
+  const [localAiUrl, setLocalAiUrl] = React.useState('')
+  const [testingImmich, setTestingImmich] = React.useState(false)
+  const [savingImmich, setSavingImmich] = React.useState(false)
+  const [savingAi, setSavingAi] = React.useState(false)
 
   React.useEffect(() => {
     setMounted(true)
   }, [])
+
+  React.useEffect(() => {
+    if (immich?.baseUrl) setImmichBaseUrl(immich.baseUrl)
+    if (immich?.apiKey) setImmichApiKey(immich.apiKey)
+  }, [immich?.baseUrl, immich?.apiKey])
+
+  React.useEffect(() => {
+    setTextProvider(aiTextProvider)
+    setLocalAiUrl(localAiBaseUrl || '')
+  }, [aiTextProvider, localAiBaseUrl])
 
   const activeTheme = mounted ? theme : undefined
 
@@ -99,10 +114,46 @@ export default function SettingsPage() {
     )
   }
 
-  const toggleAiSetting = (id: string) => {
-    setAiPrefs((prev) =>
-      prev.map((a) => (a.id === id ? { ...a, enabled: !a.enabled } : a))
-    )
+  const handleTestImmich = async () => {
+    setTestingImmich(true)
+    try {
+      const res = await fetch('/api/immich/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ baseUrl: immichBaseUrl, apiKey: immichApiKey }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Connection failed')
+      toast.success('เชื่อมต่อ Immich สำเร็จ')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'เชื่อมต่อไม่สำเร็จ')
+    } finally {
+      setTestingImmich(false)
+    }
+  }
+
+  const handleSaveImmich = async () => {
+    setSavingImmich(true)
+    try {
+      await saveImmichSettings({ baseUrl: immichBaseUrl, apiKey: immichApiKey })
+      toast.success('บันทึกการตั้งค่า Immich แล้ว')
+    } catch {
+      toast.error('บันทึกไม่สำเร็จ')
+    } finally {
+      setSavingImmich(false)
+    }
+  }
+
+  const handleSaveAi = async () => {
+    setSavingAi(true)
+    try {
+      await saveAiSettings(textProvider, localAiUrl || undefined)
+      toast.success('บันทึกการตั้งค่า AI แล้ว')
+    } catch {
+      toast.error('บันทึกไม่สำเร็จ')
+    } finally {
+      setSavingAi(false)
+    }
   }
 
   return (
@@ -329,21 +380,41 @@ export default function SettingsPage() {
             <Sparkles className="size-5" />
             AI Preferences
           </CardTitle>
-          <CardDescription>Customize AI-powered features</CardDescription>
+          <CardDescription>Immich สำหรับรูปถาวร + เลือก AI สำหรับข้อความ</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {aiPrefs.map((pref) => (
-            <div key={pref.id} className="flex items-center justify-between">
-              <div>
-                <p className="font-medium">{pref.title}</p>
-                <p className="text-sm text-muted-foreground">{pref.description}</p>
-              </div>
-              <Switch
-                checked={pref.enabled}
-                onCheckedChange={() => toggleAiSetting(pref.id)}
-              />
+          <p className="text-xs text-muted-foreground">เมื่อ restart tunnel แล้วลิงก์เปลี่ยน ให้อัปเดต Base URL ที่นี่</p>
+          <div className="space-y-2">
+            <Label htmlFor="immich-url">Immich Base URL</Label>
+            <Input id="immich-url" placeholder="https://xxxx.trycloudflare.com" value={immichBaseUrl} onChange={(e) => setImmichBaseUrl(e.target.value)} disabled={settingsLoading} />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="immich-key">API Key</Label>
+            <Input id="immich-key" type="password" value={immichApiKey} onChange={(e) => setImmichApiKey(e.target.value)} disabled={settingsLoading} />
+          </div>
+          <div className="flex gap-2">
+            <Button type="button" variant="outline" onClick={handleTestImmich} disabled={testingImmich}>ทดสอบ Immich</Button>
+            <Button type="button" onClick={handleSaveImmich} disabled={savingImmich}>บันทึก Immich</Button>
+          </div>
+          <Separator />
+          <div className="space-y-2">
+            <Label>Text AI Provider</Label>
+            <Select value={textProvider} onValueChange={(v) => setTextProvider(v as AiTextProvider)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="gemma">Gemma API</SelectItem>
+                <SelectItem value="local">Local AI</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          {textProvider === 'local' && (
+            <div className="space-y-2">
+              <Label>Local AI URL</Label>
+              <Input value={localAiUrl} onChange={(e) => setLocalAiUrl(e.target.value)} placeholder="http://192.168.1.x:11434" />
             </div>
-          ))}
+          )}
+          <Badge variant="secondary" className="text-xs">รูป → Gemma 4 31B API</Badge>
+          <Button type="button" onClick={handleSaveAi} disabled={savingAi}>บันทึก AI</Button>
         </CardContent>
       </Card>
 

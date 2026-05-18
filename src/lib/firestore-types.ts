@@ -1,5 +1,14 @@
 import { Timestamp } from 'firebase/firestore';
 
+export type AiTextProvider = 'gemma' | 'local';
+export type ExpenseSource = 'manual' | 'ocr' | 'ai' | 'line';
+
+export interface ImmichSettings {
+  baseUrl: string;
+  apiKey: string;
+  lastVerifiedAt?: Timestamp;
+}
+
 // users/{userId}
 export interface UserProfile {
   uid: string;
@@ -9,6 +18,9 @@ export interface UserProfile {
   partnerId: string | null;
   currency: string;
   defaultCategories: string[];
+  immich?: ImmichSettings;
+  aiTextProvider?: AiTextProvider;
+  localAiBaseUrl?: string;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }
@@ -41,7 +53,9 @@ export interface Transaction {
   splitWith: string | null;
   tripId: string | null;
   receiptUrl: string | null;
-  source: 'manual' | 'line' | 'ocr';
+  source: ExpenseSource;
+  tripExpenseId?: string | null;
+  immichAssetId?: string | null;
   createdAt: Timestamp;
   items?: ReceiptItem[];
   baseAmount?: number;
@@ -126,6 +140,21 @@ export interface TripExpense {
   taxAmount?: number;
   taxMode?: TaxMode;
   currency?: TripCurrency;
+  transactionId?: string | null;
+  immichAssetId?: string | null;
+  source?: ExpenseSource;
+}
+
+// trip_ai_messages/{messageId}
+export interface TripAiMessage {
+  id?: string;
+  tripId: string;
+  userId: string;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  type: 'text' | 'image' | 'expense_draft';
+  metadata?: Record<string, unknown>;
+  createdAt: Timestamp;
 }
 
 // trip_settlements/{settlementId}

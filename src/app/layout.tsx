@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { AuthProvider } from '@/components/auth-context'
 import { ThemeProvider } from '@/components/theme-provider'
+import { Toaster } from '@/components/ui/sonner'
 import './globals.css'
 
 const _geist = Geist({ subsets: ["latin"] });
@@ -46,6 +47,7 @@ export default function RootLayout({
         >
           <AuthProvider>
             {children}
+            <Toaster richColors position="top-center" />
             {process.env.NODE_ENV === 'production' && <Analytics />}
           </AuthProvider>
         </ThemeProvider>

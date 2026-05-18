@@ -35,6 +35,7 @@ interface TripExpenseFormV2Props {
   myUserId: string
   tripDefaults?: TripFormDefaults
   initialData?: TripExpense | null
+  immichAssetId?: string | null
   onSubmit: (data: Omit<TripExpense, 'id' | 'createdAt' | 'userId' | 'tripId'>) => Promise<void>
   onCancel: () => void
 }
@@ -82,7 +83,7 @@ function emptyReceiptItem(
 }
 
 export function TripExpenseFormV2({
-  tripMembers, myUserId, tripDefaults, initialData, onSubmit, onCancel,
+  tripMembers, myUserId, tripDefaults, initialData, immichAssetId, onSubmit, onCancel,
 }: TripExpenseFormV2Props) {
   const countryCode = tripDefaults?.countryCode ?? null
   const countryConfig = getCountryConfig(countryCode)
@@ -356,6 +357,7 @@ export function TripExpenseFormV2({
         payers: result.payers,
         shares: result.shares,
         currency,
+        source: initialData?.source || 'manual',
       }
 
       if (isReceiptActive) {
@@ -389,6 +391,17 @@ export function TripExpenseFormV2({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5 py-2">
+      {immichAssetId && (
+        <div className="rounded-lg border bg-muted/40 p-3 space-y-2">
+          <p className="text-xs font-medium text-muted-foreground">รูปโน้ตถาวร (Immich)</p>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={`/api/immich/asset/${immichAssetId}?type=thumbnail`}
+            alt="Receipt attachment"
+            className="max-h-40 rounded-md object-contain"
+          />
+        </div>
+      )}
       {/* Input Mode Selector */}
       <div className="flex gap-1 p-1 bg-muted rounded-lg">
         <button
