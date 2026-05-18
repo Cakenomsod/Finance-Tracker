@@ -53,6 +53,13 @@ import { useTripExpenses } from '@/hooks/use-trip-expenses'
 import { Trip, Transaction, TripExpense, TripSettlement } from '@/lib/firestore-types'
 import { MemberPicker, PickedMember } from '@/components/trips/member-picker'
 import { TripExpenseFormV2 } from '@/components/trips/trip-expense-form'
+import {
+  TripSettingsFields,
+  defaultTripSettings,
+  tripSettingsToFirestore,
+  type TripSettingsValue,
+} from '@/components/trips/trip-settings-fields'
+import { convertToHomeCurrency, formatCurrencySymbol, formatHomeConversion } from '@/lib/trip-currency'
 import { Timestamp, collection, query, where, onSnapshot } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 
@@ -169,8 +176,7 @@ function TripCard({
   members.forEach((m) => { net[m] = 0; paid[m] = 0 })
 
   tripTransactions.forEach((tx) => {
-    const factor = tx.currency === 'JPY' ? 0.22 : 1
-    const amount = Math.abs(tx.amount) * factor
+    const amount = convertToHomeCurrency(Math.abs(tx.amount), tx.currency, trip)
     const payer = tx.paidBy || members[0]
     const split = tx.splitWith
 
@@ -200,12 +206,15 @@ function TripCard({
   members.forEach((m) => { newPaid[m] = 0; newShare[m] = 0 })
 
   tripExpenses.forEach((ex) => {
-    const factor = ex.currency === 'JPY' ? 0.22 : 1
     ex.payers.forEach((p) => {
-      if (newPaid[p.userId] !== undefined) newPaid[p.userId] += p.amount * factor
+      if (newPaid[p.userId] !== undefined) {
+        newPaid[p.userId] += convertToHomeCurrency(p.amount, ex.currency, trip)
+      }
     })
     ex.shares.forEach((s) => {
-      if (newShare[s.userId] !== undefined) newShare[s.userId] += s.amount * factor
+      if (newShare[s.userId] !== undefined) {
+        newShare[s.userId] += convertToHomeCurrency(s.amount, ex.currency, trip)
+      }
     })
   })
 
@@ -245,8 +254,14 @@ function TripCard({
   })
 
   const settlements = calculateSettlements(participants)
-  const totalLegacyExpenses = tripTransactions.reduce((sum, tx) => sum + (tx.currency === 'JPY' ? Math.abs(tx.amount) * 0.22 : Math.abs(tx.amount)), 0)
-  const totalNewExpenses = tripExpenses.reduce((sum, ex) => sum + (ex.currency === 'JPY' ? ex.totalAmount * 0.22 : ex.totalAmount), 0)
+  const totalLegacyExpenses = tripTransactions.reduce(
+    (sum, tx) => sum + convertToHomeCurrency(Math.abs(tx.amount), tx.currency, trip),
+    0
+  )
+  const totalNewExpenses = tripExpenses.reduce(
+    (sum, ex) => sum + convertToHomeCurrency(ex.totalAmount, ex.currency, trip),
+    0
+  )
   const totalExpenses = totalLegacyExpenses + totalNewExpenses
 
   // Find "Me" balance
@@ -424,11 +439,12 @@ function TripCard({
                   </div>
                   <div className="text-right">
                     <span className="font-semibold tabular-nums text-sm block">
-                      {tx.currency === 'JPY' ? '¥' : '฿'}{Math.abs(tx.amount).toLocaleString()}
+                      {formatCurrencySymbol(tx.currency || trip.tripCurrency || 'THB')}
+                      {Math.abs(tx.amount).toLocaleString()}
                     </span>
-                    {tx.currency === 'JPY' && (
+                    {formatHomeConversion(Math.abs(tx.amount), tx.currency, trip) && (
                       <span className="text-[10px] text-muted-foreground block font-normal">
-                        (฿{(Math.abs(tx.amount) * 0.22).toLocaleString()})
+                        ({formatHomeConversion(Math.abs(tx.amount), tx.currency, trip)})
                       </span>
                     )}
                   </div>
@@ -482,6 +498,7 @@ export default function TripsPage() {
   const [newTripStartDate, setNewTripStartDate] = React.useState('')
   const [newTripEndDate, setNewTripEndDate] = React.useState('')
   const [newTripMembers, setNewTripMembers] = React.useState<PickedMember[]>([])
+  const [newTripSettings, setNewTripSettings] = React.useState<TripSettingsValue>(defaultTripSettings)
 
   // Add Expense Dialog state
   const [isAddExpenseOpen, setIsAddExpenseOpen] = React.useState(false)
@@ -570,6 +587,7 @@ export default function TripsPage() {
       memberProfiles,
       startDate: newTripStartDate ? Timestamp.fromDate(new Date(newTripStartDate)) : Timestamp.now(),
       endDate: newTripEndDate ? Timestamp.fromDate(new Date(newTripEndDate)) : Timestamp.now(),
+      ...tripSettingsToFirestore(newTripSettings),
     })
 
     setIsCreateOpen(false)
@@ -578,6 +596,7 @@ export default function TripsPage() {
     setNewTripStartDate('')
     setNewTripEndDate('')
     setNewTripMembers([])
+    setNewTripSettings(defaultTripSettings())
   }
 
   const handleAddExpense = (tripId: string) => {
@@ -585,15 +604,20 @@ export default function TripsPage() {
     setIsAddExpenseOpen(true)
   }
 
+  const tripById = React.useMemo(
+    () => new Map([...activeTrips, ...closedTrips].map((t) => [t.id!, t])),
+    [activeTrips, closedTrips]
+  )
+
   // Stats
-  const totalLegacyExpenses = allTripTransactions.reduce(
-    (sum, tx) => sum + (tx.currency === 'JPY' ? Math.abs(tx.amount) * 0.22 : Math.abs(tx.amount)),
-    0
-  )
-  const totalNewExpenses = allTripExpenses.reduce(
-    (sum, ex) => sum + (ex.currency === 'JPY' ? ex.totalAmount * 0.22 : ex.totalAmount),
-    0
-  )
+  const totalLegacyExpenses = allTripTransactions.reduce((sum, tx) => {
+    const trip = tx.tripId ? tripById.get(tx.tripId) : undefined
+    return sum + convertToHomeCurrency(Math.abs(tx.amount), tx.currency, trip)
+  }, 0)
+  const totalNewExpenses = allTripExpenses.reduce((sum, ex) => {
+    const trip = tripById.get(ex.tripId)
+    return sum + convertToHomeCurrency(ex.totalAmount, ex.currency, trip)
+  }, 0)
   const totalTripExpenses = totalLegacyExpenses + totalNewExpenses
   const uniquePeople = new Set(
     [...activeTrips, ...closedTrips].flatMap((t) => t.members || [])
@@ -680,6 +704,7 @@ export default function TripsPage() {
                 />
                 <p className="text-xs text-muted-foreground">คุณจะถูกเพิ่มเป็นสมาชิกอัตโนมัติ</p>
               </div>
+              <TripSettingsFields value={newTripSettings} onChange={setNewTripSettings} />
             </div>
             <DialogFooter>
               <Button
@@ -837,6 +862,12 @@ export default function TripsPage() {
           <TripExpenseFormV2
             tripMembers={expenseMemberObjects}
             myUserId={user?.uid || ''}
+            tripDefaults={expenseTrip ? {
+              countryCode: expenseTrip.countryCode,
+              tripCurrency: expenseTrip.tripCurrency,
+              homeCurrency: expenseTrip.homeCurrency,
+              exchangeRate: expenseTrip.exchangeRate,
+            } : undefined}
             initialData={null}
             onSubmit={async (data) => {
               if (!expenseTripId || !user) return

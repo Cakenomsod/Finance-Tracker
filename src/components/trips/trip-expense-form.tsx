@@ -10,8 +10,20 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
-import { TripExpense, TripExpensePayer, TripExpenseShare } from '@/lib/firestore-types'
+import { TaxCategoryId, TripExpense, TripExpensePayer, TripExpenseShare, TripCurrency } from '@/lib/firestore-types'
 import { Timestamp } from 'firebase/firestore'
+import {
+  getCountryConfig, getDefaultTaxCategory, type TaxMode,
+} from '@/lib/tax/countries'
+import { calculateLineTax, roundMoney } from '@/lib/tax/calculate'
+import { formatCurrencySymbol, formatHomeConversion } from '@/lib/trip-currency'
+
+export interface TripFormDefaults {
+  countryCode?: string | null
+  tripCurrency?: TripCurrency
+  homeCurrency?: TripCurrency
+  exchangeRate?: number
+}
 
 interface Member {
   key: string
@@ -21,6 +33,7 @@ interface Member {
 interface TripExpenseFormV2Props {
   tripMembers: Member[]
   myUserId: string
+  tripDefaults?: TripFormDefaults
   initialData?: TripExpense | null
   onSubmit: (data: Omit<TripExpense, 'id' | 'createdAt' | 'userId' | 'tripId'>) => Promise<void>
   onCancel: () => void
@@ -38,12 +51,45 @@ interface ReceiptItemInput {
   category: string
   price: string
   tax: string
+  taxCategoryId: TaxCategoryId
   splitWith: string[]
 }
 
+function inferTaxCategory(
+  countryCode: string | null | undefined,
+  category: string,
+  saved?: TaxCategoryId
+): TaxCategoryId {
+  if (saved) return saved
+  if (countryCode === 'JP') {
+    return category === 'Food & Dining' ? 'food' : 'goods'
+  }
+  return getDefaultTaxCategory(countryCode || 'TH')
+}
+
+function emptyReceiptItem(
+  tripMembers: Member[],
+  countryCode?: string | null
+): ReceiptItemInput {
+  return {
+    name: '',
+    category: 'Food & Dining',
+    price: '',
+    tax: '',
+    taxCategoryId: inferTaxCategory(countryCode, 'Food & Dining'),
+    splitWith: tripMembers.map(m => m.key),
+  }
+}
+
 export function TripExpenseFormV2({
-  tripMembers, myUserId, initialData, onSubmit, onCancel,
+  tripMembers, myUserId, tripDefaults, initialData, onSubmit, onCancel,
 }: TripExpenseFormV2Props) {
+  const countryCode = tripDefaults?.countryCode ?? null
+  const countryConfig = getCountryConfig(countryCode)
+  const hasAutoTax = !!countryConfig
+  const defaultTaxMode: TaxMode = countryConfig?.defaultTaxMode
+    ?? (initialData?.taxMode as TaxMode)
+    ?? 'exclusive'
   const [description, setDescription] = React.useState(initialData?.description || '')
   const [totalAmount, setTotalAmount] = React.useState(initialData ? String(initialData.totalAmount) : '')
   const [subtotal, setSubtotal] = React.useState(initialData && initialData.items && initialData.items.length === 0 && initialData.baseAmount ? String(initialData.baseAmount) : '')
@@ -67,12 +113,15 @@ export function TripExpenseFormV2({
     initialData?.items?.map(item => ({
       name: item.name,
       category: item.category,
-      price: String(item.price),
+      price: String(
+        hasAutoTax && ((initialData?.taxMode || defaultTaxMode) === 'inclusive')
+          ? item.price + (item.tax || 0)
+          : item.price
+      ),
       tax: String(item.tax),
+      taxCategoryId: inferTaxCategory(countryCode, item.category, item.taxCategoryId),
       splitWith: item.splitWith || tripMembers.map(m => m.key),
-    })) || [
-      { name: '', category: 'Food & Dining', price: '', tax: '', splitWith: tripMembers.map(m => m.key) }
-    ]
+    })) || [emptyReceiptItem(tripMembers, countryCode)]
   )
 
   // Payers state: [{key, displayName, amount}]
@@ -95,8 +144,12 @@ export function TripExpenseFormV2({
 
   const [submitting, setSubmitting] = React.useState(false)
   const [errors, setErrors] = React.useState<string[]>([])
-  const [currency, setCurrency] = React.useState<'THB' | 'JPY'>(initialData?.currency || 'THB')
-  const [receiptTaxMode, setReceiptTaxMode] = React.useState<'exclusive' | 'inclusive'>('exclusive')
+  const [currency, setCurrency] = React.useState<TripCurrency>(
+    initialData?.currency || tripDefaults?.tripCurrency || 'THB'
+  )
+  const [receiptTaxMode, setReceiptTaxMode] = React.useState<TaxMode>(
+    (initialData?.taxMode as TaxMode) || defaultTaxMode
+  )
   const [receiptTax, setReceiptTax] = React.useState(
     initialData?.taxAmount 
       ? String(initialData.taxAmount) 
@@ -105,49 +158,93 @@ export function TripExpenseFormV2({
         : ''
   )
 
+  const curSymbol = formatCurrencySymbol(currency)
+  const tripForConversion = tripDefaults ? {
+    tripCurrency: tripDefaults.tripCurrency,
+    homeCurrency: tripDefaults.homeCurrency,
+    exchangeRate: tripDefaults.exchangeRate,
+  } : null
+  const homeHint = (amount: number) => formatHomeConversion(amount, currency, tripForConversion)
+
+  const calcReceiptLine = (rawVal: number, taxCategoryId: TaxCategoryId) => {
+    if (hasAutoTax && countryCode) {
+      const calc = calculateLineTax(rawVal, taxCategoryId, countryCode, receiptTaxMode)
+      return { p: calc.base, t: calc.tax, itemTotal: calc.total, rate: calc.rate }
+    }
+    return null
+  }
+
   // --- Real-time Receipt calculations ---
   const isReceiptActive = inputMode === 'receipt' && receiptItems.some(item => (parseFloat(item.price) || 0) > 0)
 
   let totalBaseAmount = 0
-  let totalTaxAmount = parseFloat(receiptTax) || 0
+  let totalTaxAmount = hasAutoTax ? 0 : (parseFloat(receiptTax) || 0)
   let totalReceiptAmount = 0
 
-  if (isReceiptActive) {
+  const lineAmounts = receiptItems.map(item => {
+    const rawVal = parseFloat(item.price) || 0
+    const auto = calcReceiptLine(rawVal, item.taxCategoryId)
+    if (auto) return auto
+
+    let p = 0
+    let t = 0
+    let itemTotal = 0
     if (receiptTaxMode === 'exclusive') {
+      p = rawVal
+      itemTotal = p
+    } else {
+      itemTotal = rawVal
+      p = itemTotal
+    }
+    return { p, t, itemTotal, rate: 0 }
+  })
+
+  if (isReceiptActive) {
+    if (hasAutoTax) {
+      lineAmounts.forEach(l => {
+        totalBaseAmount += l.p
+        totalTaxAmount += l.t
+        totalReceiptAmount += l.itemTotal
+      })
+      totalBaseAmount = roundMoney(totalBaseAmount)
+      totalTaxAmount = roundMoney(totalTaxAmount)
+      totalReceiptAmount = roundMoney(totalReceiptAmount)
+    } else if (receiptTaxMode === 'exclusive') {
       receiptItems.forEach(item => {
         totalBaseAmount += parseFloat(item.price) || 0
       })
       totalReceiptAmount = totalBaseAmount + totalTaxAmount
     } else {
-      // Inclusive: sum of item prices is the total receipt amount
       receiptItems.forEach(item => {
         totalReceiptAmount += parseFloat(item.price) || 0
       })
       totalBaseAmount = Math.max(0, totalReceiptAmount - totalTaxAmount)
+      lineAmounts.forEach((l, idx) => {
+        const rawVal = parseFloat(receiptItems[idx].price) || 0
+        const itemTotal = rawVal
+        const t = totalReceiptAmount > 0 ? (itemTotal / totalReceiptAmount) * totalTaxAmount : 0
+        l.t = t
+        l.p = Math.max(0, itemTotal - t)
+        l.itemTotal = itemTotal
+      })
     }
   }
 
   const itemShares: Record<string, number> = {}
   tripMembers.forEach(m => { itemShares[m.key] = 0 })
 
-  receiptItems.forEach(item => {
-    const rawVal = parseFloat(item.price) || 0
-    let p = 0
-    let t = 0
-    let itemTotal = 0
-
-    if (receiptTaxMode === 'exclusive') {
-      p = rawVal
-      t = totalBaseAmount > 0 ? (p / totalBaseAmount) * totalTaxAmount : 0
-      itemTotal = p + t
-    } else {
-      itemTotal = rawVal
-      t = totalReceiptAmount > 0 ? (itemTotal / totalReceiptAmount) * totalTaxAmount : 0
-      p = Math.max(0, itemTotal - t)
+  receiptItems.forEach((item, idx) => {
+    const { itemTotal } = lineAmounts[idx]
+    if (!hasAutoTax && isReceiptActive && receiptTaxMode === 'exclusive') {
+      const rawVal = parseFloat(item.price) || 0
+      const p = rawVal
+      const t = totalBaseAmount > 0 ? (p / totalBaseAmount) * totalTaxAmount : 0
+      lineAmounts[idx] = { p, t, itemTotal: p + t, rate: 0 }
     }
 
-    if (itemTotal > 0 && item.splitWith.length > 0) {
-      const share = itemTotal / item.splitWith.length
+    const total = lineAmounts[idx].itemTotal
+    if (total > 0 && item.splitWith.length > 0) {
+      const share = total / item.splitWith.length
       item.splitWith.forEach(memberKey => {
         if (itemShares[memberKey] !== undefined) {
           itemShares[memberKey] += share
@@ -199,7 +296,6 @@ export function TripExpenseFormV2({
     if (!total || total <= 0) errs.push('กรุณากรอกจำนวนเงิน')
     if (!category) errs.push('กรุณาเลือกหมวดหมู่')
 
-    const curSymbol = currency === 'THB' ? '฿' : '¥'
     const finalPayers: TripExpensePayer[] = payers.map((p, i) => ({
       userId: p.key,
       displayName: p.displayName,
@@ -263,24 +359,18 @@ export function TripExpenseFormV2({
       }
 
       if (isReceiptActive) {
-        payload.items = receiptItems.map(item => {
-          const rawVal = parseFloat(item.price) || 0
-          let p = 0
-          let t = 0
-          if (receiptTaxMode === 'exclusive') {
-            p = rawVal
-            t = totalBaseAmount > 0 ? (p / totalBaseAmount) * totalTaxAmount : 0
-          } else {
-            const itemTotal = rawVal
-            t = totalReceiptAmount > 0 ? (itemTotal / totalReceiptAmount) * totalTaxAmount : 0
-            p = Math.max(0, itemTotal - t)
-          }
+        payload.items = receiptItems.map((item, idx) => {
+          const { p, t, rate } = lineAmounts[idx]
           return {
             name: item.name || 'Item',
             category: item.category,
-            price: parseFloat(p.toFixed(2)),
-            tax: parseFloat(t.toFixed(2)),
+            price: roundMoney(p),
+            tax: roundMoney(t),
             splitWith: item.splitWith,
+            ...(hasAutoTax ? {
+              taxCategoryId: item.taxCategoryId,
+              taxRate: rate,
+            } : {}),
           }
         })
         payload.baseAmount = totalBaseAmount
@@ -332,6 +422,11 @@ export function TripExpenseFormV2({
       {/* Currency Selector */}
       <div className="space-y-1.5">
         <Label>สกุลเงิน (Currency)</Label>
+        {tripDefaults?.tripCurrency && (
+          <p className="text-xs text-muted-foreground">
+            ค่าเริ่มต้นจากทริป: {formatCurrencySymbol(tripDefaults.tripCurrency)} ({tripDefaults.tripCurrency})
+          </p>
+        )}
         <div className="flex gap-2">
           <Button
             type="button"
@@ -363,7 +458,7 @@ export function TripExpenseFormV2({
       {inputMode === 'standard' && (
         <div className="grid grid-cols-3 gap-3 border p-3 rounded-lg bg-muted/20">
           <div className="space-y-1.5">
-            <Label className="text-xs">ราคาสินค้า ({currency === 'THB' ? '฿' : '¥'})</Label>
+            <Label className="text-xs">ราคาสินค้า ({curSymbol})</Label>
             <Input 
               type="number" 
               step="0.01" 
@@ -380,7 +475,7 @@ export function TripExpenseFormV2({
             />
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs">ภาษี ({currency === 'THB' ? '฿' : '¥'})</Label>
+            <Label className="text-xs">ภาษี ({curSymbol})</Label>
             <Input 
               type="number" 
               step="0.01" 
@@ -397,7 +492,7 @@ export function TripExpenseFormV2({
             />
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs font-semibold text-primary">ยอดรวม ({currency === 'THB' ? '฿' : '¥'})</Label>
+            <Label className="text-xs font-semibold text-primary">ยอดรวม ({curSymbol})</Label>
             <Input 
               type="number" 
               step="0.01" 
@@ -417,7 +512,7 @@ export function TripExpenseFormV2({
       <div className="grid grid-cols-2 gap-3">
         {inputMode === 'receipt' && (
           <div className="space-y-1.5">
-            <Label>ยอดรวม ({currency === 'THB' ? '฿' : '¥'})</Label>
+            <Label>ยอดรวม ({curSymbol})</Label>
             <Input type="number" step="0.01" placeholder="0.00"
               disabled={true}
               value={totalReceiptAmount.toFixed(2)} />
@@ -477,7 +572,7 @@ export function TripExpenseFormV2({
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => setReceiptItems([...receiptItems, { name: '', category: 'Food & Dining', price: '', tax: '', splitWith: tripMembers.map(m => m.key) }])}
+              onClick={() => setReceiptItems([...receiptItems, emptyReceiptItem(tripMembers, countryCode)])}
               className="h-7 text-xs gap-1"
             >
               <Plus className="size-3" /> Add Product
@@ -486,20 +581,8 @@ export function TripExpenseFormV2({
 
           <div className="space-y-3">
             {receiptItems.map((item, idx) => {
-              const rawVal = parseFloat(item.price) || 0
-              let p = 0
-              let t = 0
-              let itemTotal = 0
-
-              if (receiptTaxMode === 'exclusive') {
-                p = rawVal
-                t = totalBaseAmount > 0 ? (p / totalBaseAmount) * totalTaxAmount : 0
-                itemTotal = p + t
-              } else {
-                itemTotal = rawVal
-                t = totalReceiptAmount > 0 ? (itemTotal / totalReceiptAmount) * totalTaxAmount : 0
-                p = Math.max(0, itemTotal - t)
-              }
+              const { itemTotal, t } = lineAmounts[idx]
+              const taxRules = countryConfig?.taxRules ?? []
 
               return (
                 <div key={idx} className="border-b pb-3 last:border-b-0 last:pb-0 pt-2">
@@ -522,6 +605,9 @@ export function TripExpenseFormV2({
                       onValueChange={val => {
                         const next = [...receiptItems]
                         next[idx].category = val
+                        if (hasAutoTax) {
+                          next[idx].taxCategoryId = inferTaxCategory(countryCode, val, undefined)
+                        }
                         setReceiptItems(next)
                       }}
                     >
@@ -533,10 +619,32 @@ export function TripExpenseFormV2({
                       </SelectContent>
                     </Select>
 
+                    {hasAutoTax && taxRules.length > 0 && (
+                      <Select
+                        value={item.taxCategoryId}
+                        onValueChange={val => {
+                          const next = [...receiptItems]
+                          next[idx].taxCategoryId = val as TaxCategoryId
+                          setReceiptItems(next)
+                        }}
+                      >
+                        <SelectTrigger className="w-[88px] sm:w-24 h-9 text-[10px] shrink-0">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {taxRules.map(rule => (
+                            <SelectItem key={rule.id} value={rule.id} className="text-xs">
+                              {rule.labelTh}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+
                     {/* Price Input */}
                     <div className="relative w-24 shrink-0">
                       <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-[10px]">
-                        {currency === 'THB' ? '฿' : '¥'}
+                        {curSymbol}
                       </span>
                       <Input
                         type="number"
@@ -551,9 +659,14 @@ export function TripExpenseFormV2({
                       />
                     </div>
 
-                    {/* Calculated Total (Price + Proportional Tax) */}
-                    <span className="text-xs font-semibold text-muted-foreground tabular-nums shrink-0 min-w-[60px] text-right">
-                      ={currency === 'THB' ? '฿' : '¥'}{itemTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    {/* Calculated Total */}
+                    <span className="text-xs font-semibold text-muted-foreground tabular-nums shrink-0 min-w-[72px] text-right">
+                      ={curSymbol}{itemTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      {hasAutoTax && t > 0 && (
+                        <span className="block text-[9px] font-normal text-muted-foreground/80">
+                          ภาษี {curSymbol}{t.toFixed(0)}
+                        </span>
+                      )}
                     </span>
 
                     {/* Split buttons */}
@@ -613,7 +726,7 @@ export function TripExpenseFormV2({
               <Label className="text-xs text-muted-foreground">ราคาสินค้ารวม (Subtotal)</Label>
               <div className="relative">
                 <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">
-                  {currency === 'THB' ? '฿' : '¥'}
+                  {curSymbol}
                 </span>
                 <Input
                   type="number"
@@ -624,18 +737,21 @@ export function TripExpenseFormV2({
               </div>
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground font-semibold text-primary">ภาษีรวมทั้งใบเสร็จ (Tax)</Label>
+              <Label className="text-xs text-muted-foreground font-semibold text-primary">
+                {hasAutoTax ? 'ภาษีรวม (คำนวณอัตโนมัติ)' : 'ภาษีรวมทั้งใบเสร็จ (Tax)'}
+              </Label>
               <div className="relative">
                 <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">
-                  {currency === 'THB' ? '฿' : '¥'}
+                  {curSymbol}
                 </span>
                 <Input
                   type="number"
                   step="0.01"
                   placeholder="0.00"
-                  className="pl-6 h-9 text-xs font-semibold border-primary/40 focus-visible:ring-primary"
-                  value={receiptTax}
-                  onChange={e => setReceiptTax(e.target.value)}
+                  disabled={hasAutoTax}
+                  className="pl-6 h-9 text-xs font-semibold border-primary/40 focus-visible:ring-primary disabled:opacity-80"
+                  value={hasAutoTax ? totalTaxAmount.toFixed(2) : receiptTax}
+                  onChange={e => !hasAutoTax && setReceiptTax(e.target.value)}
                 />
               </div>
             </div>
@@ -643,7 +759,7 @@ export function TripExpenseFormV2({
               <Label className="text-xs text-muted-foreground font-bold text-foreground">ยอดรวมสุทธิ (Total)</Label>
               <div className="relative">
                 <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">
-                  {currency === 'THB' ? '฿' : '¥'}
+                  {curSymbol}
                 </span>
                 <Input
                   type="number"
@@ -652,6 +768,9 @@ export function TripExpenseFormV2({
                   value={totalReceiptAmount.toFixed(2)}
                 />
               </div>
+              {homeHint(totalReceiptAmount) && (
+                <p className="text-[10px] text-muted-foreground">≈ {homeHint(totalReceiptAmount)}</p>
+              )}
             </div>
           </div>
         </div>
@@ -684,7 +803,7 @@ export function TripExpenseFormV2({
                 </SelectContent>
               </Select>
               <div className="relative w-28">
-                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">฿</span>
+                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">{curSymbol}</span>
                 <Input
                   type="number" step="0.01" className="pl-6"
                   placeholder={idx === payers.length - 1 ? String(lastPayerSuggestion.toFixed(0)) : '0'}
@@ -734,7 +853,7 @@ export function TripExpenseFormV2({
               {tripMembers.map(m => (
                 <div key={m.key} className="flex justify-between">
                   <span>{m.displayName}</span>
-                  <span className="font-semibold tabular-nums text-foreground">฿{(itemShares[m.key] || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  <span className="font-semibold tabular-nums text-foreground">{curSymbol}{(itemShares[m.key] || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                 </div>
               ))}
             </div>
@@ -744,7 +863,7 @@ export function TripExpenseFormV2({
         {/* Equal — member toggles */}
         {splitMode === 'equal' && (
           <div className="space-y-1.5">
-            <p className="text-xs text-muted-foreground">เลือกคนที่หารด้วย ({equalIncluded.size} คน → คนละ ฿{equalShareAmount.toFixed(0)})</p>
+            <p className="text-xs text-muted-foreground">เลือกคนที่หารด้วย ({equalIncluded.size} คน → คนละ {curSymbol}{equalShareAmount.toFixed(0)})</p>
             <div className="flex flex-wrap gap-2">
               {tripMembers.map(m => {
                 const on = equalIncluded.has(m.key)
@@ -771,13 +890,13 @@ export function TripExpenseFormV2({
         {splitMode === 'custom' && (
           <div className="space-y-2">
             <p className="text-xs text-muted-foreground">
-              กรอกจำนวนของแต่ละคน (รวม: ฿{customTotal.toFixed(0)} / ฿{total.toFixed(0)})
+              กรอกจำนวนของแต่ละคน (รวม: {curSymbol}{customTotal.toFixed(0)} / {curSymbol}{total.toFixed(0)})
             </p>
             {tripMembers.map(m => (
               <div key={m.key} className="flex items-center gap-2">
                 <span className="flex-1 text-sm">{m.displayName}</span>
                 <div className="relative w-28">
-                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">฿</span>
+                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">{curSymbol}</span>
                   <Input type="number" step="0.01" className="pl-6"
                     placeholder="0"
                     value={customShares[m.key] || ''}
@@ -812,13 +931,13 @@ export function TripExpenseFormV2({
         <div className="rounded-lg bg-muted p-3 text-xs space-y-1 text-muted-foreground">
           <p className="font-medium text-foreground">สรุป</p>
           {payers.map((p, i) => (
-            <p key={i}>💳 {p.displayName} จ่าย ฿{parseFloat(p.amount || (i === payers.length - 1 ? String(lastPayerSuggestion) : '0')).toFixed(0)}</p>
+            <p key={i}>💳 {p.displayName} จ่าย {curSymbol}{parseFloat(p.amount || (i === payers.length - 1 ? String(lastPayerSuggestion) : '0')).toFixed(0)}</p>
           ))}
           {splitMode === 'item' && (
             <p>🧾 หารแยกรายชิ้นตามรายการใบเสร็จ</p>
           )}
           {splitMode === 'equal' && equalIncluded.size > 0 && (
-            <p>⚖️ หาร {equalIncluded.size} คน → คนละ ฿{equalShareAmount.toFixed(0)}</p>
+            <p>⚖️ หาร {equalIncluded.size} คน → คนละ {curSymbol}{equalShareAmount.toFixed(0)}</p>
           )}
         </div>
       )}

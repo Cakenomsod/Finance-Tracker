@@ -13,12 +13,19 @@ export interface UserProfile {
   updatedAt: Timestamp;
 }
 
+export type TripCurrency = 'THB' | 'JPY';
+export type TripCountryCode = 'TH' | 'JP';
+export type TaxCategoryId = 'food' | 'goods' | 'standard' | 'exempt';
+export type TaxMode = 'exclusive' | 'inclusive';
+
 export interface ReceiptItem {
   name: string;
   category: string;
   price: number;
   tax: number;
   splitWith: string[]; // List of member userIds sharing this specific item
+  taxCategoryId?: TaxCategoryId;
+  taxRate?: number;
 }
 
 // transactions/{txId}
@@ -39,7 +46,7 @@ export interface Transaction {
   items?: ReceiptItem[];
   baseAmount?: number;
   taxAmount?: number;
-  currency?: 'THB' | 'JPY';
+  currency?: TripCurrency;
 }
 
 // debts/{debtId}
@@ -78,6 +85,14 @@ export interface Trip {
   status: 'active' | 'closed';
   createdBy: string;
   createdAt: Timestamp;
+  /** Tax jurisdiction for receipt auto-calculation */
+  countryCode?: TripCountryCode;
+  /** Primary currency for expenses on this trip */
+  tripCurrency?: TripCurrency;
+  /** Currency used for totals/settlement display */
+  homeCurrency?: TripCurrency;
+  /** 1 tripCurrency = exchangeRate homeCurrency */
+  exchangeRate?: number;
 }
 
 // trip_expenses/{expenseId}
@@ -104,12 +119,13 @@ export interface TripExpense {
   note?: string;
   payers: TripExpensePayer[];
   shares: TripExpenseShare[];
-  splitMode: 'equal' | 'custom' | 'solo';
+  splitMode: 'equal' | 'custom' | 'solo' | 'item';
   createdAt: Timestamp;
   items?: ReceiptItem[];
   baseAmount?: number;
   taxAmount?: number;
-  currency?: 'THB' | 'JPY';
+  taxMode?: TaxMode;
+  currency?: TripCurrency;
 }
 
 // trip_settlements/{settlementId}

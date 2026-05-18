@@ -36,7 +36,20 @@ import { useTripExpenses } from '@/hooks/use-trip-expenses'
 import { useTripSettlements } from '@/hooks/use-trip-settlements'
 import { TripExpenseFormV2 } from '@/components/trips/trip-expense-form'
 import { MemberPicker, PickedMember } from '@/components/trips/member-picker'
+import {
+  TripSettingsFields,
+  tripSettingsFromTrip,
+  tripSettingsToFirestore,
+  type TripSettingsValue,
+} from '@/components/trips/trip-settings-fields'
 import { Transaction, TripExpense } from '@/lib/firestore-types'
+import {
+  convertToHomeCurrency,
+  formatCurrencySymbol,
+  formatHomeConversion,
+  getTripCurrencySettings,
+  LEGACY_JPY_TO_THB,
+} from '@/lib/trip-currency'
 import { Timestamp } from 'firebase/firestore'
 import { Search } from 'lucide-react'
 
@@ -67,6 +80,12 @@ export default function TripDetailPage() {
   const [expandedReceipts, setExpandedReceipts] = React.useState<Record<string, boolean>>({})
 
   const trip = trips.find((t) => t.id === tripId)
+  const [editTripSettings, setEditTripSettings] = React.useState<TripSettingsValue>(tripSettingsFromTrip())
+
+  React.useEffect(() => {
+    if (trip) setEditTripSettings(tripSettingsFromTrip(trip))
+  }, [trip?.id, trip?.countryCode, trip?.tripCurrency, trip?.exchangeRate])
+
   const tripTxs = transactions.filter((tx) => tx.tripId === tripId)
   // Record Payment Dialog state
   const [isRecordPaymentOpen, setIsRecordPaymentOpen] = React.useState(false)
@@ -76,7 +95,7 @@ export default function TripDetailPage() {
   const loading = tripsLoading || txLoading
 
   // --- Trip Expenses (new system) ---
-  const { expenses: tripExpenses, calcBalances, addExpense, editExpense, removeExpense } = useTripExpenses(tripId)
+  const { expenses: tripExpenses, calcBalances, addExpense, editExpense, removeExpense } = useTripExpenses(tripId, trip)
   const { settlements: paymentHistory, recordSettlement } = useTripSettlements(tripId)
 
   /** Get display name from memberProfiles or fallback to key */
@@ -101,8 +120,7 @@ export default function TripDetailPage() {
     if (ex.isLegacy) {
       // Legacy transaction
       const rawTx = ex.rawTx
-      const factor = rawTx?.currency === 'JPY' ? 0.22 : 1
-      const amount = Math.abs(ex.amount) * factor
+      const amount = convertToHomeCurrency(Math.abs(ex.amount), rawTx?.currency, trip)
       const payer = ex.paidBy || members[0]
       const split = ex.splitWith
 
@@ -121,12 +139,15 @@ export default function TripDetailPage() {
       // New trip expense
       const rawEx = ex.rawEx
       if (rawEx) {
-        const factor = rawEx.currency === 'JPY' ? 0.22 : 1
-        rawEx.payers?.forEach((p: any) => {
-          if (net[p.userId] !== undefined) net[p.userId] += p.amount * factor
+        rawEx.payers?.forEach((p: { userId: string; amount: number }) => {
+          if (net[p.userId] !== undefined) {
+            net[p.userId] += convertToHomeCurrency(p.amount, rawEx.currency, trip)
+          }
         })
-        rawEx.shares?.forEach((s: any) => {
-          if (net[s.userId] !== undefined) net[s.userId] -= s.amount * factor
+        rawEx.shares?.forEach((s: { userId: string; amount: number }) => {
+          if (net[s.userId] !== undefined) {
+            net[s.userId] -= convertToHomeCurrency(s.amount, rawEx.currency, trip)
+          }
         })
       }
     }
@@ -159,11 +180,19 @@ export default function TripDetailPage() {
     }
 
     return transfers
-  }, [members])
+  }, [members, trip])
 
   // --- Calculations ---
-  const totalLegacyExpenses = tripTxs.reduce((s, tx) => s + (tx.currency === 'JPY' ? Math.abs(tx.amount) * 0.22 : Math.abs(tx.amount)), 0)
-  const totalNewExpenses = tripExpenses.reduce((s, ex) => s + (ex.currency === 'JPY' ? ex.totalAmount * 0.22 : ex.totalAmount), 0)
+  const totalLegacyExpenses = tripTxs.reduce(
+    (s, tx) => s + convertToHomeCurrency(Math.abs(tx.amount), tx.currency, trip),
+    0
+  )
+  const totalNewExpenses = tripExpenses.reduce(
+    (s, ex) => s + convertToHomeCurrency(ex.totalAmount, ex.currency, trip),
+    0
+  )
+  const { homeCurrency } = getTripCurrencySettings(trip)
+  const homeSymbol = formatCurrencySymbol(homeCurrency)
   const totalExpenses = totalLegacyExpenses + totalNewExpenses
 
   // Calculate each person's net balance based on legacy transactions + new expenses + settlements
@@ -174,8 +203,7 @@ export default function TripDetailPage() {
     members.forEach((m) => { net[m] = 0; paid[m] = 0 })
 
     tripTxs.forEach((tx) => {
-      const factor = tx.currency === 'JPY' ? 0.22 : 1
-      const amount = Math.abs(tx.amount) * factor
+      const amount = convertToHomeCurrency(Math.abs(tx.amount), tx.currency, trip)
       const payer = tx.paidBy || members[0]
       const split = tx.splitWith // null = solo, 'all' = everyone, 'Name' = specific
 
@@ -587,7 +615,9 @@ export default function TripDetailPage() {
                 <div className="space-y-3">
                   {filteredExpenses.map((ex) => {
                     const txDate = ex.date?.seconds ? new Date(ex.date.seconds * 1000) : new Date()
-                    const isJpy = ex.rawTx?.currency === 'JPY' || ex.rawEx?.currency === 'JPY'
+                    const exCurrency = ex.rawTx?.currency || ex.rawEx?.currency || trip?.tripCurrency || 'THB'
+                    const exSymbol = formatCurrencySymbol(exCurrency)
+                    const exHomeHint = formatHomeConversion(ex.amount, exCurrency, trip)
                     return (
                       <div key={ex.id} className="group flex flex-col justify-start rounded-lg border p-4 transition-all hover:shadow-sm">
                         <div className="flex items-center justify-between">
@@ -620,11 +650,11 @@ export default function TripDetailPage() {
                           <div className="flex items-center gap-2">
                             <div className="text-right">
                               <span className="font-semibold tabular-nums block">
-                                {isJpy ? '¥' : '฿'}{ex.amount.toLocaleString()}
+                                {exSymbol}{ex.amount.toLocaleString()}
                               </span>
-                              {isJpy && (
+                              {exHomeHint && (
                                 <span className="text-[10px] text-muted-foreground block font-normal">
-                                  (฿{(ex.amount * 0.22).toLocaleString()})
+                                  ({exHomeHint})
                                 </span>
                               )}
                             </div>
@@ -692,15 +722,15 @@ export default function TripDetailPage() {
                                       </div>
                                     </div>
                                     <div className="text-right font-medium tabular-nums shrink-0">
-                                      <span>{isJpy ? '¥' : '฿'}{itemTotal.toLocaleString()}</span>
-                                      {isJpy && (
+                                      <span>{exSymbol}{itemTotal.toLocaleString()}</span>
+                                      {formatHomeConversion(itemTotal, exCurrency, trip) && (
                                         <span className="text-[9px] text-muted-foreground block font-normal">
-                                          (฿{(itemTotal * 0.22).toLocaleString()})
+                                          ({formatHomeConversion(itemTotal, exCurrency, trip)})
                                         </span>
                                       )}
                                       {item.tax > 0 ? (
                                         <span className="text-[9px] text-muted-foreground block">
-                                          ({isJpy ? 'สินค้า ¥' : 'สินค้า ฿'}{item.price.toLocaleString()} + {isJpy ? 'ภาษี ¥' : 'ภาษี ฿'}{item.tax.toLocaleString()})
+                                          (สินค้า {exSymbol}{item.price.toLocaleString()} + ภาษี {exSymbol}{item.tax.toLocaleString()})
                                         </span>
                                       ) : (
                                         <span className="text-[9px] text-green-600 block">Tax free</span>
@@ -712,9 +742,9 @@ export default function TripDetailPage() {
                             </div>
                             {ex.rawEx.baseAmount !== undefined && (
                               <div className="flex justify-between text-[10px] text-muted-foreground pt-1.5 border-t flex-wrap gap-1">
-                                <span>ราคาสินค้ารวม: {isJpy ? '¥' : '฿'}{ex.rawEx.baseAmount.toLocaleString()} · ภาษีรวม: {isJpy ? '¥' : '฿'}{(ex.rawEx.taxAmount || 0).toLocaleString()}</span>
+                                <span>ราคาสินค้ารวม: {exSymbol}{ex.rawEx.baseAmount.toLocaleString()} · ภาษีรวม: {exSymbol}{(ex.rawEx.taxAmount || 0).toLocaleString()}</span>
                                 <span className="font-semibold text-foreground">
-                                  ยอดรวมทั้งหมด: {isJpy ? '¥' : '฿'}{ex.amount.toLocaleString()} {isJpy && `(฿${(ex.amount * 0.22).toLocaleString()})`}
+                                  ยอดรวมทั้งหมด: {exSymbol}{ex.amount.toLocaleString()} {exHomeHint && `(${exHomeHint})`}
                                 </span>
                               </div>
                             )}
@@ -904,7 +934,9 @@ export default function TripDetailPage() {
                       const transfers = calculateExpenseTransfers(ex)
                       if (transfers.length === 0) return null
 
-                      const isJpy = ex.rawTx?.currency === 'JPY' || ex.rawEx?.currency === 'JPY'
+                      const exCurrency = ex.rawTx?.currency || ex.rawEx?.currency || trip?.tripCurrency || 'THB'
+                    const exSymbol = formatCurrencySymbol(exCurrency)
+                    const exHomeHint = formatHomeConversion(ex.amount, exCurrency, trip)
                       return (
                         <div key={ex.id || `${ex.description}-${ex.date?.seconds}`} className="rounded-lg border p-4 space-y-3">
                           <div className="flex items-center justify-between border-b pb-2">
@@ -915,10 +947,10 @@ export default function TripDetailPage() {
                               </p>
                             </div>
                             <span className="text-sm font-bold tabular-nums text-right">
-                              {isJpy ? '¥' : '฿'}{ex.amount.toLocaleString()}
-                              {isJpy && (
+                              {exSymbol}{ex.amount.toLocaleString()}
+                              {exHomeHint && (
                                 <span className="text-[10px] text-muted-foreground block font-normal">
-                                  (฿{(ex.amount * 0.22).toLocaleString()})
+                                  ({exHomeHint})
                                 </span>
                               )}
                             </span>
@@ -940,10 +972,10 @@ export default function TripDetailPage() {
                                   </div>
                                   <div className="flex items-center gap-3">
                                     <div className="text-right">
-                                      <span className="font-semibold tabular-nums block">฿{t.amount.toLocaleString()}</span>
-                                      {isJpy && (
+                                      <span className="font-semibold tabular-nums block">{homeSymbol}{t.amount.toLocaleString()}</span>
+                                      {trip?.tripCurrency === 'JPY' && homeCurrency === 'THB' && (trip.exchangeRate ?? 0) > 0 && (
                                         <span className="text-[9px] text-muted-foreground block">
-                                          (¥{(t.amount / 0.22).toLocaleString()})
+                                          (¥{Math.round(t.amount / (trip.exchangeRate ?? LEGACY_JPY_TO_THB)).toLocaleString()})
                                         </span>
                                       )}
                                       {debtState.status === 'partial' && (
@@ -1053,6 +1085,7 @@ export default function TripDetailPage() {
                 endDate: endStr ? Timestamp.fromDate(new Date(endStr)) : undefined,
                 members: editTripMembers.map(m => m.key),
                 memberProfiles,
+                ...tripSettingsToFirestore(editTripSettings),
               })
               setIsEditTripOpen(false)
             }}
@@ -1108,6 +1141,7 @@ export default function TripDetailPage() {
               />
               <p className="text-xs text-muted-foreground">คุณจะถูกเพิ่มเป็นสมาชิกอัตโนมัติ</p>
             </div>
+            <TripSettingsFields value={editTripSettings} onChange={setEditTripSettings} />
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setIsEditTripOpen(false)}>
                 Cancel
@@ -1130,6 +1164,12 @@ export default function TripDetailPage() {
             key={editingExpense?.id || 'new'}
             tripMembers={memberObjects}
             myUserId={user?.uid || ''}
+            tripDefaults={trip ? {
+              countryCode: trip.countryCode,
+              tripCurrency: trip.tripCurrency,
+              homeCurrency: trip.homeCurrency,
+              exchangeRate: trip.exchangeRate,
+            } : undefined}
             initialData={editingExpense}
             onSubmit={async (data) => {
               if (editingExpense?.id) {

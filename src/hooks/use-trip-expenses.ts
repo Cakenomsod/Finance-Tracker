@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { collection, query, where, onSnapshot, orderBy } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { TripExpense } from '@/lib/firestore-types';
+import { Trip, TripExpense } from '@/lib/firestore-types';
+import { convertToHomeCurrency } from '@/lib/trip-currency';
 import { createTripExpense, updateTripExpense, deleteTripExpense } from '@/lib/firestore';
 import { useAuth } from './use-auth';
 
@@ -13,7 +14,7 @@ export interface MemberBalance {
   netBalance: number;   // positive = owed money back, negative = owes money
 }
 
-export function useTripExpenses(tripId: string) {
+export function useTripExpenses(tripId: string, trip?: Trip | null) {
   const { user } = useAuth();
   const [expenses, setExpenses] = useState<TripExpense[]>([]);
   const [loading, setLoading] = useState(true);
@@ -40,8 +41,11 @@ export function useTripExpenses(tripId: string) {
   }, [tripId]);
 
   const totalExpenses = useMemo(
-    () => expenses.reduce((sum, e) => sum + (e.currency === 'JPY' ? e.totalAmount * 0.22 : e.totalAmount), 0),
-    [expenses]
+    () => expenses.reduce(
+      (sum, e) => sum + convertToHomeCurrency(e.totalAmount, e.currency, trip),
+      0
+    ),
+    [expenses, trip]
   );
 
   /** Calculate net balance per member across all TripExpenses */
@@ -52,12 +56,15 @@ export function useTripExpenses(tripId: string) {
     memberIds.forEach(id => { paid[id] = 0; share[id] = 0; });
 
     expenses.forEach(expense => {
-      const factor = expense.currency === 'JPY' ? 0.22 : 1;
       expense.payers.forEach(p => {
-        if (paid[p.userId] !== undefined) paid[p.userId] += p.amount * factor;
+        if (paid[p.userId] !== undefined) {
+          paid[p.userId] += convertToHomeCurrency(p.amount, expense.currency, trip);
+        }
       });
       expense.shares.forEach(s => {
-        if (share[s.userId] !== undefined) share[s.userId] += s.amount * factor;
+        if (share[s.userId] !== undefined) {
+          share[s.userId] += convertToHomeCurrency(s.amount, expense.currency, trip);
+        }
       });
     });
 
