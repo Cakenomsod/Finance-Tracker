@@ -48,7 +48,7 @@ function LoginContent() {
           <Wallet className="size-8" />
         </div>
         <div className="space-y-1">
-          <CardTitle className="text-2xl font-bold tracking-tight">Core Finance</CardTitle>
+          <CardTitle className="text-2xl font-bold tracking-tight">Finance</CardTitle>
           <CardDescription className="text-muted-foreground text-base">
             Personal finance operating system
           </CardDescription>

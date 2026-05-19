@@ -26,3 +26,5 @@ dist-ssr
 
 # Next.js build output
 .next/
+.continue/agents/new-config.yaml
+API.txt
