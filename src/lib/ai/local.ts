@@ -10,6 +10,7 @@ export interface LocalAiConfig {
 }
 
 const DEFAULT_MODEL = 'google/gemma-4-e2b';
+const FETCH_TIMEOUT_MS = 60_000;
 
 /**
  * Parse receipt image using local AI (e.g., Ollama, LM Studio)
@@ -62,7 +63,7 @@ export async function parseReceiptImageLocal(
         temperature: 0.7,
         max_tokens: 1024,
       }),
-      timeout: 60000,
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
 
     if (!response.ok) {
@@ -127,7 +128,7 @@ export async function sendChatMessageLocal(
         max_tokens: 512,
         stream: false,
       }),
-      timeout: 60000,
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
 
     if (!response.ok) {
