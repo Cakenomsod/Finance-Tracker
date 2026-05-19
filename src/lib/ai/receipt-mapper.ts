@@ -75,6 +75,8 @@ export function receiptParseToTransactionDraft(
         category: normalizeCategory(item.category),
         price: item.price,
         tax: item.tax ?? 0,
+        splitWith: [] as string[],
+        taxCategoryId: item.taxCategoryId,
       }))
     : undefined;
 
