@@ -53,6 +53,7 @@ export function TripAiPanel({
   const [input, setInput] = React.useState('')
   const [parsing, setParsing] = React.useState(false)
   const [uploadingNote, setUploadingNote] = React.useState(false)
+  const [sendingMessage, setSendingMessage] = React.useState(false)
   const [provider, setProvider] = React.useState<AiTextProvider>(aiTextProvider)
   const [pendingImmichId, setPendingImmichId] = React.useState<string | null>(null)
 
@@ -162,27 +163,49 @@ export function TripAiPanel({
     setPendingImmichId(null)
   }
 
-  const handleSendText = () => {
+  const handleSendText = async () => {
     const text = input.trim()
     if (!text) return
 
     addMessage({ role: 'user', content: text, type: 'text' })
     setInput('')
+    setSendingMessage(true)
 
-    if (provider === 'local') {
+    try {
+      const res = await fetch('/api/ai/chat/message', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: text,
+          history: messages.map((m) => ({
+            role: m.role,
+            content: m.type === 'draft' ? `[รูปใบเสร็จ: ${m.content}]` : m.content,
+          })),
+        }),
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Chat failed')
+      }
+
       addMessage({
         role: 'assistant',
-        content: 'Local AI ยังไม่พร้อม — ตั้งค่า URL ใน Settings หรือเปลี่ยนเป็น Gemma API',
+        content: data.response,
         type: 'text',
       })
-      return
+      toast.success(`${provider === 'local' ? 'Local' : 'Gemma'} AI ตอบแล้ว`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'ส่งข้อความไม่สำเร็จ')
+      addMessage({
+        role: 'assistant',
+        content: `ไม่สามารถรับคำตอบจาก ${provider === 'local' ? 'Local' : 'Gemma'} AI ได้ ลองใหม่อีกครั้ง`,
+        type: 'text',
+      })
+    } finally {
+      setSendingMessage(false)
     }
-
-    addMessage({
-      role: 'assistant',
-      content: 'แชทข้อความจะมาใน Phase ถัดไป — ตอนนี้ใช้สแกนรูปใบเสร็จ/สลิปได้เลย',
-      type: 'text',
-    })
   }
 
   return (
@@ -191,9 +214,11 @@ export function TripAiPanel({
         <div className="flex items-center gap-2">
           <Sparkles className="size-4 text-primary" />
           <span className="font-medium text-sm">AI Assistant</span>
-          <Badge variant="secondary" className="text-[10px]">รูป → Gemma API</Badge>
+          <Badge variant="secondary" className="text-[10px]">
+            {provider === 'local' ? 'Local' : 'Gemma'} AI
+          </Badge>
         </div>
-        <Select value={provider} onValueChange={(v) => setProvider(v as AiTextProvider)} disabled={parsing}>
+        <Select value={provider} onValueChange={(v) => setProvider(v as AiTextProvider)} disabled={parsing || sendingMessage}>
           <SelectTrigger className="h-8 w-[130px] text-xs"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="gemma">Gemma API</SelectItem>
@@ -234,15 +259,27 @@ export function TripAiPanel({
       )}
 
       <div className="flex flex-wrap gap-2 px-4 py-2 border-t bg-muted/30">
-        <input ref={aiImageInputRef} type="file" accept="image/*" className="hidden"
-          onChange={(e) => { const f = e.target.files?.[0]; if (f) handleAiImage(f); e.target.value = '' }} />
-        <input ref={noteImageInputRef} type="file" accept="image/*" className="hidden"
-          onChange={(e) => { const f = e.target.files?.[0]; if (f) handleNoteImage(f); e.target.value = '' }} />
-        <Button type="button" variant="outline" size="sm" className="gap-1" disabled={parsing} onClick={() => aiImageInputRef.current?.click()}>
+        <input
+          ref={aiImageInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          aria-label="Upload image for AI parsing"
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) handleAiImage(f); e.target.value = '' }}
+        />
+        <input
+          ref={noteImageInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          aria-label="Upload image for note attachment"
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) handleNoteImage(f); e.target.value = '' }}
+        />
+        <Button type="button" variant="outline" size="sm" className="gap-1" disabled={parsing || sendingMessage} onClick={() => aiImageInputRef.current?.click()}>
           {parsing ? <Loader2 className="size-3.5 animate-spin" /> : <ImagePlus className="size-3.5" />}
           สแกนรูป (AI)
         </Button>
-        <Button type="button" variant="outline" size="sm" className="gap-1" disabled={uploadingNote} onClick={() => noteImageInputRef.current?.click()}>
+        <Button type="button" variant="outline" size="sm" className="gap-1" disabled={uploadingNote || sendingMessage} onClick={() => noteImageInputRef.current?.click()}>
           {uploadingNote ? <Loader2 className="size-3.5 animate-spin" /> : <Paperclip className="size-3.5" />}
           เก็บโน้ต (Immich)
         </Button>
@@ -251,9 +288,10 @@ export function TripAiPanel({
       <div className="flex gap-2 p-4 pt-2 border-t">
         <Textarea placeholder="พิมพ์ข้อความ..." value={input} onChange={(e) => setInput(e.target.value)}
           className="min-h-[44px] max-h-24 resize-none"
+          disabled={sendingMessage}
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendText() } }} />
-        <Button type="button" size="icon" disabled={!input.trim() || parsing} onClick={handleSendText}>
-          <Send className="size-4" />
+        <Button type="button" size="icon" disabled={!input.trim() || parsing || sendingMessage} onClick={handleSendText}>
+          {sendingMessage ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
         </Button>
       </div>
     </div>

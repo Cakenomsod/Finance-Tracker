@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { verifySession, assertTripMember } from '@/lib/api-auth';
+import { verifySession, assertTripMember, getUserAiSettings } from '@/lib/api-auth';
 import { adminDb } from '@/lib/firebase-admin';
-import { parseReceiptImage } from '@/lib/ai/gemma';
+import { parseReceiptImageWithProvider } from '@/lib/ai';
 
 const MAX_SIZE = 8 * 1024 * 1024;
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
@@ -43,11 +43,24 @@ export async function POST(request: NextRequest) {
     const tripDoc = await adminDb.collection('trips').doc(tripId).get();
     const trip = tripDoc.data();
 
-    const parsed = await parseReceiptImage(buffer, mimeType, {
-      tripName: trip?.name,
-      currency: trip?.tripCurrency,
-      countryCode: trip?.countryCode,
-    });
+    // Get user's AI settings
+    const aiSettings = await getUserAiSettings(session.uid);
+
+    const parsed = await parseReceiptImageWithProvider(
+      buffer,
+      mimeType,
+      {
+        provider: aiSettings.provider,
+        localAiConfig: aiSettings.provider === 'local' && aiSettings.localAiBaseUrl
+          ? { baseUrl: aiSettings.localAiBaseUrl }
+          : undefined,
+      },
+      {
+        tripName: trip?.name,
+        currency: trip?.tripCurrency,
+        countryCode: trip?.countryCode,
+      }
+    );
 
     return NextResponse.json({ draft: parsed });
   } catch (error) {

@@ -36,11 +36,13 @@ export async function POST(request: NextRequest) {
       `receipt-${Date.now()}.${mimeType.split('/')[1] || 'jpg'}`;
 
     const buffer = Buffer.from(await file.arrayBuffer());
+    
+    // 🚀 ยิงเข้าฟังก์ชันที่เราปรับปรุง spec เรียบร้อยแล้ว
     const result = await uploadToImmich(immich, buffer, filename, mimeType);
 
     return NextResponse.json({
       assetId: result.id,
-      status: result.status,
+      status: 'success', // 🛠️ ปรับเปลี่ยนจาก result.status เป็นข้อความตรงๆ เพราะยึดตาม spec ล่าสุด
       thumbnailUrl: `/api/immich/asset/${result.id}?type=thumbnail`,
     });
   } catch (error) {

@@ -54,6 +54,8 @@ import { useUserSettings } from '@/hooks/use-user-settings'
 import { AiTextProvider } from '@/lib/firestore-types'
 import { toast } from 'sonner'
 
+import { auth } from '@/lib/firebase'; // 🔑 เพิ่มบรรทัดนี้ที่บนสุดของไฟล์
+
 // Mock data
 const categories = [
   { id: '1', name: 'Food & Dining', icon: '🍜', color: '#10B981', budget: 15000 },
@@ -89,6 +91,7 @@ export default function SettingsPage() {
   const [textProvider, setTextProvider] = React.useState<AiTextProvider>('gemma')
   const [localAiUrl, setLocalAiUrl] = React.useState('')
   const [testingImmich, setTestingImmich] = React.useState(false)
+  const [testingLocalAi, setTestingLocalAi] = React.useState(false)
   const [savingImmich, setSavingImmich] = React.useState(false)
   const [savingAi, setSavingAi] = React.useState(false)
 
@@ -117,11 +120,28 @@ export default function SettingsPage() {
   const handleTestImmich = async () => {
     setTestingImmich(true)
     try {
+      // 🔑 1. ดึงตัวแปร auth ของหน้าบ้านมาแกะรหัส Token ล่าสุดแบบสดๆ ร้อนๆ
+      // (มั่นใจว่าด้านบนสุดของไฟล์มีการ import auth จาก lib/firebase ของคุณแล้วนะครับ)
+      const currentUser = auth.currentUser;
+      if (!currentUser) {
+        throw new Error('ไม่พบข้อมูลการล็อกอิน กรุณาลองเข้าสู่ระบบใหม่อีกครั้ง');
+      }
+      
+      // สั่งรีเฟรช token ใหม่เพื่อความชัวร์ว่าไม่หมดอายุ
+      const token = await currentUser.getIdToken(true); 
+
+      // 2. ส่งคำขอ fetch ไปที่ API
       const res = await fetch('/api/immich/test', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          // 🔑 3. แปะป้าย Authorization ส่งเป็น Bearer Token ไปแทนคุกกี้
+          'Authorization': `Bearer ${token}` 
+        },
+        // เอา credentials: 'include' ของเก่าออกได้เลยครับ
         body: JSON.stringify({ baseUrl: immichBaseUrl, apiKey: immichApiKey }),
       })
+      
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Connection failed')
       toast.success('เชื่อมต่อ Immich สำเร็จ')
@@ -153,6 +173,28 @@ export default function SettingsPage() {
       toast.error('บันทึกไม่สำเร็จ')
     } finally {
       setSavingAi(false)
+    }
+  }
+
+  const handleTestLocalAi = async () => {
+    if (!localAiUrl.trim()) {
+      toast.error('กรุณาใส่ Local AI URL')
+      return
+    }
+    setTestingLocalAi(true)
+    try {
+      const res = await fetch('/api/ai/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ baseUrl: localAiUrl }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || data.message || 'Connection failed')
+      toast.success('เชื่อมต่อ Local AI สำเร็จ')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'เชื่อมต่อไม่สำเร็จ')
+    } finally {
+      setTestingLocalAi(false)
     }
   }
 
@@ -411,9 +453,14 @@ export default function SettingsPage() {
             <div className="space-y-2">
               <Label>Local AI URL</Label>
               <Input value={localAiUrl} onChange={(e) => setLocalAiUrl(e.target.value)} placeholder="http://192.168.1.x:11434" />
+              <Button type="button" variant="outline" size="sm" onClick={handleTestLocalAi} disabled={testingLocalAi || !localAiUrl.trim()}>
+                {testingLocalAi ? 'ทดสอบ...' : 'ทดสอบ Local AI'}
+              </Button>
             </div>
           )}
-          <Badge variant="secondary" className="text-xs">รูป → Gemma 4 31B API</Badge>
+          <Badge variant="secondary" className="text-xs">
+            {textProvider === 'local' ? 'Local AI' : 'Gemma 4 31B API'} (รูป + แชท)
+          </Badge>
           <Button type="button" onClick={handleSaveAi} disabled={savingAi}>บันทึก AI</Button>
         </CardContent>
       </Card>
