@@ -1,6 +1,6 @@
 import { Timestamp } from 'firebase/firestore';
 import { ReceiptParseResult } from '@/lib/ai/receipt-schema';
-import { TripExpense, TripCurrency } from '@/lib/firestore-types';
+import { TripExpense, TripCurrency, Transaction } from '@/lib/firestore-types';
 
 const VALID_CATEGORIES = [
   'Food & Dining', 'Transport', 'Shopping', 'Entertainment',
@@ -59,5 +59,39 @@ export function receiptParseToTripExpenseDraft(
     taxMode: parsed.taxMode,
     currency,
     source: 'ai',
+  };
+}
+
+export function receiptParseToTransactionDraft(
+  parsed: ReceiptParseResult,
+  defaultCurrency: 'THB' | 'JPY' = 'THB'
+): Omit<Transaction, 'id' | 'createdAt' | 'userId'> {
+  const currency = parsed.currency || defaultCurrency;
+  const hasItems = parsed.items && parsed.items.length > 0;
+
+  const items = hasItems
+    ? parsed.items!.map((item) => ({
+        name: item.name,
+        category: normalizeCategory(item.category),
+        price: item.price,
+        tax: item.tax ?? 0,
+      }))
+    : undefined;
+
+  return {
+    amount: -Math.abs(parsed.totalAmount), // negative for expense
+    type: 'expense',
+    category: normalizeCategory(parsed.category),
+    description: parsed.description,
+    date: Timestamp.fromDate(new Date(parsed.date)),
+    items,
+    baseAmount: parsed.baseAmount,
+    taxAmount: parsed.taxAmount,
+    receiptUrl: null,
+    source: 'ai',
+    currency,
+    paidBy: 'Me',
+    splitWith: null,
+    tripId: null,
   };
 }

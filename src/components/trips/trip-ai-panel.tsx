@@ -16,6 +16,7 @@ import { receiptParseToTripExpenseDraft } from '@/lib/ai/receipt-mapper'
 import { ReceiptParseResult } from '@/lib/ai/receipt-schema'
 import { Trip, TripCurrency, TripExpense, AiTextProvider } from '@/lib/firestore-types'
 import { toast } from 'sonner'
+import { AiReceiptReviewDialog } from '@/components/ai/ai-receipt-review-dialog'
 
 interface Member {
   key: string
@@ -56,6 +57,8 @@ export function TripAiPanel({
   const [sendingMessage, setSendingMessage] = React.useState(false)
   const [provider, setProvider] = React.useState<AiTextProvider>(aiTextProvider)
   const [pendingImmichId, setPendingImmichId] = React.useState<string | null>(null)
+  const [reviewOpen, setReviewOpen] = React.useState(false)
+  const [pendingResult, setPendingResult] = React.useState<ReceiptParseResult | null>(null)
 
   const aiImageInputRef = React.useRef<HTMLInputElement>(null)
   const noteImageInputRef = React.useRef<HTMLInputElement>(null)
@@ -107,6 +110,8 @@ export function TripAiPanel({
         type: 'draft',
         draft,
       })
+      setPendingResult(draft)
+      setReviewOpen(true)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'สแกนรูปไม่สำเร็จ')
       addMessage({
@@ -209,14 +214,17 @@ export function TripAiPanel({
     }
   }
 
+  const tripCurrency = (trip.tripCurrency as TripCurrency) || 'THB'
+
   return (
+    <>
     <div className="flex flex-col h-[min(520px,70vh)] border rounded-lg bg-card">
       <div className="flex items-center justify-between gap-2 px-4 py-3 border-b">
         <div className="flex items-center gap-2">
           <Sparkles className="size-4 text-primary" />
           <span className="font-medium text-sm">AI Assistant</span>
           <Badge variant="secondary" className="text-[10px]">
-            {provider === 'local' ? 'Local' : 'Gemma'} AI
+            ข้อความ: {provider === 'local' ? 'Local' : 'Gemma'}
           </Badge>
         </div>
         <Select value={provider} onValueChange={(v) => setProvider(v as AiTextProvider)} disabled={parsing || sendingMessage}>
@@ -231,7 +239,9 @@ export function TripAiPanel({
       <ScrollArea className="flex-1 px-4">
         <div className="space-y-3 py-4 min-h-[200px]">
           {messages.length === 0 && (
-            <p className="text-sm text-muted-foreground text-center py-8">อัปรูปใบเสร็จหรือสลิปโอนเพื่อแยกข้อมูล</p>
+            <p className="text-sm text-muted-foreground text-center py-8">
+              อัปรูปใบเสร็จ (Gemini) หรือพิมพ์ข้อความ — รูปจะเปิดหน้าต่างให้ตรวจสอบก่อนบันทึก
+            </p>
           )}
           {messages.map((msg) => (
             <div key={msg.id} className={cn('flex', msg.role === 'user' ? 'justify-end' : 'justify-start')}>
@@ -242,8 +252,16 @@ export function TripAiPanel({
                 )}
                 <p>{msg.content}</p>
                 {msg.type === 'draft' && msg.draft && (
-                  <Button size="sm" variant="secondary" className="mt-2 w-full" onClick={() => openDraftForm(msg.draft!)}>
-                    เปิดฟอร์มแก้ไข / ยืนยัน
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    className="mt-2 w-full"
+                    onClick={() => {
+                      setPendingResult(msg.draft!)
+                      setReviewOpen(true)
+                    }}
+                  >
+                    ดูข้อมูลอีกครั้ง
                   </Button>
                 )}
               </div>
@@ -278,7 +296,7 @@ export function TripAiPanel({
         />
         <Button type="button" variant="outline" size="sm" className="gap-1" disabled={parsing || sendingMessage} onClick={() => aiImageInputRef.current?.click()}>
           {parsing ? <Loader2 className="size-3.5 animate-spin" /> : <ImagePlus className="size-3.5" />}
-          สแกนรูป (AI)
+          สแกนรูป (Gemini)
         </Button>
         <Button type="button" variant="outline" size="sm" className="gap-1" disabled={uploadingNote || sendingMessage} onClick={() => noteImageInputRef.current?.click()}>
           {uploadingNote ? <Loader2 className="size-3.5 animate-spin" /> : <Paperclip className="size-3.5" />}
@@ -296,5 +314,14 @@ export function TripAiPanel({
         </Button>
       </div>
     </div>
+
+      <AiReceiptReviewDialog
+        open={reviewOpen}
+        onOpenChange={setReviewOpen}
+        result={pendingResult}
+        defaultCurrency={tripCurrency}
+        onConfirm={() => pendingResult && openDraftForm(pendingResult)}
+      />
+    </>
   )
 }

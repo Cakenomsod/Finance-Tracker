@@ -1195,9 +1195,15 @@ export default function TripDetailPage() {
       }}>
         <DialogContent className="max-h-[90vh] overflow-y-auto overflow-x-hidden sm:max-w-[680px]">
           <DialogHeader>
-            <DialogTitle>{editingExpense ? 'Edit Expense' : 'Add Trip Expense'}</DialogTitle>
+            <DialogTitle>
+              {editingExpense ? 'Edit Expense' : ocrDraft ? 'ตรวจสอบรายจ่ายจาก AI' : 'Add Trip Expense'}
+            </DialogTitle>
             <DialogDescription>
-              {editingExpense ? 'Edit this expense' : 'Add an expense to this trip'}
+              {editingExpense
+                ? 'Edit this expense'
+                : ocrDraft
+                  ? 'ข้อมูลจาก Gemini — แก้ไขได้ก่อนกดบันทึก'
+                  : 'Add an expense to this trip'}
             </DialogDescription>
           </DialogHeader>
           <TripExpenseFormV2

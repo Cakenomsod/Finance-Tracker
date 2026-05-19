@@ -23,18 +23,36 @@ export const receiptParseSchema = z.object({
 
 export type ReceiptParseResult = z.infer<typeof receiptParseSchema>;
 
-export const RECEIPT_PARSE_PROMPT = `You are a receipt and bank transfer slip parser for a finance app.
-Analyze the image and extract structured expense data.
+export const RECEIPT_PARSE_PROMPT = `You are a receipt and bank transfer slip OCR parser for a personal finance app.
+Read the image and return ONLY one JSON object — no markdown, no code fences, no explanation.
 
-Rules:
-- documentType: "receipt" for store receipts, "transfer_slip" for bank/payment transfer screenshots
-- description: short summary (store name or transfer note)
-- category: one of: Food & Dining, Transport, Shopping, Entertainment, Bills & Utilities, Health & Fitness, Accommodation, Activities, Others
-- date: ISO format YYYY-MM-DD (use today if unclear)
-- totalAmount: final amount as number (no currency symbols)
-- currency: THB or JPY if detectable
-- taxMode: exclusive or inclusive if tax is shown
-- items: line items when visible on receipt (optional for transfer slips)
-- For transfer slips: category is usually "Others", items can be empty
+Required JSON shape:
+{
+  "documentType": "receipt" | "transfer_slip",
+  "description": string,
+  "category": string,
+  "date": "YYYY-MM-DD",
+  "totalAmount": number,
+  "currency": "THB" | "JPY" (optional),
+  "taxMode": "exclusive" | "inclusive" (optional),
+  "baseAmount": number (optional),
+  "taxAmount": number (optional),
+  "items": [{ "name": string, "category": string, "price": number, "tax": number (optional) }] (optional)
+}
 
-Respond ONLY with valid JSON matching the schema.`;
+Extraction rules:
+- documentType: "receipt" for store/restaurant receipts; "transfer_slip" for bank or payment app transfer screenshots
+- description: short label — store name, merchant, or transfer memo (Thai or English)
+- category: exactly one of: Food & Dining, Transport, Shopping, Entertainment, Bills & Utilities, Health & Fitness, Accommodation, Activities, Others
+- date: transaction date as YYYY-MM-DD; use today's date only if truly unreadable
+- totalAmount: final paid amount as a plain number (no symbols, no commas)
+- currency: THB for ฿/baht, JPY for ¥/yen; omit if unknown
+- taxMode: "exclusive" if tax is added on top, "inclusive" if tax is included in prices
+- baseAmount / taxAmount: fill when subtotal and tax are visible on the receipt
+- items: each visible line item with name, best-matching category, and line price as number
+- transfer_slip: category usually "Others"; items may be omitted; description = payee or transfer note
+
+Accuracy:
+- Prefer amounts printed on the receipt over guessed values
+- Do not invent line items that are not on the image
+- All numeric fields must be JSON numbers, not strings`;

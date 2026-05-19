@@ -63,6 +63,7 @@ import { cn } from '@/lib/utils'
 import { useTransactions } from '@/hooks/use-transactions'
 import { useAllTripExpenses } from '@/hooks/use-all-trip-expenses'
 import { TransactionForm } from '@/components/transactions/transaction-form'
+import { TransactionAiPanel } from '@/components/transactions/transaction-ai-panel'
 import { Transaction } from '@/lib/firestore-types'
 
 const categories = [
@@ -106,6 +107,7 @@ export default function TransactionsPage() {
   const [showParsedDialog, setShowParsedDialog] = React.useState(false)
   const [isAddDialogOpen, setIsAddDialogOpen] = React.useState(false)
   const [editingTransaction, setEditingTransaction] = React.useState<Transaction | null>(null)
+  const [ocrDraft, setOcrDraft] = React.useState<Omit<Transaction, 'id' | 'createdAt' | 'userId'> | null>(null)
 
   // Merge legacy transactions and trip expenses
   const allCombined = React.useMemo(() => {
@@ -208,6 +210,14 @@ export default function TransactionsPage() {
         </p>
       </div>
 
+      <TransactionAiPanel
+        onOpenDraftForm={(draft) => {
+          setOcrDraft(draft)
+          setEditingTransaction(null)
+          setIsAddDialogOpen(true)
+        }}
+      />
+
       {/* Natural Language Input */}
       <Card className="border-dashed border-primary/30 bg-gradient-to-r from-primary/5 to-transparent">
         <CardContent className="pt-6">
@@ -280,7 +290,10 @@ export default function TransactionsPage() {
           </Button>
           <Dialog open={isAddDialogOpen} onOpenChange={(open) => {
             setIsAddDialogOpen(open)
-            if (!open) setEditingTransaction(null)
+            if (!open) {
+              setEditingTransaction(null)
+              setOcrDraft(null)
+            }
           }}>
             <DialogTrigger asChild>
               <Button size="sm" className="gap-2">
@@ -290,25 +303,32 @@ export default function TransactionsPage() {
             </DialogTrigger>
             <DialogContent className="max-h-[90vh] overflow-y-auto overflow-x-hidden sm:max-w-[680px]">
               <DialogHeader>
-                <DialogTitle>{editingTransaction ? 'Edit Transaction' : 'Add Transaction'}</DialogTitle>
+                <DialogTitle>
+                  {editingTransaction ? 'Edit Transaction' : ocrDraft ? 'ตรวจสอบธุรกรรมจาก AI' : 'Add Transaction'}
+                </DialogTitle>
                 <DialogDescription>
-                  Enter the details for your transaction.
+                  {ocrDraft
+                    ? 'ข้อมูลจาก Gemini — แก้ไขได้ก่อนกดบันทึก'
+                    : 'Enter the details for your transaction.'}
                 </DialogDescription>
               </DialogHeader>
-              <TransactionForm 
-                initialData={editingTransaction}
+              <TransactionForm
+                key={editingTransaction?.id || (ocrDraft ? 'ocr-draft' : 'new')}
+                initialData={editingTransaction || (ocrDraft as Transaction | null)}
                 onSubmit={async (data) => {
                   if (editingTransaction) {
                     await editTransaction(editingTransaction.id!, data)
                   } else {
-                    await addTransaction(data)
+                    await addTransaction({ ...data, source: data.source || (ocrDraft ? 'ai' : 'manual') })
                   }
                   setIsAddDialogOpen(false)
                   setEditingTransaction(null)
+                  setOcrDraft(null)
                 }}
                 onCancel={() => {
                   setIsAddDialogOpen(false)
                   setEditingTransaction(null)
+                  setOcrDraft(null)
                 }}
               />
             </DialogContent>

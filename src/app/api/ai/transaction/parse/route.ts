@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { verifySession, assertTripMember } from '@/lib/api-auth';
-import { adminDb } from '@/lib/firebase-admin';
+import { verifySession } from '@/lib/api-auth';
 import { parseReceiptImage } from '@/lib/ai/gemma';
 
 const MAX_SIZE = 8 * 1024 * 1024;
@@ -15,18 +14,9 @@ export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
     const image = formData.get('image');
-    const tripId = formData.get('tripId') as string | null;
 
     if (!image || !(image instanceof Blob)) {
       return NextResponse.json({ error: 'Image is required' }, { status: 400 });
-    }
-    if (!tripId) {
-      return NextResponse.json({ error: 'tripId is required' }, { status: 400 });
-    }
-
-    const isMember = await assertTripMember(tripId, session.uid);
-    if (!isMember) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     if (image.size > MAX_SIZE) {
@@ -40,18 +30,11 @@ export async function POST(request: NextRequest) {
 
     const buffer = Buffer.from(await image.arrayBuffer());
 
-    const tripDoc = await adminDb.collection('trips').doc(tripId).get();
-    const trip = tripDoc.data();
-
-    const parsed = await parseReceiptImage(buffer, mimeType, {
-      tripName: trip?.name,
-      currency: trip?.tripCurrency,
-      countryCode: trip?.countryCode,
-    });
+    const parsed = await parseReceiptImage(buffer, mimeType);
 
     return NextResponse.json({ draft: parsed });
   } catch (error) {
-    console.error('Receipt parse error:', error);
+    console.error('Transaction receipt parse error:', error);
     const message = error instanceof Error ? error.message : 'Parse failed';
     return NextResponse.json({ error: message }, { status: 500 });
   }
