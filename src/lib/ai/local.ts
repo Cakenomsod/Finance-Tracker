@@ -1,8 +1,10 @@
 import {
   receiptParseSchema,
   RECEIPT_PARSE_PROMPT,
+  EXPENSE_TEXT_PARSE_PROMPT,
   type ReceiptParseResult,
 } from '@/lib/ai/receipt-schema';
+import { parseJsonFromAiContent } from '@/lib/ai/parse-json';
 
 export interface LocalAiConfig {
   baseUrl: string;
@@ -78,11 +80,7 @@ export async function parseReceiptImageLocal(
       throw new Error('No response from local AI');
     }
 
-    // Extract JSON from markdown code blocks if necessary
-    const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)\s*```/) || [null, content];
-    const jsonStr = jsonMatch[1] || content;
-    const parsed = JSON.parse(jsonStr);
-
+    const parsed = parseJsonFromAiContent(content);
     return receiptParseSchema.parse(parsed);
   } catch (error) {
     if (error instanceof Error) {
@@ -90,6 +88,53 @@ export async function parseReceiptImageLocal(
     }
     throw error;
   }
+}
+
+export async function parseExpenseTextLocal(
+  text: string,
+  config: LocalAiConfig,
+  context?: { tripName?: string; currency?: string; countryCode?: string }
+): Promise<ReceiptParseResult> {
+  if (!config.baseUrl) {
+    throw new Error('Local AI baseUrl is not configured');
+  }
+
+  const baseUrl = normalizeUrl(config.baseUrl);
+  const model = config.model || DEFAULT_MODEL;
+
+  const contextHint = context
+    ? `\nContext: trip="${context.tripName || ''}", default currency=${context.currency || 'THB'}, country=${context.countryCode || 'TH'}`
+    : '';
+
+  const response = await fetch(`${baseUrl}/v1/chat/completions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model,
+      messages: [
+        {
+          role: 'user',
+          content: `${EXPENSE_TEXT_PARSE_PROMPT}${contextHint}\n\nUser input:\n${text.trim()}`,
+        },
+      ],
+      temperature: 0.1,
+      max_tokens: 1024,
+    }),
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Local AI error: ${response.status} - ${error}`);
+  }
+
+  const data = await response.json() as { choices: Array<{ message: { content: string } }> };
+  const content = data.choices?.[0]?.message?.content;
+  if (!content) {
+    throw new Error('No response from local AI');
+  }
+
+  return receiptParseSchema.parse(parseJsonFromAiContent(content));
 }
 
 /**

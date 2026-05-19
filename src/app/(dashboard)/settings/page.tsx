@@ -459,7 +459,7 @@ export default function SettingsPage() {
             </div>
           )}
           <Badge variant="secondary" className="text-xs">
-            {textProvider === 'local' ? 'Local AI' : 'Gemma 4 31B API'} (รูป + แชท)
+            รูปใบเสร็จ: Gemini · แชทข้อความ: {textProvider === 'local' ? 'Local AI' : 'Gemma API'}
           </Badge>
           <Button type="button" onClick={handleSaveAi} disabled={savingAi}>บันทึก AI</Button>
         </CardContent>

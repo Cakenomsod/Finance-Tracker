@@ -1,7 +1,12 @@
 import { AiTextProvider } from '@/lib/firestore-types';
-import { parseReceiptImage, sendChatMessage as sendChatMessageGemma } from '@/lib/ai/gemma';
+import {
+  parseReceiptImage,
+  parseExpenseText,
+  sendChatMessage as sendChatMessageGemma,
+} from '@/lib/ai/gemma';
 import {
   parseReceiptImageLocal,
+  parseExpenseTextLocal,
   sendChatMessageLocal,
   type LocalAiConfig,
 } from '@/lib/ai/local';
@@ -30,6 +35,24 @@ export async function parseReceiptImageWithProvider(
 
   // Default to Gemma API
   return parseReceiptImage(imageBuffer, mimeType, context);
+}
+
+/**
+ * Parse natural-language expense text (e.g. "ไก่ทอด 20 กาแฟ 45")
+ */
+export async function parseExpenseTextWithProvider(
+  text: string,
+  config: AiProviderConfig,
+  context?: { tripName?: string; currency?: string; countryCode?: string }
+): Promise<ReceiptParseResult> {
+  if (config.provider === 'local') {
+    if (!config.localAiConfig?.baseUrl) {
+      throw new Error('Local AI is not configured. Please set up Local AI URL in Settings.');
+    }
+    return parseExpenseTextLocal(text, config.localAiConfig, context);
+  }
+
+  return parseExpenseText(text, context);
 }
 
 /**

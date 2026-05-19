@@ -2,6 +2,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import {
   receiptParseSchema,
   RECEIPT_PARSE_PROMPT,
+  EXPENSE_TEXT_PARSE_PROMPT,
   type ReceiptParseResult,
 } from '@/lib/ai/receipt-schema';
 
@@ -47,26 +48,56 @@ export async function parseReceiptImage(
   return receiptParseSchema.parse(parsed);
 }
 
+export async function parseExpenseText(
+  text: string,
+  context?: { tripName?: string; currency?: string; countryCode?: string }
+): Promise<ReceiptParseResult> {
+  const genAI = getClient();
+  const model = genAI.getGenerativeModel({
+    model: process.env.AI_CHAT_MODEL || MODEL,
+    generationConfig: {
+      responseMimeType: 'application/json',
+      temperature: 0.1,
+    },
+  });
+
+  const contextHint = context
+    ? `\nContext: trip="${context.tripName || ''}", default currency=${context.currency || 'THB'}, country=${context.countryCode || 'TH'}`
+    : '';
+
+  const result = await model.generateContent([
+    { text: EXPENSE_TEXT_PARSE_PROMPT + contextHint + `\n\nUser input:\n${text.trim()}` },
+  ]);
+
+  const parsed = JSON.parse(result.response.text());
+  return receiptParseSchema.parse(parsed);
+}
+
 export async function sendChatMessage(
   message: string,
   history?: Array<{ role: 'user' | 'assistant'; content: string }>
 ): Promise<string> {
   const genAI = getClient();
   const model = genAI.getGenerativeModel({
-    model: MODEL,
+    model: process.env.AI_CHAT_MODEL || MODEL,
     generationConfig: {
       temperature: 0.7,
-      responseMimeType: 'text/plain',
     },
   });
 
-  const content = [
-    ...(history || []).map((item) => ({
-      text: `${item.role === 'assistant' ? 'Assistant:' : 'User:'} ${item.content}`,
-    })),
-    { text: message },
-  ];
+  const geminiHistory = (history || [])
+    .filter((h) => h.content.trim())
+    .map((h) => ({
+      role: (h.role === 'assistant' ? 'model' : 'user') as 'user' | 'model',
+      parts: [{ text: h.content }],
+    }));
 
-  const result = await model.generateContent(content);
+  // Gemini chat history must start with a user turn
+  while (geminiHistory.length > 0 && geminiHistory[0].role === 'model') {
+    geminiHistory.shift();
+  }
+
+  const chat = model.startChat({ history: geminiHistory });
+  const result = await chat.sendMessage(message);
   return result.response.text();
 }
