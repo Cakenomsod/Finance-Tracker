@@ -11,7 +11,7 @@ export async function verifySession(): Promise<{ uid: string } | null> {
     // 🔑 2. ช่องทางที่ 2: ถ้าใน Header ไม่มี ค่อยถอยกลับไปเปิดตู้คุกกี้ __session แบบเดิมของคุณ
     if (!token) {
       const cookieStore = await cookies();
-      token = cookieStore.get('__session')?.value;
+      token = cookieStore.get('__session')?.value ?? null;
     }
 
     // ถ้าท้ายที่สุดแล้ว ค้นหาไม่เจอจากทั้งสองที่ ก็ส่งกลับ null (401)
