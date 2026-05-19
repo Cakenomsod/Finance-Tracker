@@ -1,5 +1,5 @@
 import { AiTextProvider } from '@/lib/firestore-types';
-import { parseReceiptImage } from '@/lib/ai/gemma';
+import { parseReceiptImage, sendChatMessage as sendChatMessageGemma } from '@/lib/ai/gemma';
 import {
   parseReceiptImageLocal,
   sendChatMessageLocal,
@@ -47,7 +47,7 @@ export async function sendChatWithProvider(
     return sendChatMessageLocal(message, config.localAiConfig, history);
   }
 
-  throw new Error('Text chat with Gemma API is not yet implemented');
+  return sendChatMessageGemma(message, history);
 }
 
 export { testLocalAiConnection } from '@/lib/ai/local';

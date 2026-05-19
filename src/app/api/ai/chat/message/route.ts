@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { message, history } = body;
+    const { message, history, provider: requestedProvider } = body;
 
     if (!message || typeof message !== 'string') {
       return NextResponse.json({ error: 'Message is required' }, { status: 400 });
@@ -21,16 +21,18 @@ export async function POST(request: NextRequest) {
     // 🚀 1. ดึงข้อมูลการตั้งค่า AI ของผู้ใช้จากฐานข้อมูลจริง
     const userDoc = await adminDb.collection('users').doc(session.uid).get();
     
-    // 💡 แผนสำรองกรณีหา Document ไม่เจอ หรือติดเรื่องสิทธิ์ Credentials ในบางจังหวะ
     if (!userDoc.exists) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
     const userData = userDoc.data();
-    const provider = (userData?.aiTextProvider as AiTextProvider) || 'local'; // ฟอลแบ็กไป local เป็นหลัก
+    const savedProvider = (userData?.aiTextProvider as AiTextProvider) || 'local';
     const localAiBaseUrl = userData?.localAiBaseUrl as string | undefined;
 
-    // 🚀 2. ดักด่านตรวจสอบเพื่อความชัวร์ก่อนส่งต่อให้ฟังก์ชันหลัก
+    const provider: AiTextProvider = (requestedProvider === 'gemma' || requestedProvider === 'local')
+      ? requestedProvider
+      : savedProvider;
+
     if (provider === 'local' && !localAiBaseUrl) {
       return NextResponse.json(
         { error: 'กรุณาตั้งค่า Local AI Base URL ในหน้า Settings ก่อนใช้งานแชท' },
@@ -38,7 +40,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 🚀 3. ส่งข้อมูลคุยกับ AI โดยใช้เครื่องหมาย ! การันตีไทป์ string ให้ TypeScript สบายใจ
     const response = await sendChatWithProvider(message, {
       provider,
       localAiConfig: (provider === 'local' && localAiBaseUrl) ? { baseUrl: localAiBaseUrl } : undefined,

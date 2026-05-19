@@ -177,6 +177,7 @@ export function TripAiPanel({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: text,
+          provider,
           history: messages.map((m) => ({
             role: m.role,
             content: m.type === 'draft' ? `[รูปใบเสร็จ: ${m.content}]` : m.content,

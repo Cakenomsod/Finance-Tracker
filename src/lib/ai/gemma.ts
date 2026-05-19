@@ -46,3 +46,27 @@ export async function parseReceiptImage(
   const parsed = JSON.parse(text);
   return receiptParseSchema.parse(parsed);
 }
+
+export async function sendChatMessage(
+  message: string,
+  history?: Array<{ role: 'user' | 'assistant'; content: string }>
+): Promise<string> {
+  const genAI = getClient();
+  const model = genAI.getGenerativeModel({
+    model: MODEL,
+    generationConfig: {
+      temperature: 0.7,
+      responseMimeType: 'text/plain',
+    },
+  });
+
+  const content = [
+    ...(history || []).map((item) => ({
+      text: `${item.role === 'assistant' ? 'Assistant:' : 'User:'} ${item.content}`,
+    })),
+    { text: message },
+  ];
+
+  const result = await model.generateContent(content);
+  return result.response.text();
+}
