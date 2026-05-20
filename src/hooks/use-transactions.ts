@@ -3,6 +3,8 @@ import { collection, query, where, orderBy, onSnapshot } from 'firebase/firestor
 import { db } from '@/lib/firebase';
 import { Transaction } from '@/lib/firestore-types';
 import { createTransaction, updateTransaction, deleteTransaction, createDebt } from '@/lib/firestore';
+import { collectImmichAssetIds } from '@/lib/immich/asset-ids';
+import { requestDeleteImmichAssets } from '@/lib/immich/delete-from-browser';
 import { useAuth } from './use-auth';
 
 export function useTransactions() {
@@ -74,8 +76,19 @@ export function useTransactions() {
     return updateTransaction(id, data);
   };
 
-  const removeTransaction = async (id: string) => {
+  const removeTransaction = async (
+    id: string,
+    override?: { immichAssetId?: string | null; immichAssetIds?: string[] | null } | null
+  ) => {
     if (!user) throw new Error('Must be logged in to delete a transaction');
+    const tx = transactions.find((t) => t.id === id);
+    const ids = collectImmichAssetIds({
+      immichAssetId: override?.immichAssetId ?? tx?.immichAssetId,
+      immichAssetIds: override?.immichAssetIds ?? tx?.immichAssetIds,
+    });
+    if (ids.length > 0) {
+      await requestDeleteImmichAssets(ids);
+    }
     return deleteTransaction(id);
   };
 

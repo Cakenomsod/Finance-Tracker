@@ -37,6 +37,12 @@ export async function GET(
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to fetch asset';
+    console.error('[Immich] GET asset proxy failed:', {
+      assetId: id,
+      type,
+      message,
+      stack: error instanceof Error ? error.stack : undefined,
+    });
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

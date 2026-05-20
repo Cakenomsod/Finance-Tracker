@@ -4,6 +4,7 @@ import {
   RECEIPT_PARSE_PROMPT,
   EXPENSE_TEXT_PARSE_PROMPT,
   type ReceiptParseResult,
+  type ReceiptAiContext,
 } from '@/lib/ai/receipt-schema';
 import { parseJsonFromAiContent } from '@/lib/ai/parse-json';
 import {
@@ -16,7 +17,7 @@ import {
 function getClient() {
   const apiKey = getGoogleAiApiKey();
   if (!apiKey) {
-    throw new Error('GOOGLE_AI_API_KEY is not configured');
+    throw new Error('GOOGLE_AI_API_KEY or GEMINI_API_KEY is not configured on the server');
   }
   return new GoogleGenerativeAI(apiKey);
 }
@@ -48,21 +49,35 @@ async function generateJsonWithModels(
       return receiptParseSchema.parse(parsed);
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
-      console.warn(`[AI] model ${modelName} failed:`, lastError.message);
+      console.error('[Gemini] generateJsonWithModels failed', {
+        model: modelName,
+        message: lastError.message,
+        stack: lastError.stack?.split('\n').slice(0, 4).join(' | '),
+      });
     }
   }
 
   throw lastError ?? new Error('All Google AI models failed');
 }
 
+export type ReceiptImageAiContext = ReceiptAiContext;
+
+function buildReceiptContextHint(context?: ReceiptImageAiContext): string {
+  const trip = context
+    ? `\nTrip context: name="${context.tripName || ''}", currency=${context.currency || 'THB'}, country=${context.countryCode || 'TH'}`
+    : '';
+  const extra = context?.extraInstructions?.trim()
+    ? `\n\nAdditional user instructions (follow when consistent with JSON-only output above):\n${context.extraInstructions.trim()}`
+    : '';
+  return trip + extra;
+}
+
 export async function parseReceiptImage(
   imageBuffer: Buffer,
   mimeType: string,
-  context?: { tripName?: string; currency?: string; countryCode?: string }
+  context?: ReceiptImageAiContext
 ): Promise<ReceiptParseResult> {
-  const contextHint = context
-    ? `\nTrip context: name="${context.tripName || ''}", currency=${context.currency || 'THB'}, country=${context.countryCode || 'TH'}`
-    : '';
+  const contextHint = buildReceiptContextHint(context);
 
   return generateJsonWithModels(
     geminiModelCandidates(getReceiptModel()),

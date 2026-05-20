@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { Plus, Minus } from 'lucide-react'
+import { Plus, Minus, ImagePlus, X, Maximize2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -9,6 +9,14 @@ import { Textarea } from '@/components/ui/textarea'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { collectImmichAssetIds } from '@/lib/immich/asset-ids'
+import { requestDeleteImmichAssets } from '@/lib/immich/delete-from-browser'
 import { cn } from '@/lib/utils'
 import { TaxCategoryId, TripExpense, TripExpensePayer, TripExpenseShare, TripCurrency } from '@/lib/firestore-types'
 import { Timestamp } from 'firebase/firestore'
@@ -35,7 +43,11 @@ interface TripExpenseFormV2Props {
   myUserId: string
   tripDefaults?: TripFormDefaults
   initialData?: TripExpense | null
+  /** @deprecated use immich state from attachments; kept for compatibility */
   immichAssetId?: string | null
+  /** Trip id for Immich upload (album routing) */
+  tripId?: string
+  pendingImmichAssetIds?: string[]
   onSubmit: (data: Omit<TripExpense, 'id' | 'createdAt' | 'userId' | 'tripId'>) => Promise<void>
   onCancel: () => void
 }
@@ -83,7 +95,15 @@ function emptyReceiptItem(
 }
 
 export function TripExpenseFormV2({
-  tripMembers, myUserId, tripDefaults, initialData, immichAssetId, onSubmit, onCancel,
+  tripMembers,
+  myUserId,
+  tripDefaults,
+  initialData,
+  immichAssetId,
+  tripId,
+  pendingImmichAssetIds,
+  onSubmit,
+  onCancel,
 }: TripExpenseFormV2Props) {
   const countryCode = tripDefaults?.countryCode ?? null
   const countryConfig = getCountryConfig(countryCode)
@@ -145,6 +165,30 @@ export function TripExpenseFormV2({
 
   const [submitting, setSubmitting] = React.useState(false)
   const [errors, setErrors] = React.useState<string[]>([])
+  const [attachmentIds, setAttachmentIds] = React.useState<string[]>(() =>
+    collectImmichAssetIds({
+      immichAssetId: initialData?.immichAssetId ?? immichAssetId,
+      immichAssetIds: initialData?.immichAssetIds,
+    })
+  )
+  const [lightboxAssetId, setLightboxAssetId] = React.useState<string | null>(null)
+  const [uploadingAttach, setUploadingAttach] = React.useState(false)
+  const attachInputRef = React.useRef<HTMLInputElement>(null)
+
+  React.useEffect(() => {
+    setAttachmentIds(
+      collectImmichAssetIds({
+        immichAssetId: initialData?.immichAssetId ?? immichAssetId,
+        immichAssetIds: initialData?.immichAssetIds,
+      })
+    )
+  }, [initialData?.id, immichAssetId])
+
+  React.useEffect(() => {
+    if (pendingImmichAssetIds?.length) {
+      setAttachmentIds((prev) => [...new Set([...prev, ...pendingImmichAssetIds])])
+    }
+  }, [pendingImmichAssetIds])
   const [currency, setCurrency] = React.useState<TripCurrency>(
     initialData?.currency || tripDefaults?.tripCurrency || 'THB'
   )
@@ -383,25 +427,123 @@ export function TripExpenseFormV2({
         payload.taxAmount = parseFloat(tax) || 0
       }
 
+      if (attachmentIds.length) {
+        payload.immichAssetIds = attachmentIds
+      } else {
+        payload.immichAssetIds = undefined
+        payload.immichAssetId = null
+      }
+
       await onSubmit(payload)
     } finally {
       setSubmitting(false)
     }
   }
 
+  const handleAddAttachment = async (file: File) => {
+    if (!file.type.startsWith('image/')) return
+    setUploadingAttach(true)
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      form.append('filename', file.name)
+      if (tripId) form.append('tripId', tripId)
+      const res = await fetch('/api/immich/upload', { method: 'POST', body: form, credentials: 'same-origin' })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Upload failed')
+      setAttachmentIds((prev) => [...prev, data.assetId as string])
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setUploadingAttach(false)
+    }
+  }
+
+  const handleRemoveAttachment = async (id: string) => {
+    await requestDeleteImmichAssets([id])
+    setAttachmentIds((prev) => prev.filter((x) => x !== id))
+  }
+
   return (
     <form onSubmit={handleSubmit} className="space-y-5 py-2">
-      {immichAssetId && (
-        <div className="rounded-lg border bg-muted/40 p-3 space-y-2">
-          <p className="text-xs font-medium text-muted-foreground">รูปโน้ตถาวร (Immich)</p>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={`/api/immich/asset/${immichAssetId}?type=thumbnail`}
-            alt="Receipt attachment"
-            className="max-h-40 rounded-md object-contain"
+      <div className="rounded-lg border bg-muted/40 p-3 space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-xs font-medium text-muted-foreground">รูปแนบ (Immich)</p>
+          <input
+            ref={attachInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0]
+              if (f) handleAddAttachment(f)
+              e.target.value = ''
+            }}
           />
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-7 gap-1 text-xs"
+            disabled={uploadingAttach}
+            onClick={() => attachInputRef.current?.click()}
+          >
+            {uploadingAttach ? '...' : <><ImagePlus className="size-3.5" /> เพิ่มรูป</>}
+          </Button>
         </div>
-      )}
+        {attachmentIds.length === 0 ? (
+          <p className="text-[11px] text-muted-foreground">ไม่มีรูป — กด เพิ่มรูป หรือใช้ AI แนบโน้ต</p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {attachmentIds.map((id) => (
+              <div
+                key={id}
+                className="relative group w-20 h-20 rounded-md border bg-background overflow-hidden shrink-0"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={`/api/immich/asset/${id}?type=thumbnail`}
+                  alt=""
+                  className="w-full h-full object-cover cursor-pointer"
+                  onClick={() => setLightboxAssetId(id)}
+                />
+              <button
+                type="button"
+                className="absolute top-0.5 right-0.5 size-6 rounded-full bg-background/90 border flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                onClick={() => handleRemoveAttachment(id)}
+                aria-label="ลบรูป"
+              >
+                <X className="size-3.5" />
+              </button>
+                <button
+                  type="button"
+                  className="absolute bottom-0.5 right-0.5 size-6 rounded-full bg-background/90 border flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                  onClick={() => setLightboxAssetId(id)}
+                  aria-label="ขยาย"
+                >
+                  <Maximize2 className="size-3" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <Dialog open={!!lightboxAssetId} onOpenChange={(o) => !o && setLightboxAssetId(null)}>
+        <DialogContent className="max-w-[min(96vw,900px)] p-2 sm:p-4">
+          <DialogHeader className="sr-only">
+            <DialogTitle>ดูรูปแนบ</DialogTitle>
+          </DialogHeader>
+          {lightboxAssetId && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={`/api/immich/asset/${lightboxAssetId}?type=original`}
+              alt="รูปแนบขนาดใหญ่"
+              className="w-full max-h-[80vh] object-contain rounded-md"
+            />
+          )}
+        </DialogContent>
+      </Dialog>
       {/* Input Mode Selector */}
       <div className="flex gap-1 p-1 bg-muted rounded-lg">
         <button

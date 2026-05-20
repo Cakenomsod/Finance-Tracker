@@ -1,4 +1,5 @@
 import { AiTextProvider } from '@/lib/firestore-types';
+import type { ReceiptAiContext } from '@/lib/ai/receipt-schema';
 import {
   parseReceiptImage,
   parseExpenseText,
@@ -26,7 +27,7 @@ export async function parseReceiptImageWithProvider(
   imageBuffer: Buffer,
   mimeType: string,
   config: AiProviderConfig,
-  context?: { tripName?: string; currency?: string; countryCode?: string }
+  context?: ReceiptAiContext
 ): Promise<ReceiptParseResult> {
   if (config.provider === 'local') {
     if (!config.localAiConfig?.baseUrl) {

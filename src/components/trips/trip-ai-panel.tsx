@@ -19,7 +19,7 @@ export interface TripAiPanelProps {
   aiTextProvider: AiTextProvider
   onOpenExpenseForm: (
     draft: Omit<TripExpense, 'id' | 'createdAt' | 'userId' | 'tripId' | 'transactionId'>,
-    immichAssetId?: string | null
+    immichAssetIds?: string[] | null
   ) => void
 }
 
@@ -32,7 +32,7 @@ export function TripAiPanel({
 }: TripAiPanelProps) {
   const [reviewOpen, setReviewOpen] = React.useState(false)
   const [pendingResult, setPendingResult] = React.useState<ReceiptParseResult | null>(null)
-  const [pendingImmichId, setPendingImmichId] = React.useState<string | null>(null)
+  const [pendingImmichIds, setPendingImmichIds] = React.useState<string[]>([])
 
   const tripCurrency = (trip.tripCurrency as TripCurrency) || 'THB'
 
@@ -43,8 +43,8 @@ export function TripAiPanel({
 
   const openDraftForm = (draft: ReceiptParseResult) => {
     const expenseDraft = receiptParseToTripExpenseDraft(draft, tripMembers, tripCurrency)
-    onOpenExpenseForm(expenseDraft, pendingImmichId)
-    setPendingImmichId(null)
+    onOpenExpenseForm(expenseDraft, pendingImmichIds.length ? pendingImmichIds : undefined)
+    setPendingImmichIds([])
   }
 
   return (
@@ -53,8 +53,8 @@ export function TripAiPanel({
         tripId={tripId}
         aiTextProvider={aiTextProvider}
         onParsed={handleParsed}
-        onImmichNoteReady={setPendingImmichId}
-        pendingImmichId={pendingImmichId}
+        onImmichNoteReady={(id) => setPendingImmichIds((p) => [...p, id])}
+        pendingImmichCount={pendingImmichIds.length}
       />
 
       <AiReceiptReviewDialog

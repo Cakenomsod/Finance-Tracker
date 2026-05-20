@@ -3,6 +3,7 @@ import {
   RECEIPT_PARSE_PROMPT,
   EXPENSE_TEXT_PARSE_PROMPT,
   type ReceiptParseResult,
+  type ReceiptAiContext,
 } from '@/lib/ai/receipt-schema';
 import { parseJsonFromAiContent } from '@/lib/ai/parse-json';
 import { extractLocalAiMessageContent } from '@/lib/ai/local-response';
@@ -34,6 +35,28 @@ function wrapLocalAiError(error: unknown, action: string): Error {
   return new Error(action);
 }
 
+function redactLocalAiBaseForLog(baseUrl: string): string {
+  try {
+    const u = new URL(
+      baseUrl.startsWith('http://') || baseUrl.startsWith('https://') ? baseUrl : `http://${baseUrl}`
+    );
+    return `${u.protocol}//${u.hostname}${u.port ? `:${u.port}` : ''}`;
+  } catch {
+    return '(invalid-url)';
+  }
+}
+
+/** Build trip + optional user hint for receipt vision */
+function receiptLocalContextHint(context?: ReceiptAiContext): string {
+  const trip = context
+    ? `\nTrip context: name="${context.tripName || ''}", currency=${context.currency || 'THB'}, country=${context.countryCode || 'TH'}`
+    : '';
+  const extra = context?.extraInstructions?.trim()
+    ? `\n\nAdditional user instructions (follow when consistent with JSON-only output):\n${context.extraInstructions.trim()}`
+    : '';
+  return trip + extra;
+}
+
 /**
  * Parse receipt image using local AI (e.g., Ollama, LM Studio)
  * Assumes the local AI server is compatible with OpenAI API
@@ -42,7 +65,7 @@ export async function parseReceiptImageLocal(
   imageBuffer: Buffer,
   mimeType: string,
   config: LocalAiConfig,
-  context?: { tripName?: string; currency?: string; countryCode?: string }
+  context?: ReceiptAiContext
 ): Promise<ReceiptParseResult> {
   if (!config.baseUrl) {
     throw new Error('Local AI baseUrl is not configured');
@@ -52,9 +75,7 @@ export async function parseReceiptImageLocal(
   const model = config.model || DEFAULT_MODEL;
   const imageBase64 = imageBuffer.toString('base64');
 
-  const contextHint = context
-    ? `\nTrip context: name="${context.tripName || ''}", currency=${context.currency || 'THB'}, country=${context.countryCode || 'TH'}`
-    : '';
+  const contextHint = receiptLocalContextHint(context);
 
   try {
     const response = await fetch(`${baseUrl}/v1/chat/completions`, {
@@ -90,6 +111,12 @@ export async function parseReceiptImageLocal(
 
     if (!response.ok) {
       const error = await response.text();
+      console.error('[Local AI] chat/completions HTTP error', {
+        base: redactLocalAiBaseForLog(baseUrl),
+        model,
+        status: response.status,
+        bodyPreview: error.slice(0, 600),
+      });
       throw new Error(`Local AI error: ${response.status} - ${error}`);
     }
 
@@ -105,6 +132,11 @@ export async function parseReceiptImageLocal(
     const parsed = parseJsonFromAiContent(content);
     return receiptParseSchema.parse(parsed);
   } catch (error) {
+    console.error('[Local AI] parseReceiptImageLocal', {
+      base: redactLocalAiBaseForLog(baseUrl),
+      model,
+      message: error instanceof Error ? error.message : String(error),
+    });
     throw wrapLocalAiError(error, 'Failed to parse receipt with local AI');
   }
 }
@@ -152,6 +184,12 @@ export async function parseExpenseTextLocal(
 
     if (!response.ok) {
       const error = await response.text();
+      console.error('[Local AI] chat/completions HTTP error', {
+        base: redactLocalAiBaseForLog(baseUrl),
+        model,
+        status: response.status,
+        bodyPreview: error.slice(0, 600),
+      });
       throw new Error(`Local AI error: ${response.status} - ${error}`);
     }
 
@@ -223,6 +261,12 @@ export async function sendChatMessageLocal(
 
     if (!response.ok) {
       const error = await response.text();
+      console.error('[Local AI] chat/completions HTTP error', {
+        base: redactLocalAiBaseForLog(baseUrl),
+        model,
+        status: response.status,
+        bodyPreview: error.slice(0, 600),
+      });
       throw new Error(`Local AI error: ${response.status} - ${error}`);
     }
 

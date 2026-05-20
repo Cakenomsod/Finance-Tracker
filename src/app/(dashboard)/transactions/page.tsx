@@ -491,7 +491,7 @@ export default function TransactionsPage() {
                               Edit
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
-                            <DropdownMenuItem className="text-destructive" onClick={() => removeTransaction(transaction.id!)}>
+                            <DropdownMenuItem className="text-destructive" onClick={() => removeTransaction(transaction.id!, transaction.rawTx)}>
                               <Trash2 className="mr-2 size-4" />
                               Delete
                             </DropdownMenuItem>

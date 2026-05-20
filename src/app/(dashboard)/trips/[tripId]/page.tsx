@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import {
   ArrowLeft, Receipt, Users, Calendar, MapPin, ArrowRight,
   Plus, Edit2, Trash2, MoreHorizontal, Lock, Plane,
-  BarChart3, DollarSign, CheckCircle2, Sparkles,
+  BarChart3, DollarSign, CheckCircle2,
 } from 'lucide-react'
 import {
   Bar, BarChart, Pie, PieChart, Cell, XAxis, YAxis,
@@ -57,6 +57,8 @@ import {
   getTripCurrencySettings,
   LEGACY_JPY_TO_THB,
 } from '@/lib/trip-currency'
+import { collectImmichAssetIds } from '@/lib/immich/asset-ids'
+import { requestDeleteImmichAssets } from '@/lib/immich/delete-from-browser'
 import { Timestamp } from 'firebase/firestore'
 import { Search } from 'lucide-react'
 
@@ -80,7 +82,7 @@ export default function TripDetailPage() {
 
   const [isAddExpenseOpen, setIsAddExpenseOpen] = React.useState(false)
   const [ocrDraft, setOcrDraft] = React.useState<Omit<TripExpense, 'id' | 'createdAt' | 'userId' | 'tripId' | 'transactionId'> | null>(null)
-  const [pendingImmichAssetId, setPendingImmichAssetId] = React.useState<string | null>(null)
+  const [pendingImmichAssetIds, setPendingImmichAssetIds] = React.useState<string[]>([])
   const { aiTextProvider } = useUserSettings()
   const [isEditTripOpen, setIsEditTripOpen] = React.useState(false)
   const [editingExpense, setEditingExpense] = React.useState<TripExpense | null>(null)
@@ -573,13 +575,24 @@ export default function TripDetailPage() {
           <TabsTrigger value="settlements" className="gap-2">
             <Users className="size-4" /> Settlements
           </TabsTrigger>
-          <TabsTrigger value="ai" className="gap-2">
-            <Sparkles className="size-4" /> AI
-          </TabsTrigger>
         </TabsList>
 
         {/* Expenses Tab */}
-        <TabsContent value="expenses" className="mt-4">
+        <TabsContent value="expenses" className="mt-4 space-y-4">
+          {trip && (
+            <TripAiPanel
+              tripId={tripId}
+              trip={trip}
+              tripMembers={memberObjects}
+              aiTextProvider={aiTextProvider}
+              onOpenExpenseForm={(draft, immichAssetIds) => {
+                setOcrDraft(draft)
+                setPendingImmichAssetIds(immichAssetIds?.length ? [...immichAssetIds] : [])
+                setEditingExpense(null)
+                setIsAddExpenseOpen(true)
+              }}
+            />
+          )}
           <Card>
             <CardHeader>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -693,9 +706,11 @@ export default function TripDetailPage() {
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem className="text-destructive" onClick={async () => {
                                   if (ex.isLegacy) {
-                                    removeTransaction(ex.id!)
+                                    const tx = transactions.find((t) => t.id === ex.id)
+                                    removeTransaction(ex.id!, tx ?? null)
                                   } else {
                                     const raw = ex.rawEx as TripExpense
+                                    await requestDeleteImmichAssets(collectImmichAssetIds(raw))
                                     await deleteTripExpenseWithTransaction(ex.id!, raw?.transactionId)
                                   }
                                 }}>
@@ -1074,23 +1089,6 @@ export default function TripDetailPage() {
             </Card>
           </div>
         </TabsContent>
-
-        <TabsContent value="ai" className="mt-4">
-          {trip && (
-            <TripAiPanel
-              tripId={tripId}
-              trip={trip}
-              tripMembers={memberObjects}
-              aiTextProvider={aiTextProvider}
-              onOpenExpenseForm={(draft, immichAssetId) => {
-                setOcrDraft(draft)
-                setPendingImmichAssetId(immichAssetId ?? null)
-                setEditingExpense(null)
-                setIsAddExpenseOpen(true)
-              }}
-            />
-          )}
-        </TabsContent>
       </Tabs>
 
       <Dialog open={isEditTripOpen} onOpenChange={setIsEditTripOpen}>
@@ -1190,7 +1188,7 @@ export default function TripDetailPage() {
         if (!open) {
           setEditingExpense(null)
           setOcrDraft(null)
-          setPendingImmichAssetId(null)
+          setPendingImmichAssetIds([])
         }
       }}>
         <DialogContent className="max-h-[90vh] overflow-y-auto overflow-x-hidden sm:max-w-[680px]">
@@ -1202,7 +1200,7 @@ export default function TripDetailPage() {
               {editingExpense
                 ? 'Edit this expense'
                 : ocrDraft
-                  ? 'ข้อมูลจาก Gemini — แก้ไขได้ก่อนกดบันทึก'
+                  ? 'ข้อมูลจาก AI — แก้ไขได้ก่อนกดบันทึก'
                   : 'Add an expense to this trip'}
             </DialogDescription>
           </DialogHeader>
@@ -1217,7 +1215,8 @@ export default function TripDetailPage() {
               exchangeRate: trip.exchangeRate,
             } : undefined}
             initialData={editingExpense || (ocrDraft as TripExpense | null)}
-            immichAssetId={pendingImmichAssetId ?? editingExpense?.immichAssetId}
+            tripId={tripId}
+            pendingImmichAssetIds={pendingImmichAssetIds}
             onSubmit={async (data) => {
               if (!user?.uid) return
               if (editingExpense?.id) {
@@ -1225,9 +1224,9 @@ export default function TripDetailPage() {
                   editingExpense.id,
                   editingExpense.transactionId,
                   data,
-                  user.uid,
                   {
-                    immichAssetId: pendingImmichAssetId ?? editingExpense.immichAssetId,
+                    immichAssetIds: data.immichAssetIds,
+                    immichAssetId: data.immichAssetIds?.[0] ?? data.immichAssetId ?? null,
                     source: data.source,
                   }
                 )
@@ -1236,7 +1235,8 @@ export default function TripDetailPage() {
                   { ...data, tripId, userId: user.uid },
                   user.uid,
                   {
-                    immichAssetId: pendingImmichAssetId,
+                    immichAssetIds: data.immichAssetIds,
+                    immichAssetId: data.immichAssetIds?.[0] ?? data.immichAssetId ?? null,
                     source: data.source || (ocrDraft ? 'ai' : 'manual'),
                   }
                 )
@@ -1244,13 +1244,13 @@ export default function TripDetailPage() {
               setIsAddExpenseOpen(false)
               setEditingExpense(null)
               setOcrDraft(null)
-              setPendingImmichAssetId(null)
+              setPendingImmichAssetIds([])
             }}
             onCancel={() => {
               setIsAddExpenseOpen(false)
               setEditingExpense(null)
               setOcrDraft(null)
-              setPendingImmichAssetId(null)
+              setPendingImmichAssetIds([])
             }}
           />
         </DialogContent>

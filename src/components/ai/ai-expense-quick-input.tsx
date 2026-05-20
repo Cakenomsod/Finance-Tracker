@@ -4,6 +4,7 @@ import * as React from 'react'
 import { ImagePlus, Loader2, Paperclip, Send, Sparkles, Bookmark } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -15,11 +16,11 @@ import { toast } from 'sonner'
 export interface AiExpenseQuickInputProps {
   tripId?: string
   aiTextProvider?: AiTextProvider
-  /** แสดงตัวเลือก Local / Gemini สำหรับข้อความที่ regex แยกไม่ได้ */
+  /** แสดงตัวเลือก Local / Gemini สำหรับทั้งข้อความและรูปใบเสร็จ */
   showTextProviderSelect?: boolean
   onParsed: (result: ReceiptParseResult) => void
   onImmichNoteReady?: (assetId: string) => void
-  pendingImmichId?: string | null
+  pendingImmichCount?: number
 }
 
 export function AiExpenseQuickInput({
@@ -28,13 +29,17 @@ export function AiExpenseQuickInput({
   showTextProviderSelect = true,
   onParsed,
   onImmichNoteReady,
-  pendingImmichId,
+  pendingImmichCount = 0,
 }: AiExpenseQuickInputProps) {
   const [input, setInput] = React.useState('')
   const [textProvider, setTextProvider] = React.useState<AiTextProvider>(aiTextProvider)
   const [parsingText, setParsingText] = React.useState(false)
   const [parsingImage, setParsingImage] = React.useState(false)
   const [uploadingNote, setUploadingNote] = React.useState(false)
+
+  const [pendingReceiptFile, setPendingReceiptFile] = React.useState<File | null>(null)
+  const [receiptPreviewUrl, setReceiptPreviewUrl] = React.useState<string | null>(null)
+  const [receiptExtraInstructions, setReceiptExtraInstructions] = React.useState('')
 
   const aiImageInputRef = React.useRef<HTMLInputElement>(null)
   const noteImageInputRef = React.useRef<HTMLInputElement>(null)
@@ -44,6 +49,16 @@ export function AiExpenseQuickInput({
   React.useEffect(() => {
     setTextProvider(aiTextProvider)
   }, [aiTextProvider])
+
+  React.useEffect(() => {
+    if (!pendingReceiptFile) {
+      setReceiptPreviewUrl(null)
+      return
+    }
+    const url = URL.createObjectURL(pendingReceiptFile)
+    setReceiptPreviewUrl(url)
+    return () => URL.revokeObjectURL(url)
+  }, [pendingReceiptFile])
 
   const handleParseText = async () => {
     const text = input.trim()
@@ -74,25 +89,31 @@ export function AiExpenseQuickInput({
     }
   }
 
-  const handleAiImage = async (file: File) => {
-    if (!file.type.startsWith('image/')) {
-      toast.error('กรุณาเลือกไฟล์รูปภาพ')
+  const runReceiptAnalysis = async () => {
+    if (!pendingReceiptFile) {
+      toast.error('กรุณาเลือกรูปใบเสร็จก่อน')
       return
     }
 
     setParsingImage(true)
     try {
       const form = new FormData()
-      form.append('image', file)
+      form.append('image', pendingReceiptFile)
+      if (tripId) form.append('tripId', tripId)
+      form.append('provider', textProvider)
+      if (receiptExtraInstructions.trim()) {
+        form.append('extraInstructions', receiptExtraInstructions.trim())
+      }
 
       const endpoint = tripId ? '/api/ai/receipt/parse' : '/api/ai/transaction/parse'
-      if (tripId) form.append('tripId', tripId)
 
-      const res = await fetch(endpoint, { method: 'POST', body: form })
+      const res = await fetch(endpoint, { method: 'POST', body: form, credentials: 'same-origin' })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Parse failed')
 
       onParsed(data.draft as ReceiptParseResult)
+      setPendingReceiptFile(null)
+      setReceiptExtraInstructions('')
       toast.success('แยกข้อมูลจากรูปแล้ว — ตรวจสอบก่อนบันทึก')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'สแกนรูปไม่สำเร็จ')
@@ -109,8 +130,9 @@ export function AiExpenseQuickInput({
       const form = new FormData()
       form.append('file', file)
       form.append('filename', file.name)
+      if (tripId) form.append('tripId', tripId)
 
-      const res = await fetch('/api/immich/upload', { method: 'POST', body: form })
+      const res = await fetch('/api/immich/upload', { method: 'POST', body: form, credentials: 'same-origin' })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Upload failed')
 
@@ -123,6 +145,8 @@ export function AiExpenseQuickInput({
     }
   }
 
+  const imageProviderLabel = textProvider === 'local' ? 'Local AI' : 'Gemini'
+
   return (
     <div className="rounded-lg border bg-card p-4 space-y-3">
       <div className="flex items-center gap-2">
@@ -130,7 +154,7 @@ export function AiExpenseQuickInput({
         <div className="min-w-0">
           <p className="text-sm font-medium">เพิ่มรายจ่ายด้วย AI</p>
           <p className="text-xs text-muted-foreground truncate">
-            พิมพ์หรืออัปรูป → ตรวจสอบ → กรอกฟอร์ม
+            พิมพ์หรืออัปรูป → กดส่งเอง → ตรวจสอบ → กรอกฟอร์ม
           </p>
         </div>
         <div className="flex items-center gap-1.5 shrink-0 ml-auto">
@@ -145,12 +169,12 @@ export function AiExpenseQuickInput({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="local">Local AI</SelectItem>
-                <SelectItem value="gemma">Gemini 2 Flash</SelectItem>
+                <SelectItem value="gemma">Gemini</SelectItem>
               </SelectContent>
             </Select>
           )}
           <Badge variant="secondary" className="text-[10px]">
-            รูป: Gemini
+            รูป: {imageProviderLabel}
           </Badge>
         </div>
       </div>
@@ -181,31 +205,79 @@ export function AiExpenseQuickInput({
         </Button>
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        <input
-          ref={aiImageInputRef}
-          type="file"
-          accept="image/*"
-          className="hidden"
-          aria-label="อัปรูปใบเสร็จ"
-          onChange={(e) => {
-            const f = e.target.files?.[0]
-            if (f) handleAiImage(f)
-            e.target.value = ''
-          }}
-        />
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="gap-1 h-8"
+      <div className="space-y-2 rounded-md border bg-muted/30 p-2">
+        <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">รูปใบเสร็จ</p>
+        <div className="flex flex-wrap gap-2">
+          <input
+            ref={aiImageInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            aria-label="เลือกรูปใบเสร็จ"
+            onChange={(e) => {
+              const f = e.target.files?.[0]
+              if (f) {
+                if (!f.type.startsWith('image/')) {
+                  toast.error('กรุณาเลือกไฟล์รูปภาพ')
+                } else {
+                  setPendingReceiptFile(f)
+                }
+              }
+              e.target.value = ''
+            }}
+          />
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="gap-1 h-8"
+            disabled={busy}
+            onClick={() => aiImageInputRef.current?.click()}
+          >
+            <ImagePlus className="size-3.5" />
+            เลือกรูป
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            className="gap-1 h-8"
+            disabled={busy || !pendingReceiptFile || parsingImage}
+            onClick={runReceiptAnalysis}
+          >
+            {parsingImage ? <Loader2 className="size-3.5 animate-spin" /> : <Send className="size-3.5" />}
+            ส่งวิเคราะห์
+          </Button>
+          {pendingReceiptFile && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-8 text-xs"
+              disabled={busy}
+              onClick={() => setPendingReceiptFile(null)}
+            >
+              ล้างรูป
+            </Button>
+          )}
+        </div>
+        {receiptPreviewUrl && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={receiptPreviewUrl}
+            alt="ตัวอย่างใบเสร็จ"
+            className="max-h-32 rounded-md border object-contain"
+          />
+        )}
+        <Textarea
+          placeholder="คำสั่งเพิ่มเติม (ไม่บังคับ) เช่น แปลชื่อสินค้าเป็นภาษาไทย, ผู้จ่ายคือใคร, แยกบรรทัดภาษี..."
+          value={receiptExtraInstructions}
           disabled={busy}
-          onClick={() => aiImageInputRef.current?.click()}
-        >
-          {parsingImage ? <Loader2 className="size-3.5 animate-spin" /> : <ImagePlus className="size-3.5" />}
-          อัปรูปใบเสร็จ
-        </Button>
+          onChange={(e) => setReceiptExtraInstructions(e.target.value)}
+          className="min-h-[72px] text-sm resize-y"
+        />
+      </div>
 
+      <div className="flex flex-wrap gap-2">
         {onImmichNoteReady && (
           <>
             <input
@@ -229,23 +301,23 @@ export function AiExpenseQuickInput({
               onClick={() => noteImageInputRef.current?.click()}
             >
               {uploadingNote ? <Loader2 className="size-3.5 animate-spin" /> : <Paperclip className="size-3.5" />}
-              เก็บโน้ต
+              เก็บโน้ต (Immich)
             </Button>
           </>
         )}
       </div>
 
-      {pendingImmichId && (
+      {pendingImmichCount > 0 && (
         <Badge variant="outline" className="text-xs gap-1 w-fit">
           <Bookmark className="size-3" />
-          มีรูปโน้ตรอแนบ
+          มีรูปโน้ตรอแนบ ({pendingImmichCount})
         </Badge>
       )}
 
       <p className="text-[10px] text-muted-foreground">
-        ข้อความสั้นแยกทันที · ซับซ้อนใช้{' '}
-        {textProvider === 'local' ? 'Local AI' : 'Gemini 2 Flash'}
-        {textProvider === 'local' ? ' (ล้มแล้วลอง Gemini)' : ''}
+        ข้อความสั้นแยกทันที · ข้อความ/รูปซับซ้อนใช้{' '}
+        {textProvider === 'local' ? 'Local AI' : 'Gemini'}
+        {textProvider === 'local' ? ' (ข้อความล้มแล้วลอง Gemini)' : ''}
       </p>
     </div>
   )

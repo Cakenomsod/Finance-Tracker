@@ -23,6 +23,15 @@ export const receiptParseSchema = z.object({
 
 export type ReceiptParseResult = z.infer<typeof receiptParseSchema>;
 
+/** Shared context for receipt image + text AI (trip defaults + optional user hints). */
+export interface ReceiptAiContext {
+  tripName?: string;
+  currency?: string;
+  countryCode?: string;
+  /** Appended to prompts for receipt scanning (Thai/English user hints). */
+  extraInstructions?: string;
+}
+
 export const RECEIPT_PARSE_PROMPT = `You are a receipt and bank transfer slip OCR parser for a personal finance app.
 Read the image and return ONLY one JSON object — no markdown, no code fences, no explanation.
 

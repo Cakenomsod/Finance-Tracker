@@ -21,6 +21,8 @@ export interface UserProfile {
   immich?: ImmichSettings;
   aiTextProvider?: AiTextProvider;
   localAiBaseUrl?: string;
+  /** Immich album for non-trip receipt attachments */
+  immichGeneralAlbumId?: string | null;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }
@@ -56,6 +58,8 @@ export interface Transaction {
   source: ExpenseSource;
   tripExpenseId?: string | null;
   immichAssetId?: string | null;
+  /** Additional receipt images (Immich); primary/thumbnail uses first id or immichAssetId */
+  immichAssetIds?: string[] | null;
   createdAt: Timestamp;
   items?: ReceiptItem[];
   baseAmount?: number;
@@ -107,6 +111,8 @@ export interface Trip {
   homeCurrency?: TripCurrency;
   /** 1 tripCurrency = exchangeRate homeCurrency */
   exchangeRate?: number;
+  /** Shared Immich album for this trip's receipt photos */
+  immichAlbumId?: string | null;
 }
 
 // trip_expenses/{expenseId}
@@ -142,6 +148,7 @@ export interface TripExpense {
   currency?: TripCurrency;
   transactionId?: string | null;
   immichAssetId?: string | null;
+  immichAssetIds?: string[] | null;
   source?: ExpenseSource;
 }
 

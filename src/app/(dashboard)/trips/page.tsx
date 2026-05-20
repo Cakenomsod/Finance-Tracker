@@ -860,6 +860,7 @@ export default function TripsPage() {
             </DialogDescription>
           </DialogHeader>
           <TripExpenseFormV2
+            tripId={expenseTripId || undefined}
             tripMembers={expenseMemberObjects}
             myUserId={user?.uid || ''}
             tripDefaults={expenseTrip ? {

@@ -25,7 +25,11 @@ export function envTrim(key: string, fallback?: string): string | undefined {
 }
 
 export function getGoogleAiApiKey(): string | undefined {
-  return envTrim('GOOGLE_AI_API_KEY');
+  return (
+    envTrim('GOOGLE_AI_API_KEY') ||
+    envTrim('GEMINI_API_KEY') ||
+    envTrim('GOOGLE_API_KEY')
+  );
 }
 
 /** Map legacy/invalid model ids to the current default Flash model. */

@@ -7,18 +7,180 @@ export function normalizeBaseUrl(url: string): string {
   return url.replace(/\/$/, '');
 }
 
-// 1. แก้ไข Endpoint สำหรับการ Ping เช็กสถานะเซิร์ฟเวอร์ (ใช้ /api/server/ping)
-export async function testImmichConnection(config: ImmichConfig): Promise<boolean> {
-  const base = normalizeBaseUrl(config.baseUrl);
+/** For logs only — avoids leaking full URLs with tokens in query strings. */
+export function redactImmichUrlForLog(fullUrl: string): string {
   try {
-    const res = await fetch(`${base}/api/server/ping`, {
-      method: 'GET',
-      headers: { 'x-api-key': config.apiKey },
-      signal: AbortSignal.timeout(10000),
+    const u = new URL(fullUrl);
+    return `${u.pathname}${u.search ? '(?…)' : ''}`;
+  } catch {
+    return '(invalid-url)';
+  }
+}
+
+function logImmichFailure(
+  operation: string,
+  fullUrl: string,
+  status: number,
+  statusText: string,
+  bodyPreview: string
+): void {
+  console.error('[Immich]', operation, 'failed', {
+    path: redactImmichUrlForLog(fullUrl),
+    status,
+    statusText,
+    bodyPreview: bodyPreview.slice(0, 800),
+  });
+}
+
+async function immichFetch(
+  config: ImmichConfig,
+  path: string,
+  init: RequestInit & { timeoutMs?: number },
+  operation: string
+): Promise<Response> {
+  const base = normalizeBaseUrl(config.baseUrl);
+  const url = `${base}${path.startsWith('/') ? path : `/${path}`}`;
+  const timeoutMs = init.timeoutMs ?? 60000;
+  const { timeoutMs: _t, ...fetchInit } = init;
+  const signal =
+    fetchInit.signal ??
+    AbortSignal.timeout(timeoutMs);
+
+  try {
+    const res = await fetch(url, { ...fetchInit, signal });
+    if (!res.ok) {
+      res
+        .clone()
+        .text()
+        .then((errText) =>
+          logImmichFailure(operation, url, res.status, res.statusText, errText)
+        )
+        .catch(() => logImmichFailure(operation, url, res.status, res.statusText, ''));
+    }
+    return res;
+  } catch (error) {
+    console.error('[Immich]', operation, 'network/abort', {
+      path: redactImmichUrlForLog(url),
+      message: error instanceof Error ? error.message : String(error),
+      name: error instanceof Error ? error.name : undefined,
     });
+    throw error;
+  }
+}
+
+/** DELETE /api/assets — body { ids, force? } (Immich v2). */
+export async function deleteImmichAssets(
+  config: ImmichConfig,
+  ids: string[],
+  options?: { force?: boolean }
+): Promise<void> {
+  const unique = [...new Set(ids.map((id) => id.trim()).filter(Boolean))];
+  if (unique.length === 0) return;
+
+  const res = await immichFetch(
+    config,
+    '/api/assets',
+    {
+      method: 'DELETE',
+      headers: {
+        'x-api-key': config.apiKey,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        ids: unique,
+        ...(options?.force ? { force: true } : {}),
+      }),
+      timeoutMs: 60000,
+    },
+    'deleteAssets'
+  );
+
+  if (!res.ok) {
+    const t = await res.text().catch(() => '');
+    throw new Error(`Immich delete failed (${res.status}): ${t || res.statusText}`);
+  }
+}
+
+/** POST /api/albums — returns album id. */
+export async function createImmichAlbum(
+  config: ImmichConfig,
+  albumName: string,
+  assetIds: string[]
+): Promise<{ id: string }> {
+  const res = await immichFetch(
+    config,
+    '/api/albums',
+    {
+      method: 'POST',
+      headers: {
+        'x-api-key': config.apiKey,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        albumName,
+        ...(assetIds.length ? { assetIds } : {}),
+      }),
+      timeoutMs: 60000,
+    },
+    'createAlbum'
+  );
+
+  if (!res.ok) {
+    const t = await res.text().catch(() => '');
+    throw new Error(`Immich create album failed (${res.status}): ${t}`);
+  }
+
+  const data = (await res.json()) as { id: string };
+  if (!data?.id) throw new Error('Immich create album: missing id in response');
+  return { id: data.id };
+}
+
+/** PUT /api/albums/:id/assets — body { ids } */
+export async function addAssetsToImmichAlbum(
+  config: ImmichConfig,
+  albumId: string,
+  assetIds: string[]
+): Promise<void> {
+  const unique = [...new Set(assetIds.map((id) => id.trim()).filter(Boolean))];
+  if (unique.length === 0) return;
+
+  const res = await immichFetch(
+    config,
+    `/api/albums/${albumId}/assets`,
+    {
+      method: 'PUT',
+      headers: {
+        'x-api-key': config.apiKey,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ ids: unique }),
+      timeoutMs: 60000,
+    },
+    'addAssetsToAlbum'
+  );
+
+  if (!res.ok) {
+    const t = await res.text().catch(() => '');
+    throw new Error(`Immich add to album failed (${res.status}): ${t}`);
+  }
+}
+
+// 1. Ping เช็กสถานะเซิร์ฟเวอร์ (ใช้ /api/server/ping)
+export async function testImmichConnection(config: ImmichConfig): Promise<boolean> {
+  try {
+    const res = await immichFetch(
+      config,
+      '/api/server/ping',
+      {
+        method: 'GET',
+        headers: { 'x-api-key': config.apiKey },
+        timeoutMs: 10000,
+      },
+      'ping'
+    );
     return res.ok;
   } catch (error) {
-    console.error('Immich connection test failed:', error);
+    console.error('[Immich] ping exception:', error);
     return false;
   }
 }
@@ -30,35 +192,35 @@ export async function uploadToImmich(
   filename: string,
   mimeType: string
 ): Promise<{ id: string }> {
-  const base = normalizeBaseUrl(config.baseUrl);
   const now = new Date().toISOString();
-  // Immich แนะนำให้โครงสร้างไอดีไม่ยาวเกินไปและไม่สับสน
   const deviceAssetId = `finance-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
   const form = new FormData();
-  
-  // แนบไฟล์แบบ Binary ข้อมูลภาพ
+
   form.append(
     'assetData',
     new Blob([new Uint8Array(file)], { type: mimeType }),
     filename
   );
-  
-  // ฟิลด์บังคับ (Required fields) ตาม Immich API Spec ตระกูล /api/assets
+
   form.append('deviceAssetId', deviceAssetId);
   form.append('deviceId', 'finance-tracker-web');
   form.append('fileCreatedAt', now);
   form.append('fileModifiedAt', now);
-  form.append('isFavorite', 'false'); // ⚠️ บังคับส่งเป็น String 'true' หรือ 'false'
-  form.append('duration', '00:00:00.000000'); // ⚠️ บังคับส่งสำหรับระบุความยาววิดีโอ (ถ้ารูปภาพใส่ 0 ทิ้งไว้)
+  form.append('isFavorite', 'false');
+  form.append('duration', '00:00:00.000000');
 
-  // เปลี่ยนจาก /api/assets/upload เป็น /api/assets
-  const res = await fetch(`${base}/api/assets`, {
-    method: 'POST',
-    headers: { 'x-api-key': config.apiKey },
-    body: form,
-    signal: AbortSignal.timeout(60000),
-  });
+  const res = await immichFetch(
+    config,
+    '/api/assets',
+    {
+      method: 'POST',
+      headers: { 'x-api-key': config.apiKey },
+      body: form,
+      timeoutMs: 60000,
+    },
+    'uploadAsset'
+  );
 
   if (!res.ok) {
     const errText = await res.text().catch(() => res.statusText);
@@ -66,7 +228,6 @@ export async function uploadToImmich(
   }
 
   const data = await res.json();
-  // Immich จะส่ง object ของ asset ที่สร้างเสร็จแล้วกลับมา ซึ่งมีฟิลด์ id แน่นอน
   return { id: data.id };
 }
 
@@ -76,16 +237,19 @@ export async function fetchImmichAsset(
   assetId: string,
   type: 'thumbnail' | 'original' = 'thumbnail'
 ): Promise<Response> {
-  const base = normalizeBaseUrl(config.baseUrl);
-  
-  // ใน Immich Parameter size จะรับค่าเป็น 'thumbnail' หรือ 'preview' เท่านั้น
   const path =
     type === 'thumbnail'
       ? `/api/assets/${assetId}/thumbnail?size=thumbnail`
       : `/api/assets/${assetId}/original`;
 
-  return fetch(`${base}${path}`, {
-    headers: { 'x-api-key': config.apiKey },
-    signal: AbortSignal.timeout(30000),
-  });
+  return immichFetch(
+    config,
+    path,
+    {
+      method: 'GET',
+      headers: { 'x-api-key': config.apiKey },
+      timeoutMs: 30000,
+    },
+    type === 'thumbnail' ? 'getThumbnail' : 'getOriginal'
+  );
 }

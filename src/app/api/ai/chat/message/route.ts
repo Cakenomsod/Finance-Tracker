@@ -73,7 +73,10 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ response, provider });
   } catch (error) {
-    console.error('Chat error:', error);
+    console.error('[API] POST /api/ai/chat/message failed:', {
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+    });
     const errMessage = error instanceof Error ? error.message : 'Chat failed';
     return NextResponse.json({ error: errMessage }, { status: 500 });
   }

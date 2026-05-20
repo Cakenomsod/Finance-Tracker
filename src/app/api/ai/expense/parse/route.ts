@@ -70,7 +70,10 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ draft, provider });
   } catch (error) {
-    console.error('Expense text parse error:', error);
+    console.error('[API] POST /api/ai/expense/parse failed:', {
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+    });
     const errMessage = error instanceof Error ? error.message : 'Parse failed';
     return NextResponse.json({ error: errMessage }, { status: 500 });
   }
