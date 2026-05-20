@@ -20,8 +20,10 @@ export async function POST(request: NextRequest) {
   const immich = await getUserImmichSettings(session.uid);
   if (!immich) {
     return NextResponse.json(
-      { error: 'Immich not configured. Add your tunnel URL and API key in Settings.' },
-      { status: 400 }
+      {
+        error: 'Immich server configuration is missing or incomplete. กรุณาตรวจสอบการตั้งค่าเซิร์ฟเวอร์หรือแจ้งผู้ดูแลระบบ',
+      },
+      { status: 503 }
     );
   }
 

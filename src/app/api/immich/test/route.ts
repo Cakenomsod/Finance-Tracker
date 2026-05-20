@@ -11,9 +11,12 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const { apiKey } = await request.json();
+    const apiKey = process.env.IMMICH_API_KEY;
     if (!apiKey) {
-      return NextResponse.json({ error: 'apiKey is required' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'IMMICH_API_KEY ยังไม่ได้ตั้งค่าในเซิร์ฟเวอร์' },
+        { status: 503 }
+      );
     }
 
     // 📡 2. ลอจิกใหม่: วิ่งไปสอยลิงก์มุดท่อ Immich ตัวล่าสุดจาก Firestore โปรเจกต์ Photo
