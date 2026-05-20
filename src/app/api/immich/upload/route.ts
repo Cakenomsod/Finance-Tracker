@@ -6,6 +6,8 @@ import {
   addAssetsToImmichAlbum,
 } from '@/lib/immich/client';
 import { adminDb } from '@/lib/firebase-admin';
+import { photoDb } from '@/lib/photo-firebase-admin';
+
 
 const MAX_SIZE = 15 * 1024 * 1024;
 
@@ -24,6 +26,18 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    // 📡 2. ลอจิกใหม่: วิ่งไปสอยลิงก์มุดท่อ Immich ตัวล่าสุดจาก Firestore โปรเจกต์ Photo
+    const configDoc = await photoDb.collection('system').doc('tunnel_config').get();
+    
+    if (configDoc.exists) {
+      const currentImmichUrl = configDoc.data()?.immich_url;
+
+      // 🎯 3. สวมรอยแทนที่ลิงก์เก่าทันที เพื่อให้ท่ออัปโหลดไหลลื่นไปยังคอมบ้านในปัจจุบัน
+      if (currentImmichUrl) {
+        immich.baseUrl = currentImmichUrl;
+      }
+    }
+
     const formData = await request.formData();
     const file = formData.get('file');
     const tripIdRaw = formData.get('tripId');
@@ -51,8 +65,10 @@ export async function POST(request: NextRequest) {
 
     const buffer = Buffer.from(await file.arrayBuffer());
 
+    // 📤 4. ยิงไฟล์ภาพขึ้นไปเซฟที่คอมบ้านผ่านท่อเวอร์ชันอัปเดตล่าสุด
     const result = await uploadToImmich(immich, buffer, filename, mimeType);
 
+    // 📁 5. ส่งค่าคอนฟิกตัวที่สวมลิงก์อัปเดตแล้วเข้าไปจัดแจงอัลบั้มต่อ
     await assignToFinanceAlbum(session.uid, immich, tripId, result.id).catch((e) => {
       console.error('[Immich] album assignment failed (non-fatal):', e);
     });
@@ -69,6 +85,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
+// 🛠️ ฟังก์ชันจัดระเบียบอัลบั้ม (คงลอจิกเดิมของคุณไว้ทั้งหมด แต่ใช้งานผ่านท่อ baseUrl ใหม่ไร้สะดุด)
 async function assignToFinanceAlbum(
   uid: string,
   immich: { baseUrl: string; apiKey: string },

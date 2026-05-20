@@ -3,6 +3,7 @@ import { getUserAiSettings, verifySession } from '@/lib/api-auth';
 import { sendChatWithProvider } from '@/lib/ai';
 import { getGoogleAiApiKey } from '@/lib/ai/env';
 import { AiTextProvider } from '@/lib/firestore-types';
+import { photoDb } from '@/lib/photo-firebase-admin'; // 👈 1. อิมพอร์ตตัวต่อสายข้ามค่ายเข้ามาเพิ่ม
 
 const MAX_HISTORY = 20;
 
@@ -39,7 +40,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Message is required' }, { status: 400 });
     }
 
-    const { provider: savedProvider, localAiBaseUrl } = await getUserAiSettings(session.uid);
+    const { provider: savedProvider } = await getUserAiSettings(session.uid);
 
     const provider: AiTextProvider =
       requestedProvider === 'gemma' || requestedProvider === 'local'
@@ -53,20 +54,39 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (provider === 'local' && !localAiBaseUrl) {
-      return NextResponse.json(
-        { error: 'กรุณาตั้งค่า Local AI Base URL ในหน้า Settings ก่อนใช้งานแชท' },
-        { status: 400 }
-      );
+    // 📡 2. ประกาศตัวแปรรับค่าลิงก์แบบ Dynamic
+    let dynamicLocalAiUrl = "";
+
+    // 📡 3. ลอจิกใหม่: ถ้าเลือกใช้โหมด 'local' ให้วิ่งข้ามไปคว้าลิงก์ปัจจุบันใน Firestore ของโปรเจกต์ Photo ทันที
+    if (provider === 'local') {
+      const configDoc = await photoDb.collection('system').doc('tunnel_config').get();
+      
+      if (!configDoc.exists) {
+        return NextResponse.json(
+          { error: 'ไม่พบข้อมูลท่อเชื่อมต่อบนคลาวด์ยานแม่ (คอมบ้านอาจจะยังไม่ได้ส่งข้อมูล)' },
+          { status: 503 }
+        );
+      }
+
+      // ดึงค่า ai_url ล่าสุดที่คอมบ้านอัปเดตไว้
+      dynamicLocalAiUrl = configDoc.data()?.ai_url || "";
+
+      if (!dynamicLocalAiUrl) {
+        return NextResponse.json(
+          { error: 'คอมบ้านเชื่อมต่อท่อสำเร็จ แต่ยังไม่ได้เปิดใช้งานโหมด Local AI' },
+          { status: 400 }
+        );
+      }
     }
 
     const history = parseHistory(rawHistory);
 
+    // 🤖 4. สวมลิงก์ไดนามิกตัวใหม่เข้าไปในคอนฟิกของเซสชันแชท
     const response = await sendChatWithProvider(
       message.trim(),
       {
         provider,
-        localAiConfig: provider === 'local' && localAiBaseUrl ? { baseUrl: localAiBaseUrl } : undefined,
+        localAiConfig: provider === 'local' && dynamicLocalAiUrl ? { baseUrl: dynamicLocalAiUrl } : undefined,
       },
       history
     );

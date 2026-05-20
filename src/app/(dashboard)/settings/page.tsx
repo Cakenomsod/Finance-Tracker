@@ -2,7 +2,6 @@
 
 import * as React from 'react'
 import {
-  Settings,
   User,
   CreditCard,
   Bell,
@@ -15,13 +14,10 @@ import {
   Edit2,
   Sparkles,
   MessageCircle,
-  Globe,
   Moon,
   Sun,
   Check,
   Monitor,
-  ImageIcon,
-  Loader2,
 } from 'lucide-react'
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -83,31 +79,15 @@ const notificationSettings = [
 
 export default function SettingsPage() {
   const { theme, setTheme, resolvedTheme } = useTheme()
-  const { immich, aiTextProvider, localAiBaseUrl, saveImmichSettings, saveAiSettings, loading: settingsLoading } = useUserSettings()
+  const { immich, localAiBaseUrl } = useUserSettings()
   const [mounted, setMounted] = React.useState(false)
   const [notifications, setNotifications] = React.useState(notificationSettings)
-  const [immichBaseUrl, setImmichBaseUrl] = React.useState('')
-  const [immichApiKey, setImmichApiKey] = React.useState('')
-  const [textProvider, setTextProvider] = React.useState<AiTextProvider>('gemma')
-  const [localAiUrl, setLocalAiUrl] = React.useState('')
   const [testingImmich, setTestingImmich] = React.useState(false)
   const [testingLocalAi, setTestingLocalAi] = React.useState(false)
-  const [savingImmich, setSavingImmich] = React.useState(false)
-  const [savingAi, setSavingAi] = React.useState(false)
 
   React.useEffect(() => {
     setMounted(true)
   }, [])
-
-  React.useEffect(() => {
-    if (immich?.baseUrl) setImmichBaseUrl(immich.baseUrl)
-    if (immich?.apiKey) setImmichApiKey(immich.apiKey)
-  }, [immich?.baseUrl, immich?.apiKey])
-
-  React.useEffect(() => {
-    setTextProvider(aiTextProvider)
-    setLocalAiUrl(localAiBaseUrl || '')
-  }, [aiTextProvider, localAiBaseUrl])
 
   const activeTheme = mounted ? theme : undefined
 
@@ -120,26 +100,20 @@ export default function SettingsPage() {
   const handleTestImmich = async () => {
     setTestingImmich(true)
     try {
-      // 🔑 1. ดึงตัวแปร auth ของหน้าบ้านมาแกะรหัส Token ล่าสุดแบบสดๆ ร้อนๆ
-      // (มั่นใจว่าด้านบนสุดของไฟล์มีการ import auth จาก lib/firebase ของคุณแล้วนะครับ)
       const currentUser = auth.currentUser;
       if (!currentUser) {
         throw new Error('ไม่พบข้อมูลการล็อกอิน กรุณาลองเข้าสู่ระบบใหม่อีกครั้ง');
       }
       
-      // สั่งรีเฟรช token ใหม่เพื่อความชัวร์ว่าไม่หมดอายุ
       const token = await currentUser.getIdToken(true); 
 
-      // 2. ส่งคำขอ fetch ไปที่ API
       const res = await fetch('/api/immich/test', {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
-          // 🔑 3. แปะป้าย Authorization ส่งเป็น Bearer Token ไปแทนคุกกี้
           'Authorization': `Bearer ${token}` 
         },
-        // เอา credentials: 'include' ของเก่าออกได้เลยครับ
-        body: JSON.stringify({ baseUrl: immichBaseUrl, apiKey: immichApiKey }),
+        body: JSON.stringify({ baseUrl: immich?.baseUrl, apiKey: immich?.apiKey }),
       })
       
       const data = await res.json()
@@ -152,33 +126,9 @@ export default function SettingsPage() {
     }
   }
 
-  const handleSaveImmich = async () => {
-    setSavingImmich(true)
-    try {
-      await saveImmichSettings({ baseUrl: immichBaseUrl, apiKey: immichApiKey })
-      toast.success('บันทึกการตั้งค่า Immich แล้ว')
-    } catch {
-      toast.error('บันทึกไม่สำเร็จ')
-    } finally {
-      setSavingImmich(false)
-    }
-  }
-
-  const handleSaveAi = async () => {
-    setSavingAi(true)
-    try {
-      await saveAiSettings(textProvider, localAiUrl || undefined)
-      toast.success('บันทึกการตั้งค่า AI แล้ว')
-    } catch {
-      toast.error('บันทึกไม่สำเร็จ')
-    } finally {
-      setSavingAi(false)
-    }
-  }
-
   const handleTestLocalAi = async () => {
-    if (!localAiUrl.trim()) {
-      toast.error('กรุณาใส่ Local AI URL')
+    if (!localAiBaseUrl?.trim()) {
+      toast.error('กรุณาตั้งค่า Local AI URL ในการตั้งค่า')
       return
     }
     setTestingLocalAi(true)
@@ -186,7 +136,7 @@ export default function SettingsPage() {
       const res = await fetch('/api/ai/test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ baseUrl: localAiUrl }),
+        body: JSON.stringify({ baseUrl: localAiBaseUrl }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || data.message || 'Connection failed')
@@ -422,46 +372,17 @@ export default function SettingsPage() {
             <Sparkles className="size-5" />
             AI Preferences
           </CardTitle>
-          <CardDescription>Immich สำหรับรูปถาวร + เลือก AI สำหรับข้อความ</CardDescription>
+          <CardDescription>ทดสอบการเชื่อมต่อ AI Services</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <p className="text-xs text-muted-foreground">เมื่อ restart tunnel แล้วลิงก์เปลี่ยน ให้อัปเดต Base URL ที่นี่</p>
-          <div className="space-y-2">
-            <Label htmlFor="immich-url">Immich Base URL</Label>
-            <Input id="immich-url" placeholder="https://xxxx.trycloudflare.com" value={immichBaseUrl} onChange={(e) => setImmichBaseUrl(e.target.value)} disabled={settingsLoading} />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="immich-key">API Key</Label>
-            <Input id="immich-key" type="password" value={immichApiKey} onChange={(e) => setImmichApiKey(e.target.value)} disabled={settingsLoading} />
-          </div>
           <div className="flex gap-2">
-            <Button type="button" variant="outline" onClick={handleTestImmich} disabled={testingImmich}>ทดสอบ Immich</Button>
-            <Button type="button" onClick={handleSaveImmich} disabled={savingImmich}>บันทึก Immich</Button>
+            <Button type="button" variant="outline" onClick={handleTestImmich} disabled={testingImmich}>
+              {testingImmich ? 'ทดสอบ...' : 'ทดสอบ Immich'}
+            </Button>
+            <Button type="button" variant="outline" onClick={handleTestLocalAi} disabled={testingLocalAi}>
+              {testingLocalAi ? 'ทดสอบ...' : 'ทดสอบ Local AI'}
+            </Button>
           </div>
-          <Separator />
-          <div className="space-y-2">
-            <Label>Text AI Provider</Label>
-            <Select value={textProvider} onValueChange={(v) => setTextProvider(v as AiTextProvider)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="gemma">Gemini 2 Flash</SelectItem>
-                <SelectItem value="local">Local AI</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          {textProvider === 'local' && (
-            <div className="space-y-2">
-              <Label>Local AI URL</Label>
-              <Input value={localAiUrl} onChange={(e) => setLocalAiUrl(e.target.value)} placeholder="http://192.168.1.x:11434" />
-              <Button type="button" variant="outline" size="sm" onClick={handleTestLocalAi} disabled={testingLocalAi || !localAiUrl.trim()}>
-                {testingLocalAi ? 'ทดสอบ...' : 'ทดสอบ Local AI'}
-              </Button>
-            </div>
-          )}
-          <Badge variant="secondary" className="text-xs">
-            รูปใบเสร็จ: Gemini 2 Flash · ข้อความ: {textProvider === 'local' ? 'Local AI' : 'Gemini 2 Flash'}
-          </Badge>
-          <Button type="button" onClick={handleSaveAi} disabled={savingAi}>บันทึก AI</Button>
         </CardContent>
       </Card>
 

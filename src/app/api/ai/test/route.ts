@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifySession } from '@/lib/api-auth';
 import { testLocalAiConnection } from '@/lib/ai';
+import { photoDb } from '@/lib/photo-firebase-admin'; // 👈 1. อิมพอร์ตสายสืบข้ามค่ายเข้ามา
 
 export async function POST(request: NextRequest) {
   const session = await verifySession();
@@ -9,21 +10,39 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const body = await request.json();
-    const { baseUrl } = body;
-
-    if (!baseUrl || typeof baseUrl !== 'string') {
-      return NextResponse.json({ error: 'baseUrl is required' }, { status: 400 });
+    // 📡 2. ลอจิกใหม่: วิ่งไปสอยลิงก์ล่าสุดจาก Firestore ของโปรเจกต์ Photo มาทดสอบทันที
+    const configDoc = await photoDb.collection('system').doc('tunnel_config').get();
+    
+    if (!configDoc.exists) {
+      return NextResponse.json(
+        { success: false, message: 'ไม่พบข้อมูลท่อเชื่อมต่อบนคลาวด์ยานแม่' },
+        { status: 503 }
+      );
     }
 
-    const connected = await testLocalAiConnection({ baseUrl });
+    // คว้าค่า ai_url จากคอมบ้านมาเช็ก
+    const currentAiUrl = configDoc.data()?.ai_url || "";
+
+    if (!currentAiUrl) {
+      return NextResponse.json(
+        { success: false, message: 'บนคลาวด์ยังไม่มีการอัปเดตลิงก์ Local AI ปัจจุบัน' },
+        { status: 400 }
+      );
+    }
+
+    // 🤖 3. ส่งลิงก์ไดนามิกที่ดึงได้สดๆ ไปเช็กดูว่าคอมที่บ้านกำลังเปิดโปรแกรม AI (เช่น LM Studio) ทิ้งไว้ไหม
+    const connected = await testLocalAiConnection({ baseUrl: currentAiUrl });
 
     if (connected) {
-      return NextResponse.json({ success: true, message: 'Local AI is connected' });
+      return NextResponse.json({ 
+        success: true, 
+        message: 'เชื่อมต่อกับ Local AI คอมบ้านสำเร็จ!',
+        testedUrl: currentAiUrl // แถมลิงก์บอกหน้าบ้านหน่อยว่าทดสอบผ่านท่อไหนอยู่
+      });
     }
 
     return NextResponse.json(
-      { success: false, message: 'Cannot connect to Local AI' },
+      { success: false, message: `ไม่สามารถเชื่อมต่อไปยัง Local AI ได้ (ลิงก์ปัจจุบัน: ${currentAiUrl})` },
       { status: 500 }
     );
   } catch (error) {
