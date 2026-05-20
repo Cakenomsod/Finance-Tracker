@@ -27,23 +27,25 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    // 📡 2. ลอจิกใหม่: วิ่งไปสอยลิงก์มุดท่อ Immich ตัวล่าสุดจาก Firestore โปรเจกต์ Photo
+    // 📡 1. วิ่งไปสอยลิงก์มุดท่อ Immich ตัวล่าสุดจาก Firestore โปรเจกต์ Photo
     const configDoc = await photoDb.collection('system').doc('tunnel_config').get();
     
     if (configDoc.exists) {
       const currentImmichUrl = configDoc.data()?.immich_url;
-
-      // 🎯 3. ถ้าบนคลาวด์มียังมีลิงก์อัปเดตอยู่ ให้เอาลิงก์ไดนามิกนี้ไปสวมแทนที่ตัวเก่าในคอนฟิกทันที
       if (currentImmichUrl) {
-        immich.baseUrl = currentImmichUrl; // สลับช่องสัญญาณให้วิ่งไปหาท่อปัจจุบันของคอมบ้าน
+        immich.baseUrl = currentImmichUrl; // สลับช่องสัญญาณให้ถูกท่อ
       }
     }
 
-    // 🗑️ 4. สั่งลบรูปภาพในเครื่องคอมที่บ้าน ผ่านท่อตัวล่าสุดอย่างแม่นยำ
+    // 🗑️ 2. สั่งลบรูปภาพ (ส่งอาร์เรย์ ids ตรงๆ เข้าไปตามที่ฟังก์ชันของ client ต้องการ)
+    // หมายเหตุ: มั่นใจว่าด้านบนของไฟล์มีบรรทัด const ids = ... แกะเตรียมไว้แล้วนะคัรบ
     await deleteImmichAssets(immich, ids as string[]);
+    
     return NextResponse.json({ ok: true });
   } catch (error) {
-    console.error('[Immich] POST /api/immich/delete failed:', error);
+    // 💡 ตรงนี้แหละ! สั่งพ่น log ฝั่งเซิร์ฟเวอร์ดูให้ชัดๆ เลยว่า คอมบ้านตอบปฏิเสธอะไรกลับมา
+    console.error('[API Immich Delete] จริงๆ แล้วพังเพราะอะไรกันแน่:', error);
+    
     const message = error instanceof Error ? error.message : 'Delete failed';
     return NextResponse.json({ error: message }, { status: 502 });
   }

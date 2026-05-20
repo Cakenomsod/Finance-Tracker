@@ -1,6 +1,7 @@
 import { cookies, headers } from 'next/headers';
 import { adminAuth, adminDb } from '@/lib/firebase-admin';
 import { AiTextProvider } from '@/lib/firestore-types';
+import { photoDb } from '@/lib/photo-firebase-admin';
 
 export async function verifySession(): Promise<{ uid: string } | null> {
   try {
@@ -36,24 +37,66 @@ export async function assertTripMember(tripId: string, uid: string): Promise<boo
 }
 
 export async function getUserImmichSettings(uid: string) {
-  const userDoc = await adminDb.collection('users').doc(uid).get();
-  if (!userDoc.exists) return null;
-  const immich = userDoc.data()?.immich as { baseUrl?: string; apiKey?: string } | undefined;
-  if (!immich?.baseUrl || !immich?.apiKey) return null;
-  return {
-    baseUrl: immich.baseUrl.replace(/\/$/, ''),
-    apiKey: immich.apiKey,
-  };
+  try {
+    const userDoc = await adminDb.collection('users').doc(uid).get();
+    const userData = userDoc.exists ? userDoc.data() : undefined;
+
+    // Determine AI provider from the user's record (defaults to 'gemma')
+    const provider = (userData?.aiTextProvider as AiTextProvider) || 'gemma';
+
+    // If provider is 'local', always use the shared tunnel config from the photo project
+    if (provider === 'local') {
+      try {
+        const tunnelDoc = await photoDb.collection('system').doc('tunnel_config').get();
+        const tunnel = tunnelDoc.exists ? (tunnelDoc.data() ?? {}) : {};
+
+        const rawUrl = (tunnel.immich_url || tunnel.immichUrl || tunnel.immichBaseUrl) as string | undefined;
+        const baseUrl = rawUrl ? String(rawUrl).replace(/\/$/, '') : undefined;
+        const apiKey = process.env.IMMICH_API_KEY || undefined;
+
+        if (!baseUrl || !apiKey) return null;
+        return { baseUrl, apiKey };
+      } catch (err) {
+        console.error('Error reading tunnel_config from photoDb:', err);
+        return null;
+      }
+    }
+
+    // Non-local: fall back to user-specific immich settings
+    const immich = userData?.immich as { baseUrl?: string; apiKey?: string } | undefined;
+    const baseUrl = immich?.baseUrl ? String(immich.baseUrl).replace(/\/$/, '') : undefined;
+    const apiKey = immich?.apiKey ? String(immich.apiKey) : undefined;
+    if (!baseUrl || !apiKey) return null;
+    return { baseUrl, apiKey };
+  } catch (error) {
+    console.error('getUserImmichSettings error:', error);
+    return null;
+  }
 }
 
 export async function getUserAiSettings(uid: string) {
-  const userDoc = await adminDb.collection('users').doc(uid).get();
-  if (!userDoc.exists) {
+  try {
+    const userDoc = await adminDb.collection('users').doc(uid).get();
+    const userData = userDoc.exists ? userDoc.data() : undefined;
+
+    const provider = (userData?.aiTextProvider as AiTextProvider) || 'gemma';
+    let localAiBaseUrl = userData?.localAiBaseUrl as string | undefined;
+
+    // If the provider is 'local', override the local AI base URL with the shared tunnel config
+    if (provider === 'local') {
+      try {
+        const tunnelDoc = await photoDb.collection('system').doc('tunnel_config').get();
+        const tunnel = tunnelDoc.exists ? (tunnelDoc.data() ?? {}) : {};
+        const rawAi = (tunnel.ai_url || tunnel.aiUrl || tunnel.localAiBaseUrl) as string | undefined;
+        if (rawAi) localAiBaseUrl = String(rawAi).replace(/\/$/, '');
+      } catch (err) {
+        console.error('Error reading tunnel_config for AI from photoDb:', err);
+      }
+    }
+
+    return { provider, localAiBaseUrl };
+  } catch (error) {
+    console.error('getUserAiSettings error:', error);
     return { provider: 'gemma' as AiTextProvider, localAiBaseUrl: undefined };
   }
-  const userData = userDoc.data();
-  return {
-    provider: (userData?.aiTextProvider as AiTextProvider) || 'gemma',
-    localAiBaseUrl: userData?.localAiBaseUrl as string | undefined,
-  };
 }

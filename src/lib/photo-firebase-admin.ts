@@ -1,38 +1,36 @@
 import * as admin from 'firebase-admin';
 import { getFirestore } from 'firebase-admin/firestore';
 
-// ประกาศตัวแปร Firestore รอไว้
-export let photoDb: admin.firestore.Firestore;
+// 🎯 ฟังก์ชันภายในสำหรับดึงหรือสร้าง Instance แอปชื่อ photoProject
+function getPhotoProjectApp(): admin.app.App {
+  const existingApp = admin.apps.find(app => app?.name === 'photoProject');
+  
+  // เจอบ้านเก่า ส่งบ้านเก่ากลับไปใช้ทันที
+  if (existingApp) return existingApp;
 
-// ค้นหาว่าเคยสร้างแอปชื่อ photoProject ไว้หรือยัง
-const existingApp = admin.apps.find(app => app?.name === 'photoProject');
-
-if (!existingApp) {
   try {
-    let photoProjectApp: admin.app.App;
-
     if (process.env.FIREBASE_ADMIN_PROJECT_ID && process.env.FIREBASE_ADMIN_CLIENT_EMAIL) {
-      photoProjectApp = admin.initializeApp({
+      // เครื่อง Local (ใช้สิทธิ์คีย์ Finance บังคับพิกัดไปโปรเจกต์ Photo)
+      return admin.initializeApp({
         credential: admin.credential.cert({
           projectId: process.env.FIREBASE_ADMIN_PROJECT_ID,
           clientEmail: process.env.FIREBASE_ADMIN_CLIENT_EMAIL,
           privateKey: process.env.FIREBASE_ADMIN_PRIVATE_KEY?.replace(/\\n/g, '\n'),
         }),
-        projectId: "photophetklao", // ไอดีโปรเจกต์รูปภาพของคุณ
+        projectId: "photophetklao", 
       }, 'photoProject');
     } else {
-      photoProjectApp = admin.initializeApp({ projectId: "photophetklao" }, 'photoProject');
+      // เซิร์ฟเวอร์จริง (Production)
+      return admin.initializeApp({
+        projectId: "photophetklao",
+      }, 'photoProject');
     }
-
-    console.log("🔥 [Cross-Project] สร้างท่อเชื่อมต่อโปรเจกต์ Photo สำเร็จแล้ว!");
-    photoDb = getFirestore(photoProjectApp);
-
   } catch (error) {
-    console.error('Firebase photo project initialization error', error);
-    // กรณีพัง ให้ดึงเอาแอปดีฟอลต์มาขัดตาทัพ
-    photoDb = getFirestore(admin.apps[0]!);
+    console.error('Failed to initialize photo project app:', error);
+    return admin.apps[0]!; // ถ้าพังวินาศจริงให้ดึงแอปตัวแรกมากันเหนียว
   }
-} else {
-  // ถ้ามีแอปนี้อยู่แล้ว ก็สอยเอา Firestore ของแอปตัวนี้มาผูกค่าเลย
-  photoDb = getFirestore(existingApp);
 }
+
+// 🎯 คีย์เวิร์ดสำคัญ: ดึง Firestore ผ่านฟังก์ชันด้านบนเสมอ 
+// ท่านี้จะการันตีว่า ไม่ว่าจะเรียกใช้งานจากไฟล์ไหน หรือกดโหลดหน้ารัวๆ จะไม่มีทางได้ค่า undefined แน่นอน!
+export const photoDb = getFirestore(getPhotoProjectApp());
