@@ -5,15 +5,54 @@ import {
   EXPENSE_TEXT_PARSE_PROMPT,
   type ReceiptParseResult,
 } from '@/lib/ai/receipt-schema';
-
-const MODEL = process.env.AI_RECEIPT_MODEL || 'gemma-4-31b-it';
+import { parseJsonFromAiContent } from '@/lib/ai/parse-json';
+import {
+  geminiModelCandidates,
+  getChatModel,
+  getGoogleAiApiKey,
+  getReceiptModel,
+} from '@/lib/ai/env';
 
 function getClient() {
-  const apiKey = process.env.GOOGLE_AI_API_KEY;
+  const apiKey = getGoogleAiApiKey();
   if (!apiKey) {
     throw new Error('GOOGLE_AI_API_KEY is not configured');
   }
   return new GoogleGenerativeAI(apiKey);
+}
+
+async function generateJsonWithModels(
+  modelNames: string[],
+  parts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }>
+): Promise<ReceiptParseResult> {
+  const genAI = getClient();
+  let lastError: Error | null = null;
+
+  for (const modelName of modelNames) {
+    try {
+      const model = genAI.getGenerativeModel({
+        model: modelName,
+        generationConfig: {
+          responseMimeType: 'application/json',
+          temperature: 0.1,
+        },
+      });
+
+      const result = await model.generateContent(parts);
+      const text = result.response.text();
+      if (!text?.trim()) {
+        throw new Error('Empty response from Google AI');
+      }
+
+      const parsed = parseJsonFromAiContent(text);
+      return receiptParseSchema.parse(parsed);
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      console.warn(`[AI] model ${modelName} failed:`, lastError.message);
+    }
+  }
+
+  throw lastError ?? new Error('All Google AI models failed');
 }
 
 export async function parseReceiptImage(
@@ -21,56 +60,36 @@ export async function parseReceiptImage(
   mimeType: string,
   context?: { tripName?: string; currency?: string; countryCode?: string }
 ): Promise<ReceiptParseResult> {
-  const genAI = getClient();
-  const model = genAI.getGenerativeModel({
-    model: MODEL,
-    generationConfig: {
-      responseMimeType: 'application/json',
-    },
-  });
-
   const contextHint = context
     ? `\nTrip context: name="${context.tripName || ''}", currency=${context.currency || 'THB'}, country=${context.countryCode || 'TH'}`
     : '';
 
-  const result = await model.generateContent([
-    { text: RECEIPT_PARSE_PROMPT + contextHint },
-    {
-      inlineData: {
-        mimeType,
-        data: imageBuffer.toString('base64'),
+  return generateJsonWithModels(
+    geminiModelCandidates(getReceiptModel()),
+    [
+      { text: RECEIPT_PARSE_PROMPT + contextHint },
+      {
+        inlineData: {
+          mimeType,
+          data: imageBuffer.toString('base64'),
+        },
       },
-    },
-  ]);
-
-  const text = result.response.text();
-  const parsed = JSON.parse(text);
-  return receiptParseSchema.parse(parsed);
+    ]
+  );
 }
 
 export async function parseExpenseText(
   text: string,
   context?: { tripName?: string; currency?: string; countryCode?: string }
 ): Promise<ReceiptParseResult> {
-  const genAI = getClient();
-  const model = genAI.getGenerativeModel({
-    model: process.env.AI_CHAT_MODEL || MODEL,
-    generationConfig: {
-      responseMimeType: 'application/json',
-      temperature: 0.1,
-    },
-  });
-
   const contextHint = context
     ? `\nContext: trip="${context.tripName || ''}", default currency=${context.currency || 'THB'}, country=${context.countryCode || 'TH'}`
     : '';
 
-  const result = await model.generateContent([
-    { text: EXPENSE_TEXT_PARSE_PROMPT + contextHint + `\n\nUser input:\n${text.trim()}` },
-  ]);
-
-  const parsed = JSON.parse(result.response.text());
-  return receiptParseSchema.parse(parsed);
+  return generateJsonWithModels(
+    geminiModelCandidates(getChatModel()),
+    [{ text: EXPENSE_TEXT_PARSE_PROMPT + contextHint + `\n\nUser input:\n${text.trim()}` }]
+  );
 }
 
 export async function sendChatMessage(
@@ -79,7 +98,7 @@ export async function sendChatMessage(
 ): Promise<string> {
   const genAI = getClient();
   const model = genAI.getGenerativeModel({
-    model: process.env.AI_CHAT_MODEL || MODEL,
+    model: getChatModel(),
     generationConfig: {
       temperature: 0.7,
     },
@@ -92,7 +111,6 @@ export async function sendChatMessage(
       parts: [{ text: h.content }],
     }));
 
-  // Gemini chat history must start with a user turn
   while (geminiHistory.length > 0 && geminiHistory[0].role === 'model') {
     geminiHistory.shift();
   }

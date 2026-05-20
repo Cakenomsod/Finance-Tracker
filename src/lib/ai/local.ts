@@ -5,14 +5,34 @@ import {
   type ReceiptParseResult,
 } from '@/lib/ai/receipt-schema';
 import { parseJsonFromAiContent } from '@/lib/ai/parse-json';
+import { extractLocalAiMessageContent } from '@/lib/ai/local-response';
+import { envTrim } from '@/lib/ai/env';
+import { tryParseExpenseTextHeuristic } from '@/lib/ai/expense-text-heuristic';
 
 export interface LocalAiConfig {
   baseUrl: string;
   model?: string;
 }
 
-const DEFAULT_MODEL = 'google/gemma-4-e2b';
-const FETCH_TIMEOUT_MS = 60_000;
+const DEFAULT_MODEL = envTrim('LOCAL_AI_MODEL') || 'google/gemma-4-e2b';
+
+function getLocalAiTimeoutMs(): number {
+  const raw = envTrim('LOCAL_AI_TIMEOUT_MS');
+  const parsed = raw ? parseInt(raw, 10) : 180_000;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 180_000;
+}
+
+function wrapLocalAiError(error: unknown, action: string): Error {
+  if (error instanceof Error && error.name === 'TimeoutError') {
+    return new Error(
+      `${action}: Local AI ใช้เวลานานเกินไป (${Math.round(getLocalAiTimeoutMs() / 1000)}s) — ลองใช้ Gemma ใน Settings หรือเพิ่ม LOCAL_AI_TIMEOUT_MS`
+    );
+  }
+  if (error instanceof Error) {
+    return new Error(`${action}: ${error.message}`);
+  }
+  return new Error(action);
+}
 
 /**
  * Parse receipt image using local AI (e.g., Ollama, LM Studio)
@@ -65,7 +85,7 @@ export async function parseReceiptImageLocal(
         temperature: 0.7,
         max_tokens: 1024,
       }),
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      signal: AbortSignal.timeout(getLocalAiTimeoutMs()),
     });
 
     if (!response.ok) {
@@ -73,8 +93,10 @@ export async function parseReceiptImageLocal(
       throw new Error(`Local AI error: ${response.status} - ${error}`);
     }
 
-    const data = await response.json() as { choices: Array<{ message: { content: string } }> };
-    const content = data.choices?.[0]?.message?.content;
+    const data = await response.json();
+    const content = extractLocalAiMessageContent(
+      data as Parameters<typeof extractLocalAiMessageContent>[0]
+    );
 
     if (!content) {
       throw new Error('No response from local AI');
@@ -83,10 +105,7 @@ export async function parseReceiptImageLocal(
     const parsed = parseJsonFromAiContent(content);
     return receiptParseSchema.parse(parsed);
   } catch (error) {
-    if (error instanceof Error) {
-      throw new Error(`Failed to parse receipt with local AI: ${error.message}`);
-    }
-    throw error;
+    throw wrapLocalAiError(error, 'Failed to parse receipt with local AI');
   }
 }
 
@@ -106,35 +125,61 @@ export async function parseExpenseTextLocal(
     ? `\nContext: trip="${context.tripName || ''}", default currency=${context.currency || 'THB'}, country=${context.countryCode || 'TH'}`
     : '';
 
-  const response = await fetch(`${baseUrl}/v1/chat/completions`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model,
-      messages: [
-        {
-          role: 'user',
-          content: `${EXPENSE_TEXT_PARSE_PROMPT}${contextHint}\n\nUser input:\n${text.trim()}`,
-        },
-      ],
-      temperature: 0.1,
-      max_tokens: 1024,
-    }),
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-  });
+  try {
+    const response = await fetch(`${baseUrl}/v1/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model,
+        messages: [
+          {
+            role: 'system',
+            content:
+              'You are a JSON API. Reply with a single valid JSON object only in the message content field. ' +
+              'Do not use chain-of-thought or reasoning — no markdown, no explanation, no preamble.',
+          },
+          {
+            role: 'user',
+            content: `${EXPENSE_TEXT_PARSE_PROMPT}${contextHint}\n\nUser input:\n${text.trim()}`,
+          },
+        ],
+        temperature: 0.1,
+        max_tokens: 2048,
+        stream: false,
+      }),
+      signal: AbortSignal.timeout(getLocalAiTimeoutMs()),
+    });
 
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Local AI error: ${response.status} - ${error}`);
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Local AI error: ${response.status} - ${error}`);
+    }
+
+    const data = await response.json();
+    const content = extractLocalAiMessageContent(
+      data as Parameters<typeof extractLocalAiMessageContent>[0]
+    );
+
+    if (!content) {
+      const currency =
+        context?.currency === 'JPY' || context?.currency === 'THB'
+          ? context.currency
+          : 'THB';
+      const fallback = tryParseExpenseTextHeuristic(text, currency);
+      if (fallback) return fallback;
+      throw new Error('No response from local AI (ลองพิมพ์แบบ "ชื่อรายการ จำนวนเงิน" เช่น ไก่ทอด 20)');
+    }
+
+    return receiptParseSchema.parse(parseJsonFromAiContent(content));
+  } catch (error) {
+    const currency =
+      context?.currency === 'JPY' || context?.currency === 'THB'
+        ? context.currency
+        : 'THB';
+    const fallback = tryParseExpenseTextHeuristic(text, currency);
+    if (fallback) return fallback;
+    throw wrapLocalAiError(error, 'Failed to parse expense text with local AI');
   }
-
-  const data = await response.json() as { choices: Array<{ message: { content: string } }> };
-  const content = data.choices?.[0]?.message?.content;
-  if (!content) {
-    throw new Error('No response from local AI');
-  }
-
-  return receiptParseSchema.parse(parseJsonFromAiContent(content));
 }
 
 /**
@@ -173,7 +218,7 @@ export async function sendChatMessageLocal(
         max_tokens: 512,
         stream: false,
       }),
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      signal: AbortSignal.timeout(getLocalAiTimeoutMs()),
     });
 
     if (!response.ok) {
@@ -181,8 +226,10 @@ export async function sendChatMessageLocal(
       throw new Error(`Local AI error: ${response.status} - ${error}`);
     }
 
-    const data = await response.json() as { choices: Array<{ message: { content: string } }> };
-    const content = data.choices?.[0]?.message?.content;
+    const data = await response.json();
+    const content = extractLocalAiMessageContent(
+      data as Parameters<typeof extractLocalAiMessageContent>[0]
+    );
 
     if (!content) {
       throw new Error('No response from local AI');
@@ -190,10 +237,7 @@ export async function sendChatMessageLocal(
 
     return content;
   } catch (error) {
-    if (error instanceof Error) {
-      throw new Error(`Failed to get chat response from local AI: ${error.message}`);
-    }
-    throw error;
+    throw wrapLocalAiError(error, 'Failed to get chat response from local AI');
   }
 }
 

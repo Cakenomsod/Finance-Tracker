@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { assertTripMember, getUserAiSettings, verifySession } from '@/lib/api-auth';
 import { adminDb } from '@/lib/firebase-admin';
 import { parseExpenseTextWithProvider } from '@/lib/ai';
+import { getGoogleAiApiKey } from '@/lib/ai/env';
 import { AiTextProvider } from '@/lib/firestore-types';
 
 export async function POST(request: NextRequest) {
@@ -25,7 +26,7 @@ export async function POST(request: NextRequest) {
         ? requestedProvider
         : savedProvider;
 
-    if (provider === 'gemma' && !process.env.GOOGLE_AI_API_KEY) {
+    if (provider === 'gemma' && !getGoogleAiApiKey()) {
       return NextResponse.json(
         { error: 'GOOGLE_AI_API_KEY ยังไม่ได้ตั้งค่าในเซิร์ฟเวอร์' },
         { status: 503 }

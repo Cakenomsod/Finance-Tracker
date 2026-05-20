@@ -11,6 +11,8 @@ import {
   type LocalAiConfig,
 } from '@/lib/ai/local';
 import type { ReceiptParseResult } from '@/lib/ai/receipt-schema';
+import { tryParseExpenseTextHeuristic } from '@/lib/ai/expense-text-heuristic';
+import { getGoogleAiApiKey } from '@/lib/ai/env';
 
 export interface AiProviderConfig {
   provider: AiTextProvider;
@@ -45,14 +47,38 @@ export async function parseExpenseTextWithProvider(
   config: AiProviderConfig,
   context?: { tripName?: string; currency?: string; countryCode?: string }
 ): Promise<ReceiptParseResult> {
-  if (config.provider === 'local') {
-    if (!config.localAiConfig?.baseUrl) {
-      throw new Error('Local AI is not configured. Please set up Local AI URL in Settings.');
-    }
-    return parseExpenseTextLocal(text, config.localAiConfig, context);
-  }
+  const currency =
+    context?.currency === 'JPY' || context?.currency === 'THB'
+      ? context.currency
+      : 'THB';
 
-  return parseExpenseText(text, context);
+  const heuristic = tryParseExpenseTextHeuristic(text, currency);
+  if (heuristic) return heuristic;
+
+  try {
+    if (config.provider === 'local') {
+      if (!config.localAiConfig?.baseUrl) {
+        throw new Error('Local AI is not configured. Please set up Local AI URL in Settings.');
+      }
+      return await parseExpenseTextLocal(text, config.localAiConfig, context);
+    }
+
+    return await parseExpenseText(text, context);
+  } catch (aiError) {
+    const retry = tryParseExpenseTextHeuristic(text, currency);
+    if (retry) return retry;
+
+    // Local ล้ม → ลอง Gemini 2 Flash เป็นตัวสำรอง
+    if (config.provider === 'local' && getGoogleAiApiKey()) {
+      try {
+        return await parseExpenseText(text, context);
+      } catch {
+        // keep original error below
+      }
+    }
+
+    throw aiError;
+  }
 }
 
 /**

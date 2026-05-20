@@ -5,6 +5,9 @@ import { ImagePlus, Loader2, Paperclip, Send, Sparkles, Bookmark } from 'lucide-
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select'
 import { AiTextProvider } from '@/lib/firestore-types'
 import { ReceiptParseResult } from '@/lib/ai/receipt-schema'
 import { toast } from 'sonner'
@@ -12,6 +15,8 @@ import { toast } from 'sonner'
 export interface AiExpenseQuickInputProps {
   tripId?: string
   aiTextProvider?: AiTextProvider
+  /** แสดงตัวเลือก Local / Gemini สำหรับข้อความที่ regex แยกไม่ได้ */
+  showTextProviderSelect?: boolean
   onParsed: (result: ReceiptParseResult) => void
   onImmichNoteReady?: (assetId: string) => void
   pendingImmichId?: string | null
@@ -20,11 +25,13 @@ export interface AiExpenseQuickInputProps {
 export function AiExpenseQuickInput({
   tripId,
   aiTextProvider = 'gemma',
+  showTextProviderSelect = true,
   onParsed,
   onImmichNoteReady,
   pendingImmichId,
 }: AiExpenseQuickInputProps) {
   const [input, setInput] = React.useState('')
+  const [textProvider, setTextProvider] = React.useState<AiTextProvider>(aiTextProvider)
   const [parsingText, setParsingText] = React.useState(false)
   const [parsingImage, setParsingImage] = React.useState(false)
   const [uploadingNote, setUploadingNote] = React.useState(false)
@@ -33,6 +40,10 @@ export function AiExpenseQuickInput({
   const noteImageInputRef = React.useRef<HTMLInputElement>(null)
 
   const busy = parsingText || parsingImage || uploadingNote
+
+  React.useEffect(() => {
+    setTextProvider(aiTextProvider)
+  }, [aiTextProvider])
 
   const handleParseText = async () => {
     const text = input.trim()
@@ -47,7 +58,7 @@ export function AiExpenseQuickInput({
         body: JSON.stringify({
           text,
           tripId,
-          provider: aiTextProvider,
+          provider: textProvider,
         }),
       })
       const data = await res.json()
@@ -122,9 +133,26 @@ export function AiExpenseQuickInput({
             พิมพ์หรืออัปรูป → ตรวจสอบ → กรอกฟอร์ม
           </p>
         </div>
-        <Badge variant="secondary" className="text-[10px] shrink-0 ml-auto">
-          รูป: Gemini
-        </Badge>
+        <div className="flex items-center gap-1.5 shrink-0 ml-auto">
+          {showTextProviderSelect && (
+            <Select
+              value={textProvider}
+              onValueChange={(v) => setTextProvider(v as AiTextProvider)}
+              disabled={busy}
+            >
+              <SelectTrigger className="h-7 w-[118px] text-[10px] px-2">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="local">Local AI</SelectItem>
+                <SelectItem value="gemma">Gemini 2 Flash</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
+          <Badge variant="secondary" className="text-[10px]">
+            รูป: Gemini
+          </Badge>
+        </div>
       </div>
 
       <div className="flex gap-2">
@@ -215,7 +243,9 @@ export function AiExpenseQuickInput({
       )}
 
       <p className="text-[10px] text-muted-foreground">
-        ข้อความ: {aiTextProvider === 'local' ? 'Local AI' : 'Gemma'} · ไม่มีแชท — แยกข้อมูลแล้วเปิดฟอร์มให้กรอก
+        ข้อความสั้นแยกทันที · ซับซ้อนใช้{' '}
+        {textProvider === 'local' ? 'Local AI' : 'Gemini 2 Flash'}
+        {textProvider === 'local' ? ' (ล้มแล้วลอง Gemini)' : ''}
       </p>
     </div>
   )

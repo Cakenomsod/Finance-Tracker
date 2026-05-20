@@ -444,7 +444,7 @@ export default function SettingsPage() {
             <Select value={textProvider} onValueChange={(v) => setTextProvider(v as AiTextProvider)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="gemma">Gemma API</SelectItem>
+                <SelectItem value="gemma">Gemini 2 Flash</SelectItem>
                 <SelectItem value="local">Local AI</SelectItem>
               </SelectContent>
             </Select>
@@ -459,7 +459,7 @@ export default function SettingsPage() {
             </div>
           )}
           <Badge variant="secondary" className="text-xs">
-            รูปใบเสร็จ: Gemini · แชทข้อความ: {textProvider === 'local' ? 'Local AI' : 'Gemma API'}
+            รูปใบเสร็จ: Gemini 2 Flash · ข้อความ: {textProvider === 'local' ? 'Local AI' : 'Gemini 2 Flash'}
           </Badge>
           <Button type="button" onClick={handleSaveAi} disabled={savingAi}>บันทึก AI</Button>
         </CardContent>
