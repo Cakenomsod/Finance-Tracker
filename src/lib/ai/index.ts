@@ -11,7 +11,7 @@ import {
   type LocalAiConfig,
 } from '@/lib/ai/local';
 import type { ReceiptParseResult } from '@/lib/ai/receipt-schema';
-import { tryParseExpenseTextHeuristic } from '@/lib/ai/expense-text-heuristic';
+import { tryParseExpenseTextStrictFormat } from '@/lib/ai/expense-text-heuristic';
 import { getGoogleAiApiKey } from '@/lib/ai/env';
 
 export interface AiProviderConfig {
@@ -52,8 +52,8 @@ export async function parseExpenseTextWithProvider(
       ? context.currency
       : 'THB';
 
-  const heuristic = tryParseExpenseTextHeuristic(text, currency);
-  if (heuristic) return heuristic;
+  const strictMatch = tryParseExpenseTextStrictFormat(text, currency);
+  if (strictMatch) return strictMatch;
 
   try {
     if (config.provider === 'local') {
@@ -65,7 +65,7 @@ export async function parseExpenseTextWithProvider(
 
     return await parseExpenseText(text, context);
   } catch (aiError) {
-    const retry = tryParseExpenseTextHeuristic(text, currency);
+    const retry = tryParseExpenseTextStrictFormat(text, currency);
     if (retry) return retry;
 
     // Local ล้ม → ลอง Gemini 2 Flash เป็นตัวสำรอง

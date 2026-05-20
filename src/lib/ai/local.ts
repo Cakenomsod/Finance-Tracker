@@ -7,7 +7,7 @@ import {
 import { parseJsonFromAiContent } from '@/lib/ai/parse-json';
 import { extractLocalAiMessageContent } from '@/lib/ai/local-response';
 import { envTrim } from '@/lib/ai/env';
-import { tryParseExpenseTextHeuristic } from '@/lib/ai/expense-text-heuristic';
+import { tryParseExpenseTextStrictFormat } from '@/lib/ai/expense-text-heuristic';
 
 export interface LocalAiConfig {
   baseUrl: string;
@@ -165,7 +165,7 @@ export async function parseExpenseTextLocal(
         context?.currency === 'JPY' || context?.currency === 'THB'
           ? context.currency
           : 'THB';
-      const fallback = tryParseExpenseTextHeuristic(text, currency);
+      const fallback = tryParseExpenseTextStrictFormat(text, currency);
       if (fallback) return fallback;
       throw new Error('No response from local AI (ลองพิมพ์แบบ "ชื่อรายการ จำนวนเงิน" เช่น ไก่ทอด 20)');
     }
@@ -176,7 +176,7 @@ export async function parseExpenseTextLocal(
       context?.currency === 'JPY' || context?.currency === 'THB'
         ? context.currency
         : 'THB';
-    const fallback = tryParseExpenseTextHeuristic(text, currency);
+    const fallback = tryParseExpenseTextStrictFormat(text, currency);
     if (fallback) return fallback;
     throw wrapLocalAiError(error, 'Failed to parse expense text with local AI');
   }

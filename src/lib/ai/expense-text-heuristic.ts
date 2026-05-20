@@ -5,13 +5,13 @@ const VALID_CATEGORIES = [
   'Bills & Utilities', 'Health & Fitness', 'Accommodation', 'Activities', 'Others',
 ];
 
-/** item name + amount: "ไก่ทอด 20", "coffee 45 baht" */
-const ITEM_PATTERN =
-  /([^\d,]+?)\s*(\d+(?:\.\d+)?)\s*(?:บาท|บ|฿|baht)?(?=\s|$|[,،])/gi;
+/** Strict simple format: "รายการ 20", "coffee 45 baht" */
+const SIMPLE_NAME_AMOUNT_PATTERN =
+  /^([^\d,]+?)\s+(\d+(?:\.\d+)?)\s*(?:บาท|บ|฿|baht)?$/i;
 
-/** amount + item: "20บาท ขนม", "45 กาแฟ" */
-const AMOUNT_FIRST_PATTERN =
-  /(\d+(?:\.\d+)?)\s*(?:บาท|บ|฿|baht)?\s*([^\d,]+?)(?=\s|$|[,،])/gi;
+/** Strict simple format (amount first): "20บาท ขนม", "45 coffee" */
+const SIMPLE_AMOUNT_NAME_PATTERN =
+  /^(\d+(?:\.\d+)?)\s*(?:บาท|บ|฿|baht)?\s+([^\d,]+?)$/i;
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
@@ -29,8 +29,8 @@ function guessCategory(name: string): string {
 }
 
 /**
- * Fast local parse for simple notes like "ไก่ทอด 20" or "ไก่ทอด 20 กาแฟ 45".
- * Returns null if the text does not look like expense items.
+ * Stage-1 detector:
+ * accept only short, strict, one-item formats. Complex sentences must go to AI.
  */
 /** "ไก่ทอด20" → "ไก่ทอด 20", "20บาท" stays readable */
 function normalizeExpenseInput(text: string): string {
@@ -41,53 +41,35 @@ function normalizeExpenseInput(text: string): string {
     .trim();
 }
 
-export function tryParseExpenseTextHeuristic(
+export function tryParseExpenseTextStrictFormat(
   text: string,
   defaultCurrency: 'THB' | 'JPY' = 'THB'
 ): ReceiptParseResult | null {
   const trimmed = normalizeExpenseInput(text);
-  if (!trimmed || trimmed.length > 500) return null;
-
-  const items: Array<{ name: string; category: string; price: number }> = [];
-
-  function pushItem(nameRaw: string, priceRaw: string) {
-    const name = nameRaw.trim().replace(/^[,،\s]+|[,،\s]+$/g, '');
-    const price = parseFloat(priceRaw);
-    if (!name || name.length < 1 || !Number.isFinite(price) || price <= 0) return;
-    items.push({
-      name,
-      category: guessCategory(name),
-      price,
-    });
+  if (!trimmed || trimmed.length > 80) return null;
+  if (/ครับ|ค่ะ|ช่วย|ฝาก|แล้ว|ที่ร้าน|หน่อย|ให้|เพื่อน|เมื่อ|ตอน|พรุ่งนี้|เมื่อวาน/.test(trimmed)) {
+    return null;
   }
 
-  let match: RegExpExecArray | null;
+  const nameAmount = trimmed.match(SIMPLE_NAME_AMOUNT_PATTERN);
+  const amountName = trimmed.match(SIMPLE_AMOUNT_NAME_PATTERN);
+  const matched = nameAmount || amountName;
+  if (!matched) return null;
 
-  ITEM_PATTERN.lastIndex = 0;
-  while ((match = ITEM_PATTERN.exec(trimmed)) !== null) {
-    pushItem(match[1], match[2]);
-  }
-
-  if (items.length === 0) {
-    AMOUNT_FIRST_PATTERN.lastIndex = 0;
-    while ((match = AMOUNT_FIRST_PATTERN.exec(trimmed)) !== null) {
-      pushItem(match[2], match[1]);
-    }
-  }
-
-  if (items.length === 0) return null;
-
-  const totalAmount = items.reduce((s, i) => s + i.price, 0);
-  const description =
-    items.length === 1 ? items[0].name : items.map((i) => i.name).join(', ');
+  const isNameAmount = Boolean(nameAmount);
+  const name = (isNameAmount ? matched[1] : matched[2]).trim().replace(/^[,،\s]+|[,،\s]+$/g, '');
+  const price = parseFloat(isNameAmount ? matched[2] : matched[1]);
+  if (!name || !Number.isFinite(price) || price <= 0) return null;
 
   return {
     documentType: 'receipt',
-    description,
-    category: items.length === 1 ? items[0].category : 'Food & Dining',
+    description: name,
+    category: guessCategory(name),
     date: todayIso(),
-    totalAmount,
+    totalAmount: price,
     currency: defaultCurrency,
-    items: items.length > 1 ? items : undefined,
   };
 }
+
+// Backward compatibility for existing imports.
+export const tryParseExpenseTextHeuristic = tryParseExpenseTextStrictFormat;
