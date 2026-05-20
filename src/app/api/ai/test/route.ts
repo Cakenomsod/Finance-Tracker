@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { verifySession } from '@/lib/api-auth';
+import { verifySession, getUserAiSettings } from '@/lib/api-auth';
 import { testLocalAiConnection } from '@/lib/ai';
-import { photoDb } from '@/lib/photo-firebase-admin'; // 👈 1. อิมพอร์ตสายสืบข้ามค่ายเข้ามา
+import { photoDb } from '@/lib/photo-firebase-admin';
 
 export async function POST(request: NextRequest) {
   const session = await verifySession();
@@ -10,39 +10,42 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    // 📡 2. ลอจิกใหม่: วิ่งไปสอยลิงก์ล่าสุดจาก Firestore ของโปรเจกต์ Photo มาทดสอบทันที
-    const configDoc = await photoDb().collection('system').doc('tunnel_config').get();
-    
-    if (!configDoc.exists) {
+    const { provider: savedProvider } = await getUserAiSettings(session.uid);
+    if (savedProvider !== 'local') {
       return NextResponse.json(
-        { success: false, message: 'ไม่พบข้อมูลท่อเชื่อมต่อบนคลาวด์ยานแม่' },
-        { status: 503 }
-      );
-    }
-
-    // คว้าค่า ai_url จากคอมบ้านมาเช็ก
-    const currentAiUrl = configDoc.data()?.ai_url || "";
-
-    if (!currentAiUrl) {
-      return NextResponse.json(
-        { success: false, message: 'บนคลาวด์ยังไม่มีการอัปเดตลิงก์ Local AI ปัจจุบัน' },
+        { error: 'บัญชีของคุณไม่ได้เลือกผู้ให้บริการ Local AI' },
         { status: 400 }
       );
     }
 
-    // 🤖 3. ส่งลิงก์ไดนามิกที่ดึงได้สดๆ ไปเช็กดูว่าคอมที่บ้านกำลังเปิดโปรแกรม AI (เช่น LM Studio) ทิ้งไว้ไหม
-    const connected = await testLocalAiConnection({ baseUrl: currentAiUrl });
+    const configDoc = await photoDb().collection('system').doc('tunnel_config').get();
+    if (!configDoc.exists) {
+      return NextResponse.json(
+        { error: 'ไม่พบข้อมูลท่อเชื่อมต่อบนคลาวด์ยานแม่' },
+        { status: 503 }
+      );
+    }
+
+    const sharedLocalAiUrl = String(configDoc.data()?.ai_url || '').trim().replace(/\/$/, '');
+    if (!sharedLocalAiUrl) {
+      return NextResponse.json(
+        { error: 'ยังไม่มีลิงก์ Local AI ปัจจุบันในระบบคลาวด์' },
+        { status: 400 }
+      );
+    }
+
+    const connected = await testLocalAiConnection({ baseUrl: sharedLocalAiUrl });
 
     if (connected) {
       return NextResponse.json({ 
         success: true, 
         message: 'เชื่อมต่อกับ Local AI คอมบ้านสำเร็จ!',
-        testedUrl: currentAiUrl // แถมลิงก์บอกหน้าบ้านหน่อยว่าทดสอบผ่านท่อไหนอยู่
+        testedUrl: sharedLocalAiUrl
       });
     }
 
     return NextResponse.json(
-      { success: false, message: `ไม่สามารถเชื่อมต่อไปยัง Local AI ได้ (ลิงก์ปัจจุบัน: ${currentAiUrl})` },
+      { success: false, message: `ไม่สามารถเชื่อมต่อไปยัง Local AI ได้ (ลิงก์ปัจจุบัน: ${sharedLocalAiUrl})` },
       { status: 500 }
     );
   } catch (error) {

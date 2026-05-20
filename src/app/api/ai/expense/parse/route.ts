@@ -14,18 +14,14 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { text, tripId, provider: requestedProvider } = body;
+    const { text, tripId } = body;
 
     if (!text || typeof text !== 'string' || !text.trim()) {
       return NextResponse.json({ error: 'Text is required' }, { status: 400 });
     }
 
     const { provider: savedProvider } = await getUserAiSettings(session.uid);
-
-    const provider: AiTextProvider =
-      requestedProvider === 'gemma' || requestedProvider === 'local'
-        ? requestedProvider
-        : savedProvider;
+    const provider: AiTextProvider = savedProvider;
 
     if (provider === 'gemma' && !getGoogleAiApiKey()) {
       return NextResponse.json(
@@ -34,13 +30,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 📡 2. ประกาศตัวแปรรับค่าลิงก์ AI แบบ Dynamic
-    let dynamicLocalAiUrl = "";
-
-    // 📡 3. ลอจิกใหม่: ถ้าใช้โหมด 'local' ให้วิ่งข้ามไปคว้าลิงก์ปัจจุบันใน Firestore ของโปรเจกต์ Photo แทนค่าเดิม
+    let sharedLocalAiUrl = '';
     if (provider === 'local') {
       const configDoc = await photoDb().collection('system').doc('tunnel_config').get();
-      
       if (!configDoc.exists) {
         return NextResponse.json(
           { error: 'ไม่พบข้อมูลท่อเชื่อมต่อบนคลาวด์ยานแม่ (คอมบ้านอาจจะยังไม่ได้ส่งข้อมูล)' },
@@ -48,10 +40,8 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // ดึงค่า ai_url ตัวใหม่ล่าสุดที่คอมบ้านยิงขึ้นไปฝากไว้ที่คลาวด์ Photo
-      dynamicLocalAiUrl = configDoc.data()?.ai_url || "";
-
-      if (!dynamicLocalAiUrl) {
+      sharedLocalAiUrl = String(configDoc.data()?.ai_url || '').trim().replace(/\/$/, '');
+      if (!sharedLocalAiUrl) {
         return NextResponse.json(
           { error: 'คอมบ้านเชื่อมต่อท่อสำเร็จ แต่ยังไม่ได้เปิดใช้งานโหมด Local AI บนเครื่องบ้าน' },
           { status: 400 }
@@ -78,12 +68,12 @@ export async function POST(request: NextRequest) {
       };
     }
 
-    // 🤖 4. สวมลิงก์ dynamicLocalAiUrl ที่ดึงมาสดๆ เข้าไปรันประมวลผลคำนวณบิลค่าใช้จ่าย
+    // 🤖 4. สวมลิงก์ sharedLocalAiUrl ที่ดึงมาสดๆ เข้าไปรันประมวลผลคำนวณบิลค่าใช้จ่าย
     const draft = await parseExpenseTextWithProvider(
       text.trim(),
       {
         provider,
-        localAiConfig: provider === 'local' && dynamicLocalAiUrl ? { baseUrl: dynamicLocalAiUrl } : undefined,
+        localAiConfig: provider === 'local' && sharedLocalAiUrl ? { baseUrl: sharedLocalAiUrl } : undefined,
       },
       context
     );
