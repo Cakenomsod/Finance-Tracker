@@ -428,7 +428,7 @@ export function TripExpenseFormV2({
       }
 
       if (attachmentIds.length) {
-        payload.immichAssetIds = attachmentIds
+        payload.immichAssetIds = [...new Set(attachmentIds)]
       } else {
         payload.immichAssetIds = undefined
         payload.immichAssetId = null
@@ -451,7 +451,7 @@ export function TripExpenseFormV2({
       const res = await fetch('/api/immich/upload', { method: 'POST', body: form, credentials: 'same-origin' })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Upload failed')
-      setAttachmentIds((prev) => [...prev, data.assetId as string])
+      setAttachmentIds((prev) => [...new Set([...prev, data.assetId as string])])
     } catch (e) {
       console.error(e)
     } finally {
@@ -463,6 +463,11 @@ export function TripExpenseFormV2({
     await requestDeleteImmichAssets([id])
     setAttachmentIds((prev) => prev.filter((x) => x !== id))
   }
+
+  const uniqueAttachmentIds = React.useMemo(
+    () => [...new Set(attachmentIds)],
+    [attachmentIds]
+  )
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5 py-2">
@@ -491,11 +496,11 @@ export function TripExpenseFormV2({
             {uploadingAttach ? '...' : <><ImagePlus className="size-3.5" /> เพิ่มรูป</>}
           </Button>
         </div>
-        {attachmentIds.length === 0 ? (
+        {uniqueAttachmentIds.length === 0 ? (
           <p className="text-[11px] text-muted-foreground">ไม่มีรูป — กด เพิ่มรูป หรือใช้ AI แนบโน้ต</p>
         ) : (
           <div className="flex flex-wrap gap-2">
-            {attachmentIds.map((id) => (
+            {uniqueAttachmentIds.map((id) => (
               <div
                 key={id}
                 className="relative group w-20 h-20 rounded-md border bg-background overflow-hidden shrink-0"

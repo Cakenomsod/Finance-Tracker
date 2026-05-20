@@ -6,7 +6,7 @@ export function collectImmichAssetIds(fields: {
   immichAssetIds?: string[] | null;
 }): string[] {
   const fromArray = fields.immichAssetIds?.filter((id): id is string => !!id && id.trim() !== '') ?? []
-  if (fromArray.length > 0) return [...new Set(fromArray)]
-  if (fields.immichAssetId?.trim()) return [fields.immichAssetId.trim()]
-  return []
+  const single = fields.immichAssetId?.trim()
+  const merged = [...fromArray, ...(single ? [single] : [])]
+  return [...new Set(merged)]
 }
