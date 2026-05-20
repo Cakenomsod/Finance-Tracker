@@ -19,7 +19,7 @@ export async function verifySession(): Promise<{ uid: string } | null> {
     if (!token) return null;
 
     // ส่งรหัสไปให้ Firebase Admin ตรวจสอบความถูกต้อง
-    const decoded = await adminAuth.verifyIdToken(token);
+    const decoded = await adminAuth().verifyIdToken(token);
     return { uid: decoded.uid };
   } catch (error) {
     console.error("Auth Verification Error in back-end:", error);
