@@ -1,3 +1,5 @@
+'use client';
+
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
@@ -12,14 +14,13 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
-const isConfigValid = !!firebaseConfig.apiKey;
+if (!firebaseConfig.apiKey) {
+  throw new Error(
+    "Missing Firebase client config. Set NEXT_PUBLIC_FIREBASE_API_KEY and related env vars."
+  );
+}
 
-// Initialize Firebase only if config is valid or if we're in a browser (where we expect it to be valid)
-// During static generation, we might not have the env vars.
-const app = getApps().length > 0 
-  ? getApp() 
-  : initializeApp(isConfigValid ? firebaseConfig : { ...firebaseConfig, apiKey: "dummy-key-for-build" });
-
+const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 const storage = getStorage(app);
