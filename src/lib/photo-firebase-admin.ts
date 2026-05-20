@@ -1,11 +1,8 @@
 import * as admin from 'firebase-admin';
 import { getFirestore } from 'firebase-admin/firestore';
 
-// 🎯 ฟังก์ชันภายในสำหรับดึงหรือสร้าง Instance แอปชื่อ photoProject
 function getPhotoProjectApp(): admin.app.App {
   const existingApp = admin.apps.find(app => app?.name === 'photoProject');
-  
-  // เจอบ้านเก่า ส่งบ้านเก่ากลับไปใช้ทันที
   if (existingApp) return existingApp;
 
   try {
@@ -17,20 +14,22 @@ function getPhotoProjectApp(): admin.app.App {
           clientEmail: process.env.FIREBASE_ADMIN_CLIENT_EMAIL,
           privateKey: process.env.FIREBASE_ADMIN_PRIVATE_KEY?.replace(/\\n/g, '\n'),
         }),
-        projectId: "photophetklao", 
+        projectId: process.env.PHOTO_FIREBASE_PROJECT_ID || "photophetklao", 
       }, 'photoProject');
     } else {
-      // เซิร์ฟเวอร์จริง (Production)
+      // 🚀 บนเซิร์ฟเวอร์จริง (Production): 
+      // ดึงสิทธิ์ของเครื่อง (Application Default) ยัดให้แอปตัวรอง และชี้เป้าไปบ้าน Photo ตัวจริง
       return admin.initializeApp({
-        projectId: "photophetklao",
+        credential: admin.credential.applicationDefault(), // 🎯 ป้องกันคีย์บอทพังบน Cloud Run
+        projectId: process.env.PHOTO_FIREBASE_PROJECT_ID || "photophetklao",
       }, 'photoProject');
     }
   } catch (error) {
     console.error('Failed to initialize photo project app:', error);
-    return admin.apps[0]!; // ถ้าพังวินาศจริงให้ดึงแอปตัวแรกมากันเหนียว
+    return admin.apps[0]!; 
   }
 }
 
-// 🎯 คีย์เวิร์ดสำคัญ: ดึง Firestore ผ่านฟังก์ชันด้านบนเสมอ 
-// ท่านี้จะการันตีว่า ไม่ว่าจะเรียกใช้งานจากไฟล์ไหน หรือกดโหลดหน้ารัวๆ จะไม่มีทางได้ค่า undefined แน่นอน!
-export const photoDb = getFirestore(getPhotoProjectApp());
+// 🎯 คีย์เวิร์ดสำคัญ: ปรับให้เป็น Getter Function เหมือนกัน
+// จากเดิมที่เป็นตัวแปรลอยดิ่ง ให้กลายเป็นฟังก์ชันเรียกใช้ไดนามิก
+export const photoDb = () => getFirestore(getPhotoProjectApp());

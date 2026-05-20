@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
 
   try {
     // 📡 2. ลอจิกใหม่: วิ่งไปสอยลิงก์ล่าสุดจาก Firestore ของโปรเจกต์ Photo มาทดสอบทันที
-    const configDoc = await photoDb.collection('system').doc('tunnel_config').get();
+    const configDoc = await photoDb().collection('system').doc('tunnel_config').get();
     
     if (!configDoc.exists) {
       return NextResponse.json(

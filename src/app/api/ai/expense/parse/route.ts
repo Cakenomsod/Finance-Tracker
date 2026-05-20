@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
 
     // 📡 3. ลอจิกใหม่: ถ้าใช้โหมด 'local' ให้วิ่งข้ามไปคว้าลิงก์ปัจจุบันใน Firestore ของโปรเจกต์ Photo แทนค่าเดิม
     if (provider === 'local') {
-      const configDoc = await photoDb.collection('system').doc('tunnel_config').get();
+      const configDoc = await photoDb().collection('system').doc('tunnel_config').get();
       
       if (!configDoc.exists) {
         return NextResponse.json(
@@ -69,7 +69,7 @@ export async function POST(request: NextRequest) {
       if (!isMember) {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
       }
-      const tripDoc = await adminDb.collection('trips').doc(tripId).get();
+      const tripDoc = await adminDb().collection('trips').doc(tripId).get();
       const trip = tripDoc.data();
       context = {
         tripName: trip?.name,

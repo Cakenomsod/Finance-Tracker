@@ -28,7 +28,7 @@ export async function verifySession(): Promise<{ uid: string } | null> {
 }
 
 export async function assertTripMember(tripId: string, uid: string): Promise<boolean> {
-  const tripDoc = await adminDb.collection('trips').doc(tripId).get();
+  const tripDoc = await adminDb().collection('trips').doc(tripId).get();
   if (!tripDoc.exists) return false;
   const trip = tripDoc.data();
   if (!trip) return false;
@@ -38,7 +38,7 @@ export async function assertTripMember(tripId: string, uid: string): Promise<boo
 
 export async function getUserImmichSettings(uid: string) {
   try {
-    const userDoc = await adminDb.collection('users').doc(uid).get();
+    const userDoc = await adminDb().collection('users').doc(uid).get();
     const userData = userDoc.exists ? userDoc.data() : undefined;
 
     // Determine AI provider from the user's record (defaults to 'gemma')
@@ -47,7 +47,7 @@ export async function getUserImmichSettings(uid: string) {
     // If provider is 'local', always use the shared tunnel config from the photo project
     if (provider === 'local') {
       try {
-        const tunnelDoc = await photoDb.collection('system').doc('tunnel_config').get();
+        const tunnelDoc = await photoDb().collection('system').doc('tunnel_config').get();
         const tunnel = tunnelDoc.exists ? (tunnelDoc.data() ?? {}) : {};
 
         const rawUrl = (tunnel.immich_url || tunnel.immichUrl || tunnel.immichBaseUrl) as string | undefined;
@@ -76,7 +76,7 @@ export async function getUserImmichSettings(uid: string) {
 
 export async function getUserAiSettings(uid: string) {
   try {
-    const userDoc = await adminDb.collection('users').doc(uid).get();
+    const userDoc = await adminDb().collection('users').doc(uid).get();
     const userData = userDoc.exists ? userDoc.data() : undefined;
 
     const provider = (userData?.aiTextProvider as AiTextProvider) || 'gemma';
@@ -85,7 +85,7 @@ export async function getUserAiSettings(uid: string) {
     // If the provider is 'local', override the local AI base URL with the shared tunnel config
     if (provider === 'local') {
       try {
-        const tunnelDoc = await photoDb.collection('system').doc('tunnel_config').get();
+        const tunnelDoc = await photoDb().collection('system').doc('tunnel_config').get();
         const tunnel = tunnelDoc.exists ? (tunnelDoc.data() ?? {}) : {};
         const rawAi = (tunnel.ai_url || tunnel.aiUrl || tunnel.localAiBaseUrl) as string | undefined;
         if (rawAi) localAiBaseUrl = String(rawAi).replace(/\/$/, '');

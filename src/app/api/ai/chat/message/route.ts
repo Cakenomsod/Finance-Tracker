@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
 
     // 📡 3. ลอจิกใหม่: ถ้าเลือกใช้โหมด 'local' ให้วิ่งข้ามไปคว้าลิงก์ปัจจุบันใน Firestore ของโปรเจกต์ Photo ทันที
     if (provider === 'local') {
-      const configDoc = await photoDb.collection('system').doc('tunnel_config').get();
+      const configDoc = await photoDb().collection('system').doc('tunnel_config').get();
       
       if (!configDoc.exists) {
         return NextResponse.json(

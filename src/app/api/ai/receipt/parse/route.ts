@@ -62,7 +62,7 @@ export async function POST(request: NextRequest) {
 
     const buffer = Buffer.from(await image.arrayBuffer());
 
-    const tripDoc = await adminDb.collection('trips').doc(tripId).get();
+    const tripDoc = await adminDb().collection('trips').doc(tripId).get();
     const trip = tripDoc.data();
 
     const draft = await parseReceiptImageWithProvider(

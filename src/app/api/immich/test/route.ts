@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 📡 2. ลอจิกใหม่: วิ่งไปสอยลิงก์มุดท่อ Immich ตัวล่าสุดจาก Firestore โปรเจกต์ Photo
-    const configDoc = await photoDb.collection('system').doc('tunnel_config').get();
+    const configDoc = await photoDb().collection('system').doc('tunnel_config').get();
     
     if (!configDoc.exists) {
       return NextResponse.json(

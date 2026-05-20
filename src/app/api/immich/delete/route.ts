@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
 
   try {
     // 📡 1. วิ่งไปสอยลิงก์มุดท่อ Immich ตัวล่าสุดจาก Firestore โปรเจกต์ Photo
-    const configDoc = await photoDb.collection('system').doc('tunnel_config').get();
+    const configDoc = await photoDb().collection('system').doc('tunnel_config').get();
     
     if (configDoc.exists) {
       const currentImmichUrl = configDoc.data()?.immich_url;

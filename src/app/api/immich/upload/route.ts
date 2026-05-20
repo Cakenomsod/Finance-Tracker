@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
 
   try {
     // 📡 2. ลอจิกใหม่: วิ่งไปสอยลิงก์มุดท่อ Immich ตัวล่าสุดจาก Firestore โปรเจกต์ Photo
-    const configDoc = await photoDb.collection('system').doc('tunnel_config').get();
+    const configDoc = await photoDb().collection('system').doc('tunnel_config').get();
     
     if (configDoc.exists) {
       const currentImmichUrl = configDoc.data()?.immich_url;
@@ -92,10 +92,10 @@ async function assignToFinanceAlbum(
   tripId: string | null,
   assetId: string
 ): Promise<void> {
-  if (!adminDb) return;
+  if (!adminDb()) return;
 
   if (tripId) {
-    const tripRef = adminDb.collection('trips').doc(tripId);
+    const tripRef = adminDb().collection('trips').doc(tripId);
     const snap = await tripRef.get();
     const name = (snap.data()?.name as string)?.trim() || 'Trip';
     let albumId = snap.data()?.immichAlbumId as string | undefined;
@@ -109,7 +109,7 @@ async function assignToFinanceAlbum(
     return;
   }
 
-  const userRef = adminDb.collection('users').doc(uid);
+  const userRef = adminDb().collection('users').doc(uid);
   const usnap = await userRef.get();
   let albumId = usnap.data()?.immichGeneralAlbumId as string | undefined;
 
