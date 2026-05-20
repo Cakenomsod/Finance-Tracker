@@ -45,6 +45,7 @@ export function AiExpenseQuickInput({
   const noteImageInputRef = React.useRef<HTMLInputElement>(null)
 
   const busy = parsingText || parsingImage || uploadingNote
+  const receiptMode = !!pendingReceiptFile
 
   React.useEffect(() => {
     setTextProvider(aiTextProvider)
@@ -122,6 +123,14 @@ export function AiExpenseQuickInput({
     }
   }
 
+  const handlePrimarySend = () => {
+    if (receiptMode) {
+      void runReceiptAnalysis()
+    } else {
+      void handleParseText()
+    }
+  }
+
   const handleNoteImage = async (file: File) => {
     if (!file.type.startsWith('image/') || !onImmichNoteReady) return
 
@@ -147,6 +156,10 @@ export function AiExpenseQuickInput({
 
   const imageProviderLabel = textProvider === 'local' ? 'Local AI' : 'Gemini'
 
+  const primaryDisabled = receiptMode
+    ? busy || !pendingReceiptFile || parsingImage
+    : busy || !input.trim() || parsingText
+
   return (
     <div className="rounded-lg border bg-card p-4 space-y-3">
       <div className="flex items-center gap-2">
@@ -154,7 +167,9 @@ export function AiExpenseQuickInput({
         <div className="min-w-0">
           <p className="text-sm font-medium">เพิ่มรายจ่ายด้วย AI</p>
           <p className="text-xs text-muted-foreground truncate">
-            พิมพ์หรืออัปรูป → กดส่งเอง → ตรวจสอบ → กรอกฟอร์ม
+            {receiptMode
+              ? 'พิมพ์คำสั่งเพิ่มเติม (ไม่บังคับ) แล้วกดส่งเพื่อวิเคราะห์รูป'
+              : 'พิมพ์รายการหรือเลือกรูปใบเสร็จด้านล่าง → กดส่ง'}
           </p>
         </div>
         <div className="flex items-center gap-1.5 shrink-0 ml-auto">
@@ -179,35 +194,50 @@ export function AiExpenseQuickInput({
         </div>
       </div>
 
-      <div className="flex gap-2">
-        <Input
-          placeholder='เช่น "ไก่ทอด 20" หรือ "ไก่ทอด 20 กาแฟ 45"'
-          value={input}
-          disabled={busy}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault()
-              handleParseText()
-            }
-          }}
-          className="h-9"
-        />
+      <div className="flex gap-2 items-start">
+        {receiptMode ? (
+          <Textarea
+            placeholder="คำสั่งเพิ่มเติม (ไม่บังคับ) เช่น แปลชื่อสินค้าเป็นภาษาไทย, ผู้จ่ายคือใคร..."
+            value={receiptExtraInstructions}
+            disabled={busy}
+            onChange={(e) => setReceiptExtraInstructions(e.target.value)}
+            className="min-h-[72px] text-sm resize-y flex-1"
+            aria-label="คำสั่งเพิ่มเติมสำหรับวิเคราะห์ใบเสร็จ"
+          />
+        ) : (
+          <Input
+            placeholder='เช่น "ไก่ทอด 20" หรือ "ไก่ทอด 20 กาแฟ 45"'
+            value={input}
+            disabled={busy}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                handleParseText()
+              }
+            }}
+            className="h-9 flex-1"
+          />
+        )}
         <Button
           type="button"
           size="icon"
-          className="shrink-0 size-9"
-          disabled={!input.trim() || busy}
-          onClick={handleParseText}
-          aria-label="แยกข้อมูลจากข้อความ"
+          className="shrink-0 size-9 mt-0.5"
+          disabled={primaryDisabled}
+          onClick={handlePrimarySend}
+          aria-label={receiptMode ? 'ส่งวิเคราะห์รูปใบเสร็จ' : 'แยกข้อมูลจากข้อความ'}
         >
-          {parsingText ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
+          {receiptMode ? (
+            parsingImage ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />
+          ) : (
+            parsingText ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />
+          )}
         </Button>
       </div>
 
       <div className="space-y-2 rounded-md border bg-muted/30 p-2">
         <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">รูปใบเสร็จ</p>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 items-center">
           <input
             ref={aiImageInputRef}
             type="file"
@@ -237,16 +267,6 @@ export function AiExpenseQuickInput({
             <ImagePlus className="size-3.5" />
             เลือกรูป
           </Button>
-          <Button
-            type="button"
-            size="sm"
-            className="gap-1 h-8"
-            disabled={busy || !pendingReceiptFile || parsingImage}
-            onClick={runReceiptAnalysis}
-          >
-            {parsingImage ? <Loader2 className="size-3.5 animate-spin" /> : <Send className="size-3.5" />}
-            ส่งวิเคราะห์
-          </Button>
           {pendingReceiptFile && (
             <Button
               type="button"
@@ -254,7 +274,10 @@ export function AiExpenseQuickInput({
               size="sm"
               className="h-8 text-xs"
               disabled={busy}
-              onClick={() => setPendingReceiptFile(null)}
+              onClick={() => {
+                setPendingReceiptFile(null)
+                setReceiptExtraInstructions('')
+              }}
             >
               ล้างรูป
             </Button>
@@ -268,13 +291,6 @@ export function AiExpenseQuickInput({
             className="max-h-32 rounded-md border object-contain"
           />
         )}
-        <Textarea
-          placeholder="คำสั่งเพิ่มเติม (ไม่บังคับ) เช่น แปลชื่อสินค้าเป็นภาษาไทย, ผู้จ่ายคือใคร, แยกบรรทัดภาษี..."
-          value={receiptExtraInstructions}
-          disabled={busy}
-          onChange={(e) => setReceiptExtraInstructions(e.target.value)}
-          className="min-h-[72px] text-sm resize-y"
-        />
       </div>
 
       <div className="flex flex-wrap gap-2">
