@@ -26,6 +26,7 @@ jobs:
           echo "GOOGLE_AI_API_KEY=${{ secrets.GOOGLE_AI_API_KEY }}" >> .env
           echo "AI_RECEIPT_MODEL=${{ secrets.AI_RECEIPT_MODEL }}" >> .env
           echo "AI_CHAT_MODEL=${{ secrets.AI_CHAT_MODEL }}" >> .env
+          echo "IMMICH_API_KEY=${{ secrets.IMMICH_API_KEY }}" >> .env
       - name: Build Next.js
         run: npm run build
         env:
@@ -38,6 +39,7 @@ jobs:
           GOOGLE_AI_API_KEY: ${{ secrets.GOOGLE_AI_API_KEY }}
           AI_RECEIPT_MODEL: ${{ secrets.AI_RECEIPT_MODEL }}
           AI_CHAT_MODEL: ${{ secrets.AI_CHAT_MODEL }}
+          IMMICH_API_KEY: ${{ secrets.IMMICH_API_KEY }}
       - name: Create Service Account Key
         run: echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' > firebase-service-account.json
       - name: Deploy to Firebase

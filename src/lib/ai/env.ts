@@ -49,3 +49,7 @@ export function getReceiptModel(): string {
 export function getChatModel(): string {
   return normalizeGeminiModel(envTrim('AI_CHAT_MODEL')) || getReceiptModel();
 }
+
+export function getImmichApiKey(): string | undefined {
+  return envTrim('IMMICH_API_KEY');
+}

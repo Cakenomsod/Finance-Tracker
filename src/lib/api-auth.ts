@@ -2,6 +2,7 @@ import { cookies, headers } from 'next/headers';
 import { adminAuth, adminDb } from '@/lib/firebase-admin';
 import { AiTextProvider } from '@/lib/firestore-types';
 import { photoDb } from '@/lib/photo-firebase-admin';
+import { getImmichApiKey } from '@/lib/ai/env';
 
 export async function verifySession(): Promise<{ uid: string } | null> {
   try {
@@ -43,7 +44,7 @@ export async function getUserImmichSettings(uid: string) {
 
     const rawUrl = tunnel.immich_url as string | undefined;
     const baseUrl = rawUrl ? String(rawUrl).replace(/\/$/, '') : undefined;
-    const apiKey = process.env.IMMICH_API_KEY || undefined;
+    const apiKey = getImmichApiKey();
 
     if (!baseUrl || !apiKey) {
       return null;
