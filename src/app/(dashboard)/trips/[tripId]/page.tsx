@@ -36,7 +36,6 @@ import { useTripExpenses } from '@/hooks/use-trip-expenses'
 import { useTripSettlements } from '@/hooks/use-trip-settlements'
 import { TripExpenseFormV2 } from '@/components/trips/trip-expense-form'
 import { TripAiPanel } from '@/components/trips/trip-ai-panel'
-import { useUserSettings } from '@/hooks/use-user-settings'
 import {
   saveTripExpenseWithTransaction,
   updateTripExpenseWithTransaction,
@@ -83,7 +82,6 @@ export default function TripDetailPage() {
   const [isAddExpenseOpen, setIsAddExpenseOpen] = React.useState(false)
   const [ocrDraft, setOcrDraft] = React.useState<Omit<TripExpense, 'id' | 'createdAt' | 'userId' | 'tripId' | 'transactionId'> | null>(null)
   const [pendingImmichAssetIds, setPendingImmichAssetIds] = React.useState<string[]>([])
-  const { aiTextProvider } = useUserSettings()
   const [isEditTripOpen, setIsEditTripOpen] = React.useState(false)
   const [editingExpense, setEditingExpense] = React.useState<TripExpense | null>(null)
   const [editTripMembers, setEditTripMembers] = React.useState<PickedMember[]>([])
@@ -584,7 +582,6 @@ export default function TripDetailPage() {
               tripId={tripId}
               trip={trip}
               tripMembers={memberObjects}
-              aiTextProvider={aiTextProvider}
               onOpenExpenseForm={(draft, immichAssetIds) => {
                 setOcrDraft(draft)
                 setPendingImmichAssetIds(immichAssetIds?.length ? [...immichAssetIds] : [])

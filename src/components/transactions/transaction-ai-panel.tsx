@@ -6,7 +6,6 @@ import { ReceiptParseResult } from '@/lib/ai/receipt-schema'
 import { Transaction } from '@/lib/firestore-types'
 import { AiReceiptReviewDialog } from '@/components/ai/ai-receipt-review-dialog'
 import { AiExpenseQuickInput } from '@/components/ai/ai-expense-quick-input'
-import { useUserSettings } from '@/hooks/use-user-settings'
 
 export interface TransactionAiPanelProps {
   currency?: 'THB' | 'JPY'
@@ -17,7 +16,6 @@ export function TransactionAiPanel({
   currency = 'THB',
   onOpenDraftForm,
 }: TransactionAiPanelProps) {
-  const { aiTextProvider } = useUserSettings()
   const [reviewOpen, setReviewOpen] = React.useState(false)
   const [pendingResult, setPendingResult] = React.useState<ReceiptParseResult | null>(null)
 
@@ -29,7 +27,8 @@ export function TransactionAiPanel({
   return (
     <>
       <AiExpenseQuickInput
-        aiTextProvider={aiTextProvider}
+        aiTextProvider="gemma"
+        showTextProviderSelect={true}
         onParsed={handleParsed}
       />
 

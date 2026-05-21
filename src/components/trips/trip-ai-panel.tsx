@@ -3,7 +3,7 @@
 import * as React from 'react'
 import { receiptParseToTripExpenseDraft } from '@/lib/ai/receipt-mapper'
 import { ReceiptParseResult } from '@/lib/ai/receipt-schema'
-import { Trip, TripCurrency, TripExpense, AiTextProvider } from '@/lib/firestore-types'
+import { Trip, TripCurrency, TripExpense } from '@/lib/firestore-types'
 import { AiReceiptReviewDialog } from '@/components/ai/ai-receipt-review-dialog'
 import { AiExpenseQuickInput } from '@/components/ai/ai-expense-quick-input'
 
@@ -16,7 +16,6 @@ export interface TripAiPanelProps {
   tripId: string
   trip: Trip
   tripMembers: Member[]
-  aiTextProvider: AiTextProvider
   onOpenExpenseForm: (
     draft: Omit<TripExpense, 'id' | 'createdAt' | 'userId' | 'tripId' | 'transactionId'>,
     immichAssetIds?: string[] | null
@@ -27,7 +26,6 @@ export function TripAiPanel({
   tripId,
   trip,
   tripMembers,
-  aiTextProvider,
   onOpenExpenseForm,
 }: TripAiPanelProps) {
   const [reviewOpen, setReviewOpen] = React.useState(false)
@@ -51,7 +49,8 @@ export function TripAiPanel({
     <>
       <AiExpenseQuickInput
         tripId={tripId}
-        aiTextProvider={aiTextProvider}
+        aiTextProvider="gemma"
+        showTextProviderSelect={true}
         onParsed={handleParsed}
         onImmichNoteReady={(id) => setPendingImmichIds((p) => [...p, id])}
         pendingImmichCount={pendingImmichIds.length}
