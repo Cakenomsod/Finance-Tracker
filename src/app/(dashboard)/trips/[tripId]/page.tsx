@@ -54,6 +54,7 @@ import {
   formatCurrencySymbol,
   formatHomeConversion,
   getTripCurrencySettings,
+  getTripTimeZone,
   LEGACY_JPY_TO_THB,
 } from '@/lib/trip-currency'
 import { collectImmichAssetIds } from '@/lib/immich/asset-ids'
@@ -90,6 +91,7 @@ export default function TripDetailPage() {
   const [expandedReceipts, setExpandedReceipts] = React.useState<Record<string, boolean>>({})
 
   const trip = trips.find((t) => t.id === tripId)
+  const tripTimeZone = getTripTimeZone(trip?.countryCode, trip?.tripCurrency)
   const [editTripSettings, setEditTripSettings] = React.useState<TripSettingsValue>(tripSettingsFromTrip())
 
   React.useEffect(() => {
@@ -313,8 +315,8 @@ export default function TripDetailPage() {
 
     const combined = [...legacy, ...newExps]
     combined.sort((a, b) => {
-      const dateA = a.date?.seconds || 0
-      const dateB = b.date?.seconds || 0
+      const dateA = a.date?.toMillis ? a.date.toMillis() : (a.date?.seconds || 0) * 1000
+      const dateB = b.date?.toMillis ? b.date.toMillis() : (b.date?.seconds || 0) * 1000
       return dateB - dateA
     })
     return combined
@@ -322,8 +324,8 @@ export default function TripDetailPage() {
 
   const itemizedDebtStates = React.useMemo(() => {
     const sortedExps = [...allExpensesCombined].sort((a, b) => {
-      const aTime = a.date?.seconds || 0
-      const bTime = b.date?.seconds || 0
+      const aTime = a.date?.toMillis ? a.date.toMillis() : (a.date?.seconds || 0) * 1000
+      const bTime = b.date?.toMillis ? b.date.toMillis() : (b.date?.seconds || 0) * 1000
       return aTime - bTime
     })
 
@@ -640,6 +642,17 @@ export default function TripDetailPage() {
                 <div className="space-y-3">
                   {filteredExpenses.map((ex) => {
                     const txDate = ex.date?.seconds ? new Date(ex.date.seconds * 1000) : new Date()
+                    const dateOptions: Intl.DateTimeFormatOptions = {
+                      month: 'short',
+                      day: 'numeric',
+                      ...(tripTimeZone ? { timeZone: tripTimeZone } : {}),
+                    }
+                    const timeOptions: Intl.DateTimeFormatOptions = {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                      hour12: false,
+                      ...(tripTimeZone ? { timeZone: tripTimeZone } : {}),
+                    }
                     const exCurrency = ex.rawTx?.currency || ex.rawEx?.currency || trip?.tripCurrency || 'THB'
                     const exSymbol = formatCurrencySymbol(exCurrency)
                     const exHomeHint = formatHomeConversion(ex.amount, exCurrency, trip)
@@ -668,7 +681,9 @@ export default function TripDetailPage() {
                                 )}
                               </div>
                               <p className="text-xs text-muted-foreground">
-                                จ่ายโดย {ex.paidBy || 'Me'} · {ex.category} · {ex.splitLabel} · {txDate.toLocaleDateString('th-TH', { month: 'short', day: 'numeric' })}
+                                จ่ายโดย {ex.paidBy || 'Me'} · {ex.category} · {ex.splitLabel} · {txDate.toLocaleDateString('th-TH', dateOptions)}
+                                <span className="mx-1">·</span>
+                                {txDate.toLocaleTimeString('en-GB', timeOptions)}
                               </p>
                             </div>
                           </div>
@@ -971,7 +986,7 @@ export default function TripDetailPage() {
                             <div>
                               <p className="font-semibold text-sm">{ex.description}</p>
                               <p className="text-xs text-muted-foreground">
-                                {ex.isLegacy ? 'Legacy Transaction' : ex.category || 'Expense'} • {ex.date?.seconds ? new Date(ex.date.seconds * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ''}
+                                {ex.isLegacy ? 'Legacy Transaction' : ex.category || 'Expense'} • {ex.date?.seconds ? new Date(ex.date.seconds * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', ...(tripTimeZone ? { timeZone: tripTimeZone } : {}) }) : ''}
                               </p>
                             </div>
                             <span className="text-sm font-bold tabular-nums text-right">

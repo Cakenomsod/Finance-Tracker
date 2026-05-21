@@ -24,7 +24,14 @@ import {
   getCountryConfig, getDefaultTaxCategory, type TaxMode,
 } from '@/lib/tax/countries'
 import { calculateLineTax, roundMoney } from '@/lib/tax/calculate'
-import { formatCurrencySymbol, formatHomeConversion } from '@/lib/trip-currency'
+import {
+  formatCurrencySymbol,
+  formatHomeConversion,
+  formatTripDate,
+  formatTripTime,
+  getTripTimeZone,
+  parseTripLocalDateTime,
+} from '@/lib/trip-currency'
 
 export interface TripFormDefaults {
   countryCode?: string | null
@@ -111,6 +118,7 @@ export function TripExpenseFormV2({
   const defaultTaxMode: TaxMode = countryConfig?.defaultTaxMode
     ?? (initialData?.taxMode as TaxMode)
     ?? 'exclusive'
+  const defaultCurrency = initialData?.currency || tripDefaults?.tripCurrency || 'THB'
   const [description, setDescription] = React.useState(initialData?.description || '')
   const [totalAmount, setTotalAmount] = React.useState(initialData ? String(initialData.totalAmount) : '')
   const [subtotal, setSubtotal] = React.useState(initialData && initialData.items && initialData.items.length === 0 && initialData.baseAmount ? String(initialData.baseAmount) : '')
@@ -118,8 +126,13 @@ export function TripExpenseFormV2({
   const [category, setCategory] = React.useState(initialData?.category || '')
   const [date, setDate] = React.useState(
     initialData?.date?.seconds
-      ? new Date(initialData.date.seconds * 1000).toISOString().split('T')[0]
-      : new Date().toISOString().split('T')[0]
+      ? formatTripDate(new Date(initialData.date.seconds * 1000), getTripTimeZone(countryCode, initialData?.currency || defaultCurrency))
+      : formatTripDate(new Date(), getTripTimeZone(countryCode, defaultCurrency))
+  )
+  const [time, setTime] = React.useState(
+    initialData?.date?.seconds
+      ? formatTripTime(new Date(initialData.date.seconds * 1000), getTripTimeZone(countryCode, initialData?.currency || defaultCurrency))
+      : formatTripTime(new Date(), getTripTimeZone(countryCode, defaultCurrency))
   )
   const [note, setNote] = React.useState(initialData?.note || '')
   const [splitMode, setSplitMode] = React.useState<SplitMode>(
@@ -189,9 +202,9 @@ export function TripExpenseFormV2({
       setAttachmentIds((prev) => [...new Set([...prev, ...pendingImmichAssetIds])])
     }
   }, [pendingImmichAssetIds])
-  const [currency, setCurrency] = React.useState<TripCurrency>(
-    initialData?.currency || tripDefaults?.tripCurrency || 'THB'
-  )
+  const [currency, setCurrency] = React.useState<TripCurrency>(defaultCurrency)
+  const tripTimeZone = getTripTimeZone(countryCode, currency)
+  const tripTimeZoneLabel = tripTimeZone ? tripTimeZone.split('/').pop()?.replace('_', ' ') : 'Local'
   const [receiptTaxMode, setReceiptTaxMode] = React.useState<TaxMode>(
     (initialData?.taxMode as TaxMode) || defaultTaxMode
   )
@@ -395,7 +408,7 @@ export function TripExpenseFormV2({
         description,
         totalAmount: total,
         category: category,
-        date: Timestamp.fromDate(new Date(date)),
+        date: Timestamp.fromDate(parseTripLocalDateTime(date, time, tripTimeZone)),
         note: note || undefined,
         splitMode,
         payers: result.payers,
@@ -688,9 +701,20 @@ export function TripExpenseFormV2({
           </Select>
         </div>
       </div>
-      <div className="space-y-1.5">
-        <Label>วันที่</Label>
-        <Input type="date" value={date} onChange={e => setDate(e.target.value)} />
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1.5">
+          <Label>วันที่</Label>
+          <Input type="date" value={date} onChange={e => setDate(e.target.value)} />
+        </div>
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <Label>เวลา</Label>
+            {tripTimeZone && (
+              <span className="text-[11px] text-muted-foreground">{tripTimeZoneLabel}</span>
+            )}
+          </div>
+          <Input type="time" value={time} onChange={e => setTime(e.target.value)} />
+        </div>
       </div>
 
       {/* Receipt Items (Only in Receipt Mode) */}

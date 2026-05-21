@@ -1,5 +1,5 @@
 import type { Trip } from '@/lib/firestore-types';
-import type { TripCurrencyCode } from '@/lib/tax/countries';
+import type { TripCountryCode, TripCurrencyCode } from '@/lib/tax/countries';
 import { suggestExchangeRate } from '@/lib/tax/countries';
 
 export const LEGACY_JPY_TO_THB = 0.22;
@@ -10,6 +10,77 @@ export type TripCurrencySource =
   | null
   | undefined;
 
+const COUNTRY_TIME_ZONES: Record<string, string> = {
+  TH: 'Asia/Bangkok',
+  JP: 'Asia/Tokyo',
+};
+
+const CURRENCY_TIME_ZONES: Record<TripCurrencyCode, string> = {
+  THB: 'Asia/Bangkok',
+  JPY: 'Asia/Tokyo',
+};
+
+function getFixedTimeZoneOffsetMinutes(timeZone: string): number {
+  switch (timeZone) {
+    case 'Asia/Tokyo':
+      return 9 * 60;
+    case 'Asia/Bangkok':
+      return 7 * 60;
+    default:
+      return new Date().getTimezoneOffset();
+  }
+}
+
+export function getTripTimeZone(
+  countryCode?: string | null,
+  currency?: TripCurrencyCode
+): string | null {
+  if (countryCode && COUNTRY_TIME_ZONES[countryCode]) {
+    return COUNTRY_TIME_ZONES[countryCode]
+  }
+  if (currency && CURRENCY_TIME_ZONES[currency]) {
+    return CURRENCY_TIME_ZONES[currency]
+  }
+  return null
+}
+
+export function formatTripDate(date: Date, timeZone?: string | null): string {
+  if (!timeZone) return date.toISOString().split('T')[0]
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date)
+}
+
+export function formatTripTime(date: Date, timeZone?: string | null): string {
+  if (!timeZone) return date.toLocaleTimeString('en-GB', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  })
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(date)
+}
+
+export function parseTripLocalDateTime(
+  date: string,
+  time: string,
+  timeZone?: string | null
+): Date {
+  if (!timeZone) {
+    return new Date(`${date}T${time}`)
+  }
+  const [year, month, day] = date.split('-').map(Number)
+  const [hour, minute] = time.split(':').map(Number)
+  const offsetMinutes = getFixedTimeZoneOffsetMinutes(timeZone)
+  return new Date(Date.UTC(year, month - 1, day, hour, minute) - offsetMinutes * 60000)
+}
 export function getTripCurrencySettings(trip?: TripCurrencySource) {
   const tripCurrency = (trip?.tripCurrency as TripCurrencyCode) || 'THB';
   const homeCurrency = (trip?.homeCurrency as TripCurrencyCode) || 'THB';

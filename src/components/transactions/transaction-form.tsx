@@ -33,6 +33,7 @@ const formSchema = z.object({
   category: z.string().min(1, 'Please select a category'),
   description: z.string().min(1, 'Description is required'),
   date: z.string(),
+  time: z.string().min(1, 'Time is required'),
   paidBy: z.string().optional(),
   splitWith: z.string().optional(),
   tripId: z.string().optional(),
@@ -77,6 +78,10 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
     ? new Date(initialData.date.seconds * 1000).toISOString().split('T')[0]
     : new Date().toISOString().split('T')[0];
 
+  const defaultTime = initialData?.date?.seconds
+    ? new Date(initialData.date.seconds * 1000).toISOString().slice(11, 16)
+    : new Date().toISOString().slice(11, 16);
+
   const [subtotal, setSubtotal] = React.useState(initialData && initialData.items && initialData.items.length === 0 && initialData.baseAmount ? String(initialData.baseAmount) : '')
   const [tax, setTax] = React.useState(initialData && initialData.items && initialData.items.length === 0 && initialData.taxAmount ? String(initialData.taxAmount) : '')
   const [receiptTaxMode, setReceiptTaxMode] = React.useState<'exclusive' | 'inclusive'>('exclusive')
@@ -96,6 +101,7 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
       category: initialData?.category || '',
       description: initialData?.description || '',
       date: defaultDate,
+      time: defaultTime,
       paidBy: initialData?.paidBy || 'Me',
       splitWith: initialData?.splitWith || '',
       tripId: initialData?.tripId || 'none',
@@ -140,7 +146,7 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
         type: values.type,
         category: values.category,
         description: values.description,
-        date: Timestamp.fromDate(new Date(values.date)),
+        date: Timestamp.fromDate(new Date(`${values.date}T${values.time}`)),
         paidBy: values.paidBy || 'Me',
         splitWith: values.splitWith || null,
         tripId: values.tripId && values.tripId !== 'none' ? values.tripId : null,
@@ -458,19 +464,34 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
           />
         )}
 
-        <FormField
-          control={form.control}
-          name="date"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Date</FormLabel>
-              <FormControl>
-                <Input type="date" {...field} />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
+        <div className="grid grid-cols-2 gap-4">
+          <FormField
+            control={form.control}
+            name="date"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Date</FormLabel>
+                <FormControl>
+                  <Input type="date" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="time"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Time</FormLabel>
+                <FormControl>
+                  <Input type="time" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
 
         {/* Receipt Items (Only in Receipt Mode) */}
         {inputMode === 'receipt' && (

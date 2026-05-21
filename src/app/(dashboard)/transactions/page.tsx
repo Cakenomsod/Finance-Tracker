@@ -377,9 +377,9 @@ export default function TransactionsPage() {
                     onCheckedChange={handleSelectAll}
                   />
                 </TableHead>
-                <TableHead className="w-[100px]">
+                <TableHead className="w-[120px]">
                   <Button variant="ghost" size="sm" className="-ml-3 h-8">
-                    Date
+                    Date & Time
                     <ArrowUpDown className="ml-2 size-3" />
                   </Button>
                 </TableHead>
@@ -419,10 +419,22 @@ export default function TransactionsPage() {
                     />
                   </TableCell>
                   <TableCell className="text-muted-foreground">
-                    {transaction.date ? new Date(transaction.date.seconds * 1000).toLocaleDateString('en-US', {
-                      month: 'short',
-                      day: 'numeric',
-                    }) : ''}
+                    {transaction.date ? (
+                      <div className="space-y-0.5">
+                        <span>
+                          {new Date(transaction.date.seconds * 1000).toLocaleDateString('en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                          })}
+                        </span>
+                        <span className="text-[11px] text-muted-foreground">
+                          {new Date(transaction.date.seconds * 1000).toLocaleTimeString([], {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </span>
+                      </div>
+                    ) : ''}
                   </TableCell>
                   <TableCell>
                     <div>
