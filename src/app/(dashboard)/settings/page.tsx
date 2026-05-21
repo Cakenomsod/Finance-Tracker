@@ -127,16 +127,11 @@ export default function SettingsPage() {
   }
 
   const handleTestLocalAi = async () => {
-    if (!localAiBaseUrl?.trim()) {
-      toast.error('กรุณาตั้งค่า Local AI URL ในการตั้งค่า')
-      return
-    }
     setTestingLocalAi(true)
     try {
       const res = await fetch('/api/ai/test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ baseUrl: localAiBaseUrl }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || data.message || 'Connection failed')
