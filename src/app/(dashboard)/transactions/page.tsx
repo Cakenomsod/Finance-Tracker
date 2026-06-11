@@ -64,10 +64,11 @@ import { useAllTripExpenses } from '@/hooks/use-all-trip-expenses'
 import { useCategories } from '@/hooks/use-categories'
 import { TransactionForm } from '@/components/transactions/transaction-form'
 import { TransactionAiPanel } from '@/components/transactions/transaction-ai-panel'
+import { DateGroupDividerRow } from '@/components/transactions/date-group-divider'
 import { Transaction } from '@/lib/firestore-types'
 import {
-  formatTransactionDisplayDate,
   formatTransactionDisplayTime,
+  groupItemsByDate,
   toDateFromFirestore,
 } from '@/lib/datetime'
 
@@ -159,6 +160,14 @@ export default function TransactionsPage() {
       selectedCategory === 'All Categories' || t.category === selectedCategory
     return matchesSearch && matchesCategory
   })
+
+  const groupedTransactions = React.useMemo(
+    () =>
+      groupItemsByDate(filteredTransactions, (transaction) =>
+        toDateFromFirestore(transaction.date)
+      ),
+    [filteredTransactions]
+  )
 
   const handleRowSelect = (id: string) => {
     setSelectedRows((prev) =>
@@ -329,9 +338,9 @@ export default function TransactionsPage() {
                     onCheckedChange={handleSelectAll}
                   />
                 </TableHead>
-                <TableHead className="w-[120px]">
+                <TableHead className="w-[80px]">
                   <Button variant="ghost" size="sm" className="-ml-3 h-8">
-                    Date & Time
+                    Time
                     <ArrowUpDown className="ml-2 size-3" />
                   </Button>
                 </TableHead>
@@ -356,7 +365,10 @@ export default function TransactionsPage() {
                 <TableRow>
                   <TableCell colSpan={7} className="h-24 text-center">No transactions found.</TableCell>
                 </TableRow>
-              ) : filteredTransactions.map((transaction) => (
+              ) : groupedTransactions.map((group) => (
+                <React.Fragment key={group.dateKey}>
+                  <DateGroupDividerRow label={group.label} colSpan={7} />
+                  {group.items.map((transaction) => (
                 <TableRow
                   key={transaction.id}
                   className={cn(
@@ -375,14 +387,9 @@ export default function TransactionsPage() {
                       const txDate = toDateFromFirestore(transaction.date)
                       if (!txDate) return ''
                       return (
-                        <div className="flex flex-col gap-1.5 py-0.5">
-                          <span className="block text-sm font-medium leading-none text-foreground">
-                            {formatTransactionDisplayDate(txDate)}
-                          </span>
-                          <span className="block text-xs tabular-nums leading-none text-muted-foreground">
-                            {formatTransactionDisplayTime(txDate)}
-                          </span>
-                        </div>
+                        <span className="block text-sm tabular-nums leading-none">
+                          {formatTransactionDisplayTime(txDate)}
+                        </span>
                       )
                     })()}
                   </TableCell>
@@ -493,6 +500,8 @@ export default function TransactionsPage() {
                     </DropdownMenu>
                   </TableCell>
                 </TableRow>
+                  ))}
+                </React.Fragment>
               ))}
             </TableBody>
             </Table>

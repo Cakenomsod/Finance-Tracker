@@ -59,8 +59,14 @@ import { useTransactions } from '@/hooks/use-transactions'
 import { useAuth } from '@/hooks/use-auth'
 import { Debt, Transaction } from '@/lib/firestore-types'
 import { TransactionForm } from '@/components/transactions/transaction-form'
+import { DateGroupDividerRow } from '@/components/transactions/date-group-divider'
 import { createTripSettlement } from '@/lib/firestore'
 import { Timestamp } from 'firebase/firestore'
+import {
+  formatTransactionDisplayTime,
+  groupItemsByDate,
+  toDateFromFirestore,
+} from '@/lib/datetime'
 
 interface UIGlobalDebt extends Omit<Debt, 'createdAt'> {
   fromDisplayName?: string
@@ -91,13 +97,22 @@ function resolveDebtDescription(debt: UIGlobalDebt, txById: Map<string, Transact
   return 'หนี้ที่บันทึกเอง'
 }
 
-function formatDebtDate(debt: UIGlobalDebt) {
-  const date = debt.createdAt ? new Date(debt.createdAt.seconds * 1000) : new Date()
-  return date.toLocaleDateString('th-TH', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  })
+function resolveDebtDate(debt: UIGlobalDebt, txById: Map<string, Transaction>): Date | null {
+  for (const txId of debt.relatedTxIds || []) {
+    const tx = txById.get(txId)
+    const txDate = toDateFromFirestore(tx?.date)
+    if (txDate) return txDate
+  }
+  return toDateFromFirestore(debt.createdAt)
+}
+
+function resolveSettledDebtDate(
+  debt: Debt,
+  txById: Map<string, Transaction>
+): Date | null {
+  const settledDate = toDateFromFirestore(debt.settledAt)
+  if (settledDate) return settledDate
+  return resolveDebtDate(debt as UIGlobalDebt, txById)
 }
 
 function DebtTable({
@@ -115,13 +130,17 @@ function DebtTable({
   onDelete: (id: string) => void
   onViewTransaction: (txId: string) => void
 }) {
+  const groupedDebts = React.useMemo(
+    () => groupItemsByDate(debts, (debt) => resolveDebtDate(debt, txById)),
+    [debts, txById]
+  )
+
   return (
     <Card>
       <CardContent className="p-0">
         <Table>
           <TableHeader>
             <TableRow className="hover:bg-transparent">
-              <TableHead className="w-[110px]">วันที่</TableHead>
               <TableHead>รายการ</TableHead>
               <TableHead className="w-[140px]">{type === 'owe' ? 'เจ้าหนี้' : 'ลูกหนี้'}</TableHead>
               <TableHead className="w-[90px]">แหล่ง</TableHead>
@@ -130,7 +149,10 @@ function DebtTable({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {debts.map((debt) => {
+            {groupedDebts.map((group) => (
+              <React.Fragment key={group.dateKey}>
+                <DateGroupDividerRow label={group.label} colSpan={5} />
+                {group.items.map((debt) => {
               const person =
                 type === 'owe'
                   ? debt.toDisplayName || debt.toUserId
@@ -139,6 +161,7 @@ function DebtTable({
               const initials = person.substring(0, 2).toUpperCase()
               const relatedTxId = debt.relatedTxIds?.[0]
               const canViewTx = !!relatedTxId && txById.has(relatedTxId)
+              const debtDate = resolveDebtDate(debt, txById)
 
               return (
                 <TableRow
@@ -148,11 +171,15 @@ function DebtTable({
                     if (canViewTx) onViewTransaction(relatedTxId)
                   }}
                 >
-                  <TableCell className="text-muted-foreground">{formatDebtDate(debt)}</TableCell>
                   <TableCell>
                     <p className="max-w-[280px] truncate font-medium" title={itemLabel}>
                       {itemLabel}
                     </p>
+                    {debtDate && (
+                      <p className="text-xs text-muted-foreground tabular-nums">
+                        {formatTransactionDisplayTime(debtDate)}
+                      </p>
+                    )}
                     {debt.paidAmount && debt.paidAmount > 0 && (
                       <p className="text-xs text-muted-foreground">
                         จ่ายแล้ว ฿{debt.paidAmount.toLocaleString()}
@@ -255,7 +282,9 @@ function DebtTable({
                   </TableCell>
                 </TableRow>
               )
-            })}
+                })}
+              </React.Fragment>
+            ))}
           </TableBody>
         </Table>
       </CardContent>
@@ -287,6 +316,15 @@ export default function DebtsPage() {
   const [settleAmount, setSettleAmount] = React.useState<string>('')
   const [editingTransaction, setEditingTransaction] = React.useState<Transaction | null>(null)
   const [isTxDetailOpen, setIsTxDetailOpen] = React.useState(false)
+
+  const settledDebts = React.useMemo(
+    () => debts.filter((d) => d.status === 'settled'),
+    [debts]
+  )
+  const groupedSettledDebts = React.useMemo(
+    () => groupItemsByDate(settledDebts, (debt) => resolveSettledDebtDate(debt, txById)),
+    [settledDebts, txById]
+  )
 
   if (loading || tripLoading) {
     return <div className="p-6">Loading debts...</div>
@@ -337,7 +375,6 @@ export default function DebtsPage() {
   })
 
   const allPending = [...manualPending, ...mappedTripDebts]
-  const settledDebts = debts.filter(d => d.status === 'settled')
 
   const youOwe = allPending.filter((d) => d.fromUserId === user?.uid)
   const owedToYou = allPending.filter((d) => d.toUserId === user?.uid)
@@ -601,34 +638,32 @@ export default function DebtsPage() {
                 <Table>
                   <TableHeader>
                     <TableRow className="hover:bg-transparent">
-                      <TableHead className="pl-6">วันที่</TableHead>
-                      <TableHead>รายการ</TableHead>
+                      <TableHead className="pl-6">รายการ</TableHead>
                       <TableHead>คู่รายการ</TableHead>
                       <TableHead className="pr-6 text-right">จำนวนเงิน</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {settledDebts.map((payment) => {
+                    {groupedSettledDebts.map((group) => (
+                      <React.Fragment key={group.dateKey}>
+                        <DateGroupDividerRow label={group.label} colSpan={3} />
+                        {group.items.map((payment) => {
                       const isReceived = payment.toUserId === user?.uid
                       const person = isReceived
                         ? payment.fromDisplayName || payment.fromUserId
                         : payment.toDisplayName || payment.toUserId
-                      const date = payment.settledAt
-                        ? new Date(payment.settledAt.seconds * 1000)
-                        : new Date()
                       const label = resolveDebtDescription(payment as UIGlobalDebt, txById)
+                      const paymentDate = resolveSettledDebtDate(payment, txById)
 
                       return (
                         <TableRow key={payment.id}>
-                          <TableCell className="pl-6 text-muted-foreground">
-                            {date.toLocaleDateString('th-TH', {
-                              day: 'numeric',
-                              month: 'short',
-                              year: 'numeric',
-                            })}
-                          </TableCell>
-                          <TableCell className="max-w-[240px] truncate font-medium" title={label}>
+                          <TableCell className="max-w-[240px] pl-6 truncate font-medium" title={label}>
                             {label}
+                            {paymentDate && (
+                              <p className="text-xs font-normal text-muted-foreground tabular-nums">
+                                {formatTransactionDisplayTime(paymentDate)}
+                              </p>
+                            )}
                           </TableCell>
                           <TableCell>
                             <div className="flex items-center gap-2">
@@ -661,7 +696,9 @@ export default function DebtsPage() {
                           </TableCell>
                         </TableRow>
                       )
-                    })}
+                        })}
+                      </React.Fragment>
+                    ))}
                   </TableBody>
                 </Table>
               )}
