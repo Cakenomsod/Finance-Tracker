@@ -16,8 +16,10 @@ interface ContactSelectProps {
   value: string
   onChange: (value: string) => void
   placeholder?: string
-  /** Show "ไม่แบ่ง" option — maps to empty string */
+  /** Show empty option — maps to empty string */
   allowNone?: boolean
+  /** Label for the empty option when allowNone is true */
+  noneLabel?: string
   /** Hide "Me" option (e.g. for Split With) */
   includeMe?: boolean
 }
@@ -27,6 +29,7 @@ export function ContactSelect({
   onChange,
   placeholder = 'เลือกรายชื่อ',
   allowNone = false,
+  noneLabel = 'ไม่แบ่ง',
   includeMe = true,
 }: ContactSelectProps) {
   const { contacts, loading } = useFriends()
@@ -38,10 +41,25 @@ export function ContactSelect({
       ? [{ key: `legacy:${value}`, displayName: value }]
       : []
   const allOptions = [...options, ...extraOptions]
-  const selectValue = allowNone && !value ? NONE_VALUE : (value || 'Me')
+
+  const resolveSelectKey = (name: string): string => {
+    if (allowNone && !name) return NONE_VALUE
+    const match = allOptions.find(c => c.displayName === name)
+    if (match) return match.key
+    if (name === 'Me') return 'me'
+    if (name) return `legacy:${name}`
+    return includeMe ? 'me' : NONE_VALUE
+  }
+
+  const selectValue = resolveSelectKey(value)
 
   const handleChange = (v: string) => {
-    onChange(v === NONE_VALUE ? '' : v)
+    if (v === NONE_VALUE) {
+      onChange('')
+      return
+    }
+    const contact = allOptions.find(c => c.key === v)
+    onChange(contact?.displayName ?? v.replace(/^legacy:/, ''))
   }
 
   return (
@@ -51,12 +69,12 @@ export function ContactSelect({
       </SelectTrigger>
       <SelectContent>
         {allowNone && (
-          <SelectItem value={NONE_VALUE}>ไม่แบ่ง</SelectItem>
+          <SelectItem value={NONE_VALUE}>{noneLabel}</SelectItem>
         )}
         {allOptions.map((c) => (
-          <SelectItem key={c.key} value={c.displayName}>
+          <SelectItem key={c.key} value={c.key}>
             {c.displayName}
-            {'isSelf' in c && c.isSelf ? ' (ฉัน)' : 'isCustom' in c && c.isCustom ? ' (รายชื่อเอง)' : ''}
+            {'isSelf' in c && c.isSelf ? ' (ฉัน)' : 'isCustom' in c && c.isCustom ? ' (รายชื่อส่วนตัว)' : ''}
           </SelectItem>
         ))}
       </SelectContent>

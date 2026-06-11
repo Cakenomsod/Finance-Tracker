@@ -30,7 +30,6 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
 import {
   Select,
   SelectContent,
@@ -38,6 +37,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import { toast } from 'sonner'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -47,8 +55,9 @@ import {
 import { cn } from '@/lib/utils'
 import { useDebts } from '@/hooks/use-debts'
 import { useTripDebts } from '@/hooks/use-trip-debts'
+import { useTransactions } from '@/hooks/use-transactions'
 import { useAuth } from '@/hooks/use-auth'
-import { Debt } from '@/lib/firestore-types'
+import { Debt, Transaction } from '@/lib/firestore-types'
 import { createTripSettlement } from '@/lib/firestore'
 import { Timestamp } from 'firebase/firestore'
 
@@ -60,112 +69,156 @@ interface UIGlobalDebt extends Omit<Debt, 'createdAt'> {
   createdAt?: any
 }
 
-function DebtCard({
-  debt,
+function resolveDebtDescription(debt: UIGlobalDebt, txById: Map<string, Transaction>): string {
+  if (debt.description) return debt.description
+  for (const txId of debt.relatedTxIds || []) {
+    const tx = txById.get(txId)
+    if (tx?.description) return tx.description
+  }
+  if (debt.isTripDebt) {
+    const tripCount = debt.tripIds?.length || 1
+    return tripCount > 1 ? `ค่าใช้จ่ายรวมจาก ${tripCount} ทริป` : 'ค่าใช้จ่ายจากทริป'
+  }
+  if (debt.relatedTxIds?.length) return 'แบ่งค่าใช้จ่ายจากธุรกรรม'
+  return 'หนี้ที่บันทึกเอง'
+}
+
+function formatDebtDate(debt: UIGlobalDebt) {
+  const date = debt.createdAt ? new Date(debt.createdAt.seconds * 1000) : new Date()
+  return date.toLocaleDateString('th-TH', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  })
+}
+
+function DebtTable({
+  debts,
   type,
-  person,
+  txById,
   onSettle,
   onDelete,
 }: {
-  debt: UIGlobalDebt
+  debts: UIGlobalDebt[]
   type: 'owe' | 'owed'
-  person: string
+  txById: Map<string, Transaction>
   onSettle: (id: string) => void
   onDelete: (id: string) => void
 }) {
-  const initials = person.substring(0, 2).toUpperCase()
-  const date = debt.createdAt ? new Date(debt.createdAt.seconds * 1000) : new Date()
-
   return (
-    <Card className="group transition-all hover:shadow-md">
-      <CardContent className="p-4">
-        <div className="flex items-start justify-between">
-          <div className="flex items-center gap-3">
-            <Avatar className="size-10">
-              <AvatarFallback
-                className={cn(
-                  'text-sm font-medium',
-                  type === 'owe'
-                    ? 'bg-destructive/20 text-destructive'
-                    : 'bg-primary/20 text-primary'
-                )}
-              >
-                {initials}
-              </AvatarFallback>
-            </Avatar>
-            <div>
-              <p className="font-medium">{person}</p>
-              <p className="text-sm text-muted-foreground">
-                {debt.isTripDebt ? 'From Trips' : debt.relatedTxIds?.length > 0 ? 'From transaction split' : 'Manual debt'}
-              </p>
-            </div>
-          </div>
-          <div className="text-right">
-            <p
-              className={cn(
-                'text-lg font-bold tabular-nums',
-                type === 'owe' ? 'text-destructive' : 'text-primary'
-              )}
-            >
-              {type === 'owe' ? '-' : '+'}฿{debt.amount.toLocaleString()}
-            </p>
-            <Badge
-              variant="secondary"
-              className={cn(
-                'mt-1 text-xs',
-                debt.status === 'pending' && 'bg-warning/20 text-warning',
-                debt.status === 'settled' && 'bg-primary/20 text-primary'
-              )}
-            >
-              {debt.status === 'pending' ? 'Pending' : 'Settled'}
-            </Badge>
-          </div>
-        </div>
+    <Card>
+      <CardContent className="p-0">
+        <Table>
+          <TableHeader>
+            <TableRow className="hover:bg-transparent">
+              <TableHead className="w-[110px]">วันที่</TableHead>
+              <TableHead>รายการ</TableHead>
+              <TableHead className="w-[140px]">{type === 'owe' ? 'เจ้าหนี้' : 'ลูกหนี้'}</TableHead>
+              <TableHead className="w-[90px]">แหล่ง</TableHead>
+              <TableHead className="w-[120px] text-right">จำนวนเงิน</TableHead>
+              <TableHead className="w-[140px] text-right">การดำเนินการ</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {debts.map((debt) => {
+              const person =
+                type === 'owe'
+                  ? debt.toDisplayName || debt.toUserId
+                  : debt.fromDisplayName || debt.fromUserId
+              const itemLabel = resolveDebtDescription(debt, txById)
+              const initials = person.substring(0, 2).toUpperCase()
 
-        <div className="mt-3 flex items-center justify-between border-t pt-3">
-          <span className="text-xs text-muted-foreground">
-            {date.toLocaleDateString('en-US', {
-              month: 'short',
-              day: 'numeric',
+              return (
+                <TableRow key={debt.id} className="group">
+                  <TableCell className="text-muted-foreground">{formatDebtDate(debt)}</TableCell>
+                  <TableCell>
+                    <p className="max-w-[280px] truncate font-medium" title={itemLabel}>
+                      {itemLabel}
+                    </p>
+                    {debt.paidAmount && debt.paidAmount > 0 && (
+                      <p className="text-xs text-muted-foreground">
+                        จ่ายแล้ว ฿{debt.paidAmount.toLocaleString()}
+                      </p>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <Avatar className="size-7 shrink-0">
+                        <AvatarFallback
+                          className={cn(
+                            'text-[10px] font-medium',
+                            type === 'owe'
+                              ? 'bg-destructive/20 text-destructive'
+                              : 'bg-success/20 text-success'
+                          )}
+                        >
+                          {initials}
+                        </AvatarFallback>
+                      </Avatar>
+                      <span className="truncate">{person}</span>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className="text-xs font-normal">
+                      {debt.isTripDebt ? 'ทริป' : 'บันทึกเอง'}
+                    </Badge>
+                  </TableCell>
+                  <TableCell
+                    className={cn(
+                      'text-right font-semibold tabular-nums',
+                      type === 'owe' ? 'text-destructive' : 'text-success'
+                    )}
+                  >
+                    {type === 'owe' ? '-' : '+'}฿
+                    {debt.amount.toLocaleString(undefined, {
+                      minimumFractionDigits: 0,
+                      maximumFractionDigits: 2,
+                    })}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex items-center justify-end gap-1">
+                      {debt.status === 'pending' && (
+                        <Button size="sm" variant="outline" onClick={() => onSettle(debt.id!)}>
+                          {type === 'owe' ? (
+                            <>
+                              <Send className="mr-1.5 size-3" />
+                              จ่ายคืน
+                            </>
+                          ) : (
+                            <>
+                              <Check className="mr-1.5 size-3" />
+                              รับเงิน
+                            </>
+                          )}
+                        </Button>
+                      )}
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button size="icon" variant="ghost" className="size-8">
+                            <MoreHorizontal className="size-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          {debt.isTripDebt ? (
+                            <DropdownMenuItem disabled>สร้างอัตโนมัติจากทริป</DropdownMenuItem>
+                          ) : (
+                            <DropdownMenuItem
+                              className="text-destructive"
+                              onClick={() => onDelete(debt.id!)}
+                            >
+                              <Trash2 className="mr-2 size-4" />
+                              ลบ
+                            </DropdownMenuItem>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              )
             })}
-          </span>
-          <div className="flex gap-2 opacity-0 transition-opacity group-hover:opacity-100">
-            {debt.status === 'pending' && (
-              <Button size="sm" variant="outline" onClick={() => onSettle(debt.id!)}>
-                {type === 'owe' ? (
-                  <>
-                    <Send className="mr-2 size-3" />
-                    Settle
-                  </>
-                ) : (
-                  <>
-                    <Check className="mr-2 size-3" />
-                    Mark Paid
-                  </>
-                )}
-              </Button>
-            )}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button size="sm" variant="ghost">
-                  <MoreHorizontal className="size-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                {debt.isTripDebt ? (
-                  <DropdownMenuItem disabled>
-                    Auto-generated from trips
-                  </DropdownMenuItem>
-                ) : (
-                  <DropdownMenuItem className="text-destructive" onClick={() => onDelete(debt.id!)}>
-                    <Trash2 className="mr-2 size-4" />
-                    Delete
-                  </DropdownMenuItem>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </div>
+          </TableBody>
+        </Table>
       </CardContent>
     </Card>
   )
@@ -175,6 +228,15 @@ export default function DebtsPage() {
   const { user } = useAuth()
   const { debts, loading, addDebt, settleDebt, removeDebt } = useDebts()
   const { tripDebts, loading: tripLoading } = useTripDebts()
+  const { transactions } = useTransactions()
+
+  const txById = React.useMemo(() => {
+    const map = new Map<string, Transaction>()
+    transactions.forEach((tx) => {
+      if (tx.id) map.set(tx.id, tx)
+    })
+    return map
+  }, [transactions])
 
   const [isAddOpen, setIsAddOpen] = React.useState(false)
   const [newDebtType, setNewDebtType] = React.useState<'owe' | 'owed'>('owe')
@@ -246,31 +308,40 @@ export default function DebtsPage() {
 
   const handleConfirmSettle = async () => {
     if (!settleDebtData) return
-    const payAmount = parseFloat(settleAmount) || settleDebtData.amount
-    
-    if (settleDebtData.isTripDebt) {
-      await createTripSettlement({
-        userId: user!.uid,
-        fromUserId: settleDebtData.fromUserId,
-        fromDisplayName: settleDebtData.fromDisplayName || settleDebtData.fromUserId,
-        toUserId: settleDebtData.toUserId,
-        toDisplayName: settleDebtData.toDisplayName || settleDebtData.toUserId,
-        amount: payAmount,
-        isPartial: payAmount < settleDebtData.amount,
-        date: Timestamp.now(),
-      })
-    } else {
-      // Partial for manual debts is not fully supported yet in UI, but we'll mark as settled if full
-      if (payAmount < settleDebtData.amount) {
-        // Just add a reverse debt to balance it if we wanted to be perfectly accurate,
-        // but since manual debt isn't robust, let's just mark the whole thing for now, or alert.
-        alert("Partial settlement for manual debts is not fully supported yet. Marking as fully settled.")
-      }
-      await settleDebt(settleDebtData.id!)
+
+    const payAmount = parseFloat(settleAmount)
+    if (!payAmount || payAmount <= 0) {
+      toast.error('กรุณาระบุจำนวนเงินที่ถูกต้อง')
+      return
     }
-    
-    setIsSettleOpen(false)
-    setSettleDebtData(null)
+    if (payAmount > settleDebtData.amount) {
+      toast.error('จำนวนเงินเกินยอดคงเหลือ')
+      return
+    }
+
+    try {
+      if (settleDebtData.isTripDebt) {
+        await createTripSettlement({
+          userId: user!.uid,
+          fromUserId: settleDebtData.fromUserId,
+          fromDisplayName: settleDebtData.fromDisplayName || settleDebtData.fromUserId,
+          toUserId: settleDebtData.toUserId,
+          toDisplayName: settleDebtData.toDisplayName || settleDebtData.toUserId,
+          amount: payAmount,
+          isPartial: payAmount < settleDebtData.amount - 0.001,
+          date: Timestamp.now(),
+        })
+      } else {
+        await settleDebt(settleDebtData.id!, payAmount)
+      }
+
+      const isPartial = payAmount < settleDebtData.amount - 0.001
+      toast.success(isPartial ? 'บันทึกการจ่ายบางส่วนแล้ว' : 'ชำระครบแล้ว')
+      setIsSettleOpen(false)
+      setSettleDebtData(null)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'บันทึกการชำระไม่สำเร็จ')
+    }
   }
 
   const handleAddDebt = async () => {
@@ -410,6 +481,13 @@ export default function DebtsPage() {
       {/* Debts Tabs */}
       <Tabs defaultValue="owed-to-you" className="w-full">
         <TabsList className="w-full justify-start">
+          <TabsTrigger value="you-owe" className="gap-2">
+              <AlertCircle className="size-4" />
+              You Owe
+              <Badge variant="secondary" className="ml-1 rounded-full">
+                {youOwe.length}
+              </Badge>
+            </TabsTrigger>
           <TabsTrigger value="owed-to-you" className="gap-2">
             <Wallet className="size-4" />
             Owed to You
@@ -417,13 +495,7 @@ export default function DebtsPage() {
               {owedToYou.length}
             </Badge>
           </TabsTrigger>
-          <TabsTrigger value="you-owe" className="gap-2">
-            <AlertCircle className="size-4" />
-            You Owe
-            <Badge variant="secondary" className="ml-1 rounded-full">
-              {youOwe.length}
-            </Badge>
-          </TabsTrigger>
+
           <TabsTrigger value="history" className="gap-2">
             <History className="size-4" />
             History
@@ -432,114 +504,187 @@ export default function DebtsPage() {
 
         <TabsContent value="owed-to-you" className="mt-4">
           {owedToYou.length === 0 ? (
-            <div className="py-8 text-center text-muted-foreground">No one owes you money right now.</div>
+            <div className="py-8 text-center text-muted-foreground">ยังไม่มีใครติดเงินคุณ</div>
           ) : (
-            <div className="grid gap-4 md:grid-cols-2">
-              {owedToYou.map((debt) => (
-                <DebtCard 
-                  key={debt.id} 
-                  debt={debt} 
-                  type="owed" 
-                  person={debt.fromDisplayName || debt.fromUserId} 
-                  onSettle={handleSettleClick} 
-                  onDelete={removeDebt} 
-                />
-              ))}
-            </div>
+            <DebtTable
+              debts={owedToYou}
+              type="owed"
+              txById={txById}
+              onSettle={handleSettleClick}
+              onDelete={removeDebt}
+            />
           )}
         </TabsContent>
 
         <TabsContent value="you-owe" className="mt-4">
           {youOwe.length === 0 ? (
-            <div className="py-8 text-center text-muted-foreground">You don't owe anyone money right now.</div>
+            <div className="py-8 text-center text-muted-foreground">คุณยังไม่ติดใคร</div>
           ) : (
-            <div className="grid gap-4 md:grid-cols-2">
-              {youOwe.map((debt) => (
-                <DebtCard 
-                  key={debt.id} 
-                  debt={debt} 
-                  type="owe" 
-                  person={debt.toDisplayName || debt.toUserId} 
-                  onSettle={handleSettleClick} 
-                  onDelete={removeDebt} 
-                />
-              ))}
-            </div>
+            <DebtTable
+              debts={youOwe}
+              type="owe"
+              txById={txById}
+              onSettle={handleSettleClick}
+              onDelete={removeDebt}
+            />
           )}
         </TabsContent>
 
         <TabsContent value="history" className="mt-4">
           <Card>
             <CardHeader>
-              <CardTitle>Settlement History</CardTitle>
-              <CardDescription>Recent debt settlements and payments</CardDescription>
+              <CardTitle>ประวัติการชำระ</CardTitle>
+              <CardDescription>รายการหนี้ที่ชำระครบแล้ว</CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="p-0 pb-4">
               {settledDebts.length === 0 ? (
-                <div className="text-center text-muted-foreground py-4">No settlement history found.</div>
+                <div className="px-6 py-8 text-center text-muted-foreground">ยังไม่มีประวัติการชำระ</div>
               ) : (
-                <div className="space-y-4">
-                  {settledDebts.map((payment) => {
-                    const isReceived = payment.toUserId === user?.uid
-                    const person = isReceived ? payment.fromUserId : payment.toUserId
-                    const date = payment.settledAt ? new Date(payment.settledAt.seconds * 1000) : new Date()
-                    
-                    return (
-                      <div
-                        key={payment.id}
-                        className="flex items-center justify-between border-b pb-4 last:border-0 last:pb-0"
-                      >
-                        <div className="flex items-center gap-3">
-                          <div
-                            className={cn(
-                              'flex size-10 items-center justify-center rounded-full',
-                              isReceived
-                                ? 'bg-primary/20 text-primary'
-                                : 'bg-muted text-muted-foreground'
-                            )}
-                          >
-                            {isReceived ? (
-                              <ArrowRight className="size-4 rotate-180" />
-                            ) : (
-                              <ArrowRight className="size-4" />
-                            )}
-                          </div>
-                          <div>
-                            <p className="font-medium">
-                              {isReceived ? 'Received from' : 'Paid to'}{' '}
-                              {person}
-                            </p>
-                            <p className="text-sm text-muted-foreground">
-                              Settled Debt
-                            </p>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <p
-                            className={cn(
-                              'font-semibold tabular-nums',
-                              isReceived ? 'text-primary' : 'text-foreground'
-                            )}
-                          >
-                            {isReceived ? '+' : '-'}฿
-                            {payment.amount.toLocaleString()}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            {date.toLocaleDateString('en-US', {
-                              month: 'short',
+                <Table>
+                  <TableHeader>
+                    <TableRow className="hover:bg-transparent">
+                      <TableHead className="pl-6">วันที่</TableHead>
+                      <TableHead>รายการ</TableHead>
+                      <TableHead>คู่รายการ</TableHead>
+                      <TableHead className="pr-6 text-right">จำนวนเงิน</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {settledDebts.map((payment) => {
+                      const isReceived = payment.toUserId === user?.uid
+                      const person = isReceived
+                        ? payment.fromDisplayName || payment.fromUserId
+                        : payment.toDisplayName || payment.toUserId
+                      const date = payment.settledAt
+                        ? new Date(payment.settledAt.seconds * 1000)
+                        : new Date()
+                      const label = resolveDebtDescription(payment as UIGlobalDebt, txById)
+
+                      return (
+                        <TableRow key={payment.id}>
+                          <TableCell className="pl-6 text-muted-foreground">
+                            {date.toLocaleDateString('th-TH', {
                               day: 'numeric',
+                              month: 'short',
+                              year: 'numeric',
                             })}
-                          </p>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
+                          </TableCell>
+                          <TableCell className="max-w-[240px] truncate font-medium" title={label}>
+                            {label}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <div
+                                className={cn(
+                                  'flex size-7 items-center justify-center rounded-full',
+                                  isReceived
+                                    ? 'bg-primary/20 text-primary'
+                                    : 'bg-muted text-muted-foreground'
+                                )}
+                              >
+                                {isReceived ? (
+                                  <ArrowRight className="size-3.5 rotate-180" />
+                                ) : (
+                                  <ArrowRight className="size-3.5" />
+                                )}
+                              </div>
+                              <span>
+                                {isReceived ? 'รับจาก' : 'จ่ายให้'} {person}
+                              </span>
+                            </div>
+                          </TableCell>
+                          <TableCell
+                            className={cn(
+                              'pr-6 text-right font-semibold tabular-nums',
+                              isReceived ? 'text-success' : 'text-destructive'
+                            )}
+                          >
+                            {isReceived ? '+' : '-'}฿{payment.amount.toLocaleString()}
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
+                  </TableBody>
+                </Table>
               )}
             </CardContent>
           </Card>
         </TabsContent>
       </Tabs>
+
+      <Dialog open={isSettleOpen} onOpenChange={setIsSettleOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {settleDebtData?.fromUserId === user?.uid ? 'จ่ายคืน' : 'รับเงินคืน'}
+            </DialogTitle>
+            <DialogDescription>
+              {settleDebtData && (
+                <>
+                  {settleDebtData.fromUserId === user?.uid ? 'จ่ายให้' : 'รับจาก'}{' '}
+                  <span className="font-medium text-foreground">
+                    {settleDebtData.fromUserId === user?.uid
+                      ? settleDebtData.toDisplayName || settleDebtData.toUserId
+                      : settleDebtData.fromDisplayName || settleDebtData.fromUserId}
+                  </span>
+                  {' — '}
+                  {resolveDebtDescription(settleDebtData, txById)}
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          {settleDebtData && (
+            <div className="space-y-4 pt-2">
+              <div className="space-y-2">
+                <Label>จำนวนที่จ่าย (฿)</Label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+                    ฿
+                  </span>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max={settleDebtData.amount}
+                    className="pl-8 text-lg font-bold"
+                    value={settleAmount}
+                    onChange={(e) => setSettleAmount(e.target.value)}
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  ยอดคงเหลือ ฿{settleDebtData.amount.toLocaleString()} — สามารถจ่ายบางส่วนได้
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setSettleAmount(settleDebtData.amount.toString())}
+                >
+                  จ่ายเต็มจำนวน
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() =>
+                    setSettleAmount((settleDebtData.amount / 2).toFixed(2))
+                  }
+                >
+                  จ่ายครึ่งหนึ่ง
+                </Button>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setIsSettleOpen(false)}>
+                  ยกเลิก
+                </Button>
+                <Button onClick={handleConfirmSettle}>ยืนยัน</Button>
+              </DialogFooter>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

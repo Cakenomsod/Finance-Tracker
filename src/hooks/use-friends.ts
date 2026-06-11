@@ -130,13 +130,13 @@ export function useFriends() {
     if (r.fromUserId === user?.uid) {
       return {
         uid: r.toUserId,
-        displayName: cached?.displayName || r.toDisplayName || '—',
+        displayName: cached?.displayName || r.toDisplayName || `Friend ${r.toUserId.slice(0, 6)}`,
         photoURL: cached?.photoURL || r.toPhotoURL || null
       };
     }
     return {
       uid: r.fromUserId,
-      displayName: cached?.displayName || r.fromDisplayName || '—',
+      displayName: cached?.displayName || r.fromDisplayName || `Friend ${r.fromUserId.slice(0, 6)}`,
       photoURL: cached?.photoURL || r.fromPhotoURL || null
     };
   });

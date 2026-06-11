@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { collection, query, where, orderBy, onSnapshot, or } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Trip } from '@/lib/firestore-types';
-import { createTrip, updateTrip, deleteTrip, closeTrip } from '@/lib/firestore';
+import { createTrip, updateTrip, deleteTrip, closeTrip, reopenTrip } from '@/lib/firestore';
 import { useAuth } from './use-auth';
 
 export function useTrips() {
@@ -71,6 +71,11 @@ export function useTrips() {
     return closeTrip(id);
   };
 
+  const resumeTrip = async (id: string) => {
+    if (!user) throw new Error('Must be logged in to reopen a trip');
+    return reopenTrip(id);
+  };
+
   // Helper: get only active trips (useful for dropdowns)
   const activeTrips = trips.filter((t) => t.status === 'active');
   const closedTrips = trips.filter((t) => t.status === 'closed');
@@ -85,5 +90,6 @@ export function useTrips() {
     editTrip,
     removeTrip,
     endTrip,
+    resumeTrip,
   };
 }

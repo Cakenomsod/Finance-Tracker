@@ -381,10 +381,10 @@ export default function AnalyticsPage() {
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <ArrowUpRight className="size-4 text-primary" />
+              <ArrowUpRight className="size-4 text-success" />
               Total Income
             </div>
-            <p className="mt-2 text-2xl font-bold">฿{totalIncome.toLocaleString()}</p>
+            <p className="mt-2 text-2xl font-bold text-success">฿{totalIncome.toLocaleString()}</p>
             <p className="mt-1 text-xs text-muted-foreground">
               {monthlyOverview.length} months of data
             </p>
@@ -397,7 +397,7 @@ export default function AnalyticsPage() {
               <ArrowDownRight className="size-4 text-destructive" />
               Total Expenses
             </div>
-            <p className="mt-2 text-2xl font-bold">฿{totalExpenses.toLocaleString()}</p>
+            <p className="mt-2 text-2xl font-bold text-destructive">฿{totalExpenses.toLocaleString()}</p>
             <p className="mt-1 text-xs text-muted-foreground">
               {habits.txCount} transactions total
             </p>
@@ -410,7 +410,7 @@ export default function AnalyticsPage() {
               <PiggyBank className="size-4 text-primary" />
               Net Savings
             </div>
-            <p className={cn('mt-2 text-2xl font-bold', totalSavings >= 0 ? 'text-primary' : 'text-destructive')}>
+            <p className={cn('mt-2 text-2xl font-bold', totalSavings >= 0 ? 'text-success' : 'text-destructive')}>
               {totalSavings >= 0 ? '+' : ''}฿{totalSavings.toLocaleString()}
             </p>
             <p className="mt-1 text-xs text-muted-foreground">

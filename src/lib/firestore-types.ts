@@ -2,6 +2,7 @@ import { Timestamp } from 'firebase/firestore';
 
 export type AiTextProvider = 'gemma' | 'local';
 export type ExpenseSource = 'manual' | 'ocr' | 'ai' | 'line';
+export type PaymentMethod = 'normal' | 'paotang';
 
 export interface ImmichSettings {
   baseUrl: string;
@@ -65,6 +66,17 @@ export interface Transaction {
   baseAmount?: number;
   taxAmount?: number;
   currency?: TripCurrency;
+  /** How the expense was paid — transactions only (not trip expenses) */
+  paymentMethod?: PaymentMethod;
+  /** Paotang: gov share at save time (after quota caps) */
+  paotangSubsidy?: number | null;
+  /** Paotang: user share at save time (after quota caps) */
+  paotangUserPaid?: number | null;
+  /** Paotang: 60% ideal gov share before quota caps */
+  paotangIdealSubsidy?: number | null;
+  /** True when gov subsidy was reduced due to quota limits */
+  paotangQuotaCapped?: boolean;
+  paotangCapReason?: 'daily' | 'monthly' | 'total' | null;
 }
 
 // debts/{debtId}
@@ -82,6 +94,10 @@ export interface Debt {
   sourceExpenseId?: string;
   paidAmount?: number;
   remainingAmount?: number;
+  /** What the debt is for (e.g. transaction description) */
+  description?: string;
+  fromDisplayName?: string;
+  toDisplayName?: string;
 }
 
 // trips/{tripId}

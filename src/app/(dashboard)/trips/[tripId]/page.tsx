@@ -4,7 +4,7 @@ import * as React from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import {
   ArrowLeft, Receipt, Users, Calendar, MapPin, ArrowRight,
-  Plus, Edit2, Trash2, MoreHorizontal, Lock, Plane,
+  Plus, Edit2, Trash2, MoreHorizontal, Lock, Unlock, Plane,
   BarChart3, DollarSign, CheckCircle2,
 } from 'lucide-react'
 import {
@@ -27,8 +27,18 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart'
-import { cn } from '@/lib/utils'
+import { cn, amountColorClass } from '@/lib/utils'
 import { useTrips } from '@/hooks/use-trips'
 import { useTransactions } from '@/hooks/use-transactions'
 import { useAuth } from '@/hooks/use-auth'
@@ -77,7 +87,7 @@ export default function TripDetailPage() {
   const router = useRouter()
   const tripId = params.tripId as string
   const { user } = useAuth()
-  const { trips, loading: tripsLoading, removeTrip, endTrip, editTrip } = useTrips()
+  const { trips, loading: tripsLoading, removeTrip, endTrip, resumeTrip, editTrip } = useTrips()
   const { transactions, loading: txLoading, addTransaction, editTransaction, removeTransaction } = useTransactions()
 
   const [isAddExpenseOpen, setIsAddExpenseOpen] = React.useState(false)
@@ -89,6 +99,8 @@ export default function TripDetailPage() {
   const [expenseSearch, setExpenseSearch] = React.useState('')
   const [expenseFilterPaidBy, setExpenseFilterPaidBy] = React.useState('all')
   const [expandedReceipts, setExpandedReceipts] = React.useState<Record<string, boolean>>({})
+  const [showCloseConfirm, setShowCloseConfirm] = React.useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false)
 
   const trip = trips.find((t) => t.id === tripId)
   const tripTimeZone = getTripTimeZone(trip?.countryCode, trip?.tripCurrency)
@@ -496,7 +508,7 @@ export default function TripDetailPage() {
             <DropdownMenuContent align="end">
               {trip.status === 'active' && (
                 <>
-                  <DropdownMenuItem onClick={() => endTrip(trip.id!)}>
+                  <DropdownMenuItem onClick={() => setShowCloseConfirm(true)}>
                     <Lock className="mr-2 size-4" /> Close Trip
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => {
@@ -514,11 +526,13 @@ export default function TripDetailPage() {
                   </DropdownMenuItem>
                 </>
               )}
+              {trip.status === 'closed' && (
+                <DropdownMenuItem onClick={() => resumeTrip(trip.id!)}>
+                  <Unlock className="mr-2 size-4" /> Reopen Trip
+                </DropdownMenuItem>
+              )}
               <DropdownMenuSeparator />
-              <DropdownMenuItem className="text-destructive" onClick={async () => {
-                await removeTrip(trip.id!)
-                router.push('/trips')
-              }}>
+              <DropdownMenuItem className="text-destructive" onClick={() => setShowDeleteConfirm(true)}>
                 <Trash2 className="mr-2 size-4" /> Delete Trip
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -689,8 +703,8 @@ export default function TripDetailPage() {
                           </div>
                           <div className="flex items-center gap-2">
                             <div className="text-right">
-                              <span className="font-semibold tabular-nums block">
-                                {exSymbol}{ex.amount.toLocaleString()}
+                              <span className="font-semibold tabular-nums block text-destructive">
+                                -{exSymbol}{ex.amount.toLocaleString()}
                               </span>
                               {exHomeHint && (
                                 <span className="text-[10px] text-muted-foreground block font-normal">
@@ -888,7 +902,7 @@ export default function TripDetailPage() {
                         </div>
                       </div>
                       <div className="text-right">
-                        <p className={cn('font-semibold tabular-nums', balance > 0 ? 'text-primary' : balance < 0 ? 'text-destructive' : '')}>
+                        <p className={cn('font-semibold tabular-nums', amountColorClass(balance))}>
                           {balance > 0 ? '+' : ''}฿{balance.toLocaleString()}
                         </p>
                         <p className="text-xs text-muted-foreground">{balance > 0 ? 'ได้รับคืน' : balance < 0 ? 'ต้องจ่ายคืน' : 'เท่ากัน'}</p>
@@ -1091,7 +1105,7 @@ export default function TripDetailPage() {
                               </p>
                             </div>
                           </div>
-                          <span className="font-semibold text-green-600 tabular-nums">฿{s.amount.toLocaleString()}</span>
+                          <span className="font-semibold text-success tabular-nums">฿{s.amount.toLocaleString()}</span>
                         </div>
                       )
                     })}
@@ -1321,6 +1335,55 @@ export default function TripDetailPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={showCloseConfirm} onOpenChange={setShowCloseConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Close this trip?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Closing a trip prevents adding new expenses and recording payments.
+              You can reopen it later if needed.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                await endTrip(tripId)
+                setShowCloseConfirm(false)
+              }}
+            >
+              Close Trip
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete &quot;{trip.name}&quot;?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently remove the trip. Expenses and settlements linked to this trip
+              will remain in the database but won&apos;t be visible until the trip is restored.
+              This action cannot be undone from the app.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={async () => {
+                await removeTrip(tripId)
+                setShowDeleteConfirm(false)
+                router.push('/trips')
+              }}
+            >
+              Delete Trip
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

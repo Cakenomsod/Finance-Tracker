@@ -2,9 +2,10 @@ import { useState, useEffect } from 'react';
 import { collection, query, where, orderBy, onSnapshot } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Transaction } from '@/lib/firestore-types';
-import { createTransaction, updateTransaction, deleteTransaction, createDebt } from '@/lib/firestore';
+import { createTransaction, updateTransaction, deleteTransaction } from '@/lib/firestore';
 import { collectImmichAssetIds } from '@/lib/immich/asset-ids';
 import { requestDeleteImmichAssets } from '@/lib/immich/delete-from-browser';
+import { deleteTransactionDebts, syncTransactionDebts } from '@/lib/transaction-debt';
 import { useAuth } from './use-auth';
 
 export function useTransactions() {
@@ -50,30 +51,19 @@ export function useTransactions() {
 
   const addTransaction = async (data: Omit<Transaction, 'id' | 'createdAt' | 'userId'>) => {
     if (!user) throw new Error('Must be logged in to add a transaction');
-    const txRef = await createTransaction({ ...data, userId: user.uid });
-    
-    if ((data.paidBy === 'Me' || !data.paidBy) && data.splitWith) {
-      await createDebt({
-        fromUserId: data.splitWith,
-        toUserId: user.uid,
-        amount: Math.abs(data.amount),
-        relatedTxIds: [txRef.id],
-      });
-    } else if (data.paidBy && data.paidBy !== 'Me') {
-      await createDebt({
-        fromUserId: user.uid,
-        toUserId: data.paidBy,
-        amount: Math.abs(data.amount),
-        relatedTxIds: [txRef.id],
-      });
-    }
-    
+    const txData = { ...data, userId: user.uid, currency: 'THB' as const };
+    const txRef = await createTransaction(txData);
+    await syncTransactionDebts(user.uid, txRef.id, txData);
     return txRef;
   };
 
   const editTransaction = async (id: string, data: Partial<Omit<Transaction, 'id' | 'createdAt' | 'userId'>>) => {
     if (!user) throw new Error('Must be logged in to edit a transaction');
-    return updateTransaction(id, data);
+    const existing = transactions.find((t) => t.id === id);
+    if (!existing) throw new Error('Transaction not found');
+    const merged = { ...existing, ...data, currency: 'THB' as const };
+    await updateTransaction(id, { ...data, currency: 'THB' });
+    await syncTransactionDebts(user.uid, id, merged);
   };
 
   const removeTransaction = async (
@@ -89,6 +79,7 @@ export function useTransactions() {
     if (ids.length > 0) {
       await requestDeleteImmichAssets(ids);
     }
+    await deleteTransactionDebts(id);
     return deleteTransaction(id);
   };
 

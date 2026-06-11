@@ -32,8 +32,14 @@ export const customFriendsRef = collection(db, 'custom_friends');
 
 // --- Transactions ---
 
+function stripUndefined<T extends Record<string, unknown>>(data: T): T {
+  return Object.fromEntries(
+    Object.entries(data).filter(([, v]) => v !== undefined)
+  ) as T;
+}
+
 export const createTransaction = async (data: Omit<Transaction, 'id' | 'createdAt'>) => {
-  return await addDoc(transactionsRef, { ...data, createdAt: serverTimestamp() });
+  return await addDoc(transactionsRef, stripUndefined({ ...data, createdAt: serverTimestamp() }));
 };
 
 export const getUserTransactions = async (userId: string) => {
@@ -43,7 +49,7 @@ export const getUserTransactions = async (userId: string) => {
 };
 
 export const updateTransaction = async (id: string, data: Partial<Omit<Transaction, 'id' | 'createdAt'>>) => {
-  return await updateDoc(doc(db, 'transactions', id), data);
+  return await updateDoc(doc(db, 'transactions', id), stripUndefined(data));
 };
 
 export const deleteTransaction = async (id: string) => {
@@ -91,6 +97,10 @@ export const deleteTrip = async (id: string) => {
 
 export const closeTrip = async (id: string) => {
   return await updateDoc(doc(db, 'trips', id), { status: 'closed' });
+};
+
+export const reopenTrip = async (id: string) => {
+  return await updateDoc(doc(db, 'trips', id), { status: 'active' });
 };
 
 // --- Trip Expenses ---

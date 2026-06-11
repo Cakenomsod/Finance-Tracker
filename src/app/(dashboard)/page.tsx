@@ -31,7 +31,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart'
-import { cn } from '@/lib/utils'
+import { cn, amountColorClass } from '@/lib/utils'
 
 // Mock data for charts
 const monthlyData = [
@@ -378,7 +378,7 @@ export default function DashboardPage() {
                   <span
                     className={cn(
                       'font-semibold tabular-nums',
-                      transaction.amount > 0 ? 'text-primary' : 'text-foreground'
+                      amountColorClass(transaction.amount)
                     )}
                   >
                     {transaction.amount > 0 ? '+' : ''}฿
