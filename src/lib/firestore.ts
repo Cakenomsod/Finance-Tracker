@@ -16,7 +16,7 @@ import {
 import { db } from './firebase';
 import {
   Transaction, Debt, Trip, Category,
-  TripExpense, TripSettlement, FriendRequest,
+  TripExpense, TripSettlement, FriendRequest, CustomFriend,
 } from './firestore-types';
 
 // Collection References
@@ -28,11 +28,18 @@ export const categoriesRef = collection(db, 'categories');
 export const tripExpensesRef = collection(db, 'trip_expenses');
 export const tripSettlementsRef = collection(db, 'trip_settlements');
 export const friendRequestsRef = collection(db, 'friend_requests');
+export const customFriendsRef = collection(db, 'custom_friends');
 
 // --- Transactions ---
 
+function stripUndefined<T extends Record<string, unknown>>(data: T): T {
+  return Object.fromEntries(
+    Object.entries(data).filter(([, v]) => v !== undefined)
+  ) as T;
+}
+
 export const createTransaction = async (data: Omit<Transaction, 'id' | 'createdAt'>) => {
-  return await addDoc(transactionsRef, { ...data, createdAt: serverTimestamp() });
+  return await addDoc(transactionsRef, stripUndefined({ ...data, createdAt: serverTimestamp() }));
 };
 
 export const getUserTransactions = async (userId: string) => {
@@ -42,7 +49,7 @@ export const getUserTransactions = async (userId: string) => {
 };
 
 export const updateTransaction = async (id: string, data: Partial<Omit<Transaction, 'id' | 'createdAt'>>) => {
-  return await updateDoc(doc(db, 'transactions', id), data);
+  return await updateDoc(doc(db, 'transactions', id), stripUndefined(data));
 };
 
 export const deleteTransaction = async (id: string) => {
@@ -90,6 +97,10 @@ export const deleteTrip = async (id: string) => {
 
 export const closeTrip = async (id: string) => {
   return await updateDoc(doc(db, 'trips', id), { status: 'closed' });
+};
+
+export const reopenTrip = async (id: string) => {
+  return await updateDoc(doc(db, 'trips', id), { status: 'active' });
 };
 
 // --- Trip Expenses ---
@@ -176,6 +187,23 @@ export const getUserProfile = async (uid: string) => {
   const snap = await getDoc(doc(db, 'users', uid));
   if (!snap.exists()) return null;
   return { uid: snap.id, ...snap.data() } as { uid: string; displayName: string; email: string; photoURL: string | null };
+};
+
+// --- Custom Friends (local contacts without app account) ---
+
+export const createCustomFriend = async (userId: string, name: string) => {
+  const trimmed = name.trim();
+  if (!trimmed) throw new Error('กรุณากรอกชื่อ');
+
+  return await addDoc(customFriendsRef, {
+    userId,
+    name: trimmed,
+    createdAt: serverTimestamp(),
+  });
+};
+
+export const deleteCustomFriend = async (id: string) => {
+  return await deleteDoc(doc(db, 'custom_friends', id));
 };
 
 // --- Categories ---

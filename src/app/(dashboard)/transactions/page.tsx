@@ -15,8 +15,6 @@ import {
   Tag,
   User,
   X,
-  Sparkles,
-  Check,
 } from 'lucide-react'
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -59,12 +57,18 @@ import {
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
-import { cn } from '@/lib/utils'
+import { cn, amountColorClass } from '@/lib/utils'
+import { getTransactionEffectiveAmount, getPaotangCapReasonLabel, isPaotangPayment, PAOTANG_GOV_PERCENT } from '@/lib/transaction-payment'
 import { useTransactions } from '@/hooks/use-transactions'
 import { useAllTripExpenses } from '@/hooks/use-all-trip-expenses'
 import { TransactionForm } from '@/components/transactions/transaction-form'
 import { TransactionAiPanel } from '@/components/transactions/transaction-ai-panel'
 import { Transaction } from '@/lib/firestore-types'
+import {
+  formatTransactionDisplayDate,
+  formatTransactionDisplayTime,
+  toDateFromFirestore,
+} from '@/lib/datetime'
 
 const categories = [
   'All Categories',
@@ -84,13 +88,7 @@ const categoryColors: Record<string, string> = {
   'Entertainment': 'bg-chart-4/20 text-chart-4',
   'Bills & Utilities': 'bg-chart-5/20 text-chart-5',
   'Health & Fitness': 'bg-primary/20 text-primary',
-  'Income': 'bg-primary/20 text-primary',
-}
-
-interface ParsedItem {
-  name: string
-  amount: number
-  category: string
+  'Income': 'bg-success/20 text-success',
 }
 
 export default function TransactionsPage() {
@@ -102,9 +100,6 @@ export default function TransactionsPage() {
   const [searchQuery, setSearchQuery] = React.useState('')
   const [selectedCategory, setSelectedCategory] = React.useState('All Categories')
   const [selectedRows, setSelectedRows] = React.useState<string[]>([])
-  const [naturalInput, setNaturalInput] = React.useState('')
-  const [parsedItems, setParsedItems] = React.useState<ParsedItem[]>([])
-  const [showParsedDialog, setShowParsedDialog] = React.useState(false)
   const [isAddDialogOpen, setIsAddDialogOpen] = React.useState(false)
   const [editingTransaction, setEditingTransaction] = React.useState<Transaction | null>(null)
   const [ocrDraft, setOcrDraft] = React.useState<Omit<Transaction, 'id' | 'createdAt' | 'userId'> | null>(null)
@@ -113,15 +108,21 @@ export default function TransactionsPage() {
   const allCombined = React.useMemo(() => {
     const legacy = transactions.map(tx => {
       const factor = tx.currency === 'JPY' ? 0.22 : 1
+      const effectiveAmount = getTransactionEffectiveAmount(tx)
       return {
         id: tx.id,
         description: tx.description,
-        amount: tx.amount,
-        amountThb: tx.amount * factor,
+        amount: effectiveAmount,
+        fullAmount: tx.amount,
+        amountThb: effectiveAmount * factor,
         category: tx.category,
         date: tx.date,
         paidBy: tx.paidBy || 'Me',
         isLegacy: true,
+        isPaotang: isPaotangPayment(tx),
+        paotangQuotaCapped: tx.paotangQuotaCapped,
+        paotangCapReason: tx.paotangCapReason,
+        paotangSubsidy: tx.paotangSubsidy,
         rawTx: tx,
         rawEx: null
       }
@@ -139,6 +140,11 @@ export default function TransactionsPage() {
         date: ex.date,
         paidBy: payersStr,
         isLegacy: false,
+        isPaotang: false,
+        paotangSubsidy: undefined,
+        paotangQuotaCapped: false,
+        paotangCapReason: undefined,
+        fullAmount: -ex.totalAmount,
         rawTx: null,
         rawEx: ex
       }
@@ -162,29 +168,6 @@ export default function TransactionsPage() {
       selectedCategory === 'All Categories' || t.category === selectedCategory
     return matchesSearch && matchesCategory
   })
-
-  // Handle natural language input
-  const handleNaturalInput = () => {
-    if (!naturalInput.trim()) return
-
-    // Simple parser for natural language input like "Fried rice 60 coffee 45 water 20"
-    const regex = /([a-zA-Z\s]+)\s*(\d+)/g
-    const items: ParsedItem[] = []
-    let match
-
-    while ((match = regex.exec(naturalInput)) !== null) {
-      items.push({
-        name: match[1].trim(),
-        amount: parseInt(match[2], 10),
-        category: 'Food & Dining', // Default category
-      })
-    }
-
-    if (items.length > 0) {
-      setParsedItems(items)
-      setShowParsedDialog(true)
-    }
-  }
 
   const handleRowSelect = (id: string) => {
     setSelectedRows((prev) =>
@@ -217,29 +200,6 @@ export default function TransactionsPage() {
           setIsAddDialogOpen(true)
         }}
       />
-
-      {/* Natural Language Input */}
-      <Card className="border-dashed border-primary/30 bg-gradient-to-r from-primary/5 to-transparent">
-        <CardContent className="pt-6">
-          <div className="flex items-center gap-2">
-            <Sparkles className="size-5 text-primary" />
-            <span className="text-sm font-medium">Quick Add with AI</span>
-          </div>
-          <div className="mt-3 flex gap-2">
-            <Input
-              placeholder="Type naturally: &quot;Fried rice 60 coffee 45 water 20&quot;"
-              value={naturalInput}
-              onChange={(e) => setNaturalInput(e.target.value)}
-              className="flex-1"
-              onKeyDown={(e) => e.key === 'Enter' && handleNaturalInput()}
-            />
-            <Button onClick={handleNaturalInput}>Parse & Add</Button>
-          </div>
-          <p className="mt-2 text-xs text-muted-foreground">
-            AI will automatically detect item names, amounts, and categories
-          </p>
-        </CardContent>
-      </Card>
 
       {/* Filters and Actions */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -315,6 +275,7 @@ export default function TransactionsPage() {
               <TransactionForm
                 key={editingTransaction?.id || (ocrDraft ? 'ocr-draft' : 'new')}
                 initialData={editingTransaction || (ocrDraft as Transaction | null)}
+                existingTransactions={transactions}
                 onSubmit={async (data) => {
                   if (editingTransaction) {
                     await editTransaction(editingTransaction.id!, data)
@@ -419,27 +380,28 @@ export default function TransactionsPage() {
                     />
                   </TableCell>
                   <TableCell className="text-muted-foreground">
-                    {transaction.date ? (
-                      <div className="space-y-0.5">
-                        <span>
-                          {new Date(transaction.date.seconds * 1000).toLocaleDateString('en-US', {
-                            month: 'short',
-                            day: 'numeric',
-                          })}
-                        </span>
-                        <span className="text-[11px] text-muted-foreground">
-                          {new Date(transaction.date.seconds * 1000).toLocaleTimeString([], {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
-                        </span>
-                      </div>
-                    ) : ''}
+                    {(() => {
+                      const txDate = toDateFromFirestore(transaction.date)
+                      if (!txDate) return ''
+                      return (
+                        <div className="space-y-0.5">
+                          <span>{formatTransactionDisplayDate(txDate)}</span>
+                          <span className="text-[11px] text-muted-foreground">
+                            {formatTransactionDisplayTime(txDate)}
+                          </span>
+                        </div>
+                      )
+                    })()}
                   </TableCell>
                   <TableCell>
                     <div>
                       <p className="font-medium">
                         {transaction.description}
+                        {transaction.isPaotang && (
+                          <Badge variant="outline" className="ml-2 text-[10px] border-chart-2/40 text-chart-2">
+                            เป๋าตัง
+                          </Badge>
+                        )}
                         {!transaction.isLegacy && (
                           <Badge variant="outline" className="ml-2 text-[10px]">Trip Expense</Badge>
                         )}
@@ -461,20 +423,33 @@ export default function TransactionsPage() {
                   <TableCell
                     className={cn(
                       'text-right font-semibold tabular-nums',
-                      transaction.amount > 0 ? 'text-primary' : 'text-foreground'
+                      amountColorClass(transaction.amount)
                     )}
                   >
                     {(() => {
                       const isJpy = transaction.rawTx?.currency === 'JPY' || transaction.rawEx?.currency === 'JPY'
+                      const displayAmount = transaction.amount
+                      const fullAmount = transaction.fullAmount ?? transaction.amount
                       return (
                         <>
                           <span className="block">
-                            {transaction.amount > 0 ? '+' : ''}{isJpy ? '¥' : '฿'}
-                            {Math.abs(transaction.amount).toLocaleString()}
+                            {displayAmount > 0 ? '+' : ''}{isJpy ? '¥' : '฿'}
+                            {Math.abs(displayAmount).toLocaleString()}
                           </span>
+                          {transaction.isPaotang && Math.abs(fullAmount) !== Math.abs(displayAmount) && (
+                            <span className="text-[10px] text-muted-foreground block font-normal">
+                              เต็ม ฿{Math.abs(fullAmount).toLocaleString()}
+                              {' · '}รัฐ {PAOTANG_GOV_PERCENT}% (ตามโควต้า)
+                            </span>
+                          )}
+                          {transaction.isPaotang && transaction.paotangQuotaCapped && (
+                            <span className="text-[10px] text-warning block font-normal">
+                              โควต้าจำกัด — {getPaotangCapReasonLabel(transaction.paotangCapReason)}
+                            </span>
+                          )}
                           {isJpy && (
                             <span className="text-[10px] text-muted-foreground block font-normal">
-                              ({transaction.amount > 0 ? '+' : ''}฿{(Math.abs(transaction.amount) * 0.22).toLocaleString()})
+                              ({displayAmount > 0 ? '+' : ''}฿{(Math.abs(displayAmount) * 0.22).toLocaleString()})
                             </span>
                           )}
                         </>
@@ -529,7 +504,7 @@ export default function TransactionsPage() {
         <Card>
           <CardContent className="pt-6">
             <div className="text-sm text-muted-foreground">Total Income</div>
-            <div className="mt-1 text-2xl font-bold text-primary">
+            <div className="mt-1 text-2xl font-bold text-success">
               +฿{allCombined
                 .filter((t) => t.amountThb > 0)
                 .reduce((sum, t) => sum + t.amountThb, 0)
@@ -552,64 +527,13 @@ export default function TransactionsPage() {
         <Card>
           <CardContent className="pt-6">
             <div className="text-sm text-muted-foreground">Net Balance</div>
-            <div className="mt-1 text-2xl font-bold">
+            <div className={cn('mt-1 text-2xl font-bold', amountColorClass(allCombined.reduce((sum, t) => sum + t.amountThb, 0), 'text-foreground'))}>
               {allCombined.reduce((sum, t) => sum + t.amountThb, 0) >= 0 ? '+' : ''}฿
               {allCombined.reduce((sum, t) => sum + t.amountThb, 0).toLocaleString()}
             </div>
           </CardContent>
         </Card>
       </div>
-
-      {/* Parsed Items Dialog */}
-      <Dialog open={showParsedDialog} onOpenChange={setShowParsedDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Confirm Parsed Items</DialogTitle>
-            <DialogDescription>
-              Review the items parsed from your input before saving.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3 py-4">
-            {parsedItems.map((item, index) => (
-              <div
-                key={index}
-                className="flex items-center justify-between rounded-lg border p-3"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="flex size-8 items-center justify-center rounded-lg bg-muted">
-                    <Check className="size-4 text-primary" />
-                  </div>
-                  <div>
-                    <p className="font-medium capitalize">{item.name}</p>
-                    <p className="text-xs text-muted-foreground">{item.category}</p>
-                  </div>
-                </div>
-                <span className="font-semibold tabular-nums">฿{item.amount}</span>
-              </div>
-            ))}
-            <div className="flex items-center justify-between border-t pt-3">
-              <span className="font-medium">Total</span>
-              <span className="text-lg font-bold">
-                ฿{parsedItems.reduce((sum, item) => sum + item.amount, 0)}
-              </span>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowParsedDialog(false)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={() => {
-                setShowParsedDialog(false)
-                setNaturalInput('')
-                setParsedItems([])
-              }}
-            >
-              Save All
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Floating Add Button (Mobile) */}
       <Button

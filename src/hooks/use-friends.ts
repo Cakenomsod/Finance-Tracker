@@ -1,13 +1,15 @@
 import { useState, useEffect } from 'react';
-import { collection, query, where, onSnapshot, or } from 'firebase/firestore';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { FriendRequest } from '@/lib/firestore-types';
+import { FriendRequest, CustomFriend } from '@/lib/firestore-types';
 import {
   sendFriendRequest,
   respondFriendRequest,
   deleteFriendRequest,
   searchUserByEmail,
   getUserProfile,
+  createCustomFriend,
+  deleteCustomFriend,
 } from '@/lib/firestore';
 import { useAuth } from './use-auth';
 
@@ -17,16 +19,24 @@ export interface Friend {
   photoURL: string | null;
 }
 
+export interface Contact {
+  key: string;
+  displayName: string;
+  photoURL?: string | null;
+  isCustom?: boolean;
+  isSelf?: boolean;
+}
+
 export function useFriends() {
   const { user } = useAuth();
   const [requests, setRequests] = useState<FriendRequest[]>([]);
+  const [customFriends, setCustomFriends] = useState<CustomFriend[]>([]);
   const [profiles, setProfiles] = useState<Record<string, { displayName: string; photoURL: string | null }>>({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!user) { setRequests([]); setLoading(false); return; }
+    if (!user) { setRequests([]); setCustomFriends([]); setLoading(false); return; }
 
-    // Listen to all friend requests involving this user
     const q = query(
       collection(db, 'friend_requests'),
       where('fromUserId', '==', user.uid)
@@ -34,6 +44,10 @@ export function useFriends() {
     const q2 = query(
       collection(db, 'friend_requests'),
       where('toUserId', '==', user.uid)
+    );
+    const q3 = query(
+      collection(db, 'custom_friends'),
+      where('userId', '==', user.uid)
     );
 
     const unsub1 = onSnapshot(q, (snap) => {
@@ -54,10 +68,14 @@ export function useFriends() {
       setLoading(false);
     });
 
-    return () => { unsub1(); unsub2(); };
+    const unsub3 = onSnapshot(q3, (snap) => {
+      setCustomFriends(snap.docs.map(d => ({ id: d.id, ...d.data() } as CustomFriend)));
+      setLoading(false);
+    });
+
+    return () => { unsub1(); unsub2(); unsub3(); };
   }, [user]);
 
-  // Derived lists
   const accepted = requests.filter(r => r.status === 'accepted');
 
   useEffect(() => {
@@ -105,25 +123,37 @@ export function useFriends() {
     r => r.status === 'pending' && r.fromUserId === user?.uid
   );
 
-  // Friends = accepted requests, extract the "other" person
   const friends: Friend[] = accepted.map(r => {
     const friendUid = r.fromUserId === user?.uid ? r.toUserId : r.fromUserId;
     const cached = profiles[friendUid];
 
     if (r.fromUserId === user?.uid) {
-      // We sent the request; toUser is the friend
       return {
         uid: r.toUserId,
-        displayName: cached?.displayName || r.toDisplayName || '—',
+        displayName: cached?.displayName || r.toDisplayName || `Friend ${r.toUserId.slice(0, 6)}`,
         photoURL: cached?.photoURL || r.toPhotoURL || null
       };
     }
     return {
       uid: r.fromUserId,
-      displayName: cached?.displayName || r.fromDisplayName || '—',
+      displayName: cached?.displayName || r.fromDisplayName || `Friend ${r.fromUserId.slice(0, 6)}`,
       photoURL: cached?.photoURL || r.fromPhotoURL || null
     };
   });
+
+  const contacts: Contact[] = [
+    { key: 'me', displayName: 'Me', isSelf: true },
+    ...friends.map(f => ({
+      key: f.uid,
+      displayName: f.displayName,
+      photoURL: f.photoURL,
+    })),
+    ...customFriends.map(cf => ({
+      key: `custom:${cf.id}`,
+      displayName: cf.name,
+      isCustom: true,
+    })),
+  ];
 
   const addFriend = async (email: string) => {
     if (!user) throw new Error('Not logged in');
@@ -140,16 +170,38 @@ export function useFriends() {
     return found;
   };
 
+  const addCustomFriend = async (name: string) => {
+    if (!user) throw new Error('Not logged in');
+    const trimmed = name.trim();
+    if (!trimmed) throw new Error('กรุณากรอกชื่อ');
+    const lower = trimmed.toLowerCase();
+    if (customFriends.some(cf => cf.name.toLowerCase() === lower)) {
+      throw new Error('มีชื่อนี้อยู่แล้ว');
+    }
+    if (friends.some(f => f.displayName.toLowerCase() === lower)) {
+      throw new Error('มีชื่อนี้ในรายชื่อเพื่อนแล้ว');
+    }
+    await createCustomFriend(user.uid, trimmed);
+  };
+
+  const removeCustomFriendById = async (id: string) => {
+    await deleteCustomFriend(id);
+  };
+
   const accept = (requestId: string) => respondFriendRequest(requestId, 'accepted');
   const decline = (requestId: string) => respondFriendRequest(requestId, 'declined');
   const remove = (requestId: string) => deleteFriendRequest(requestId);
 
   return {
     friends,
+    customFriends,
+    contacts,
     pendingReceived,
     pendingSent,
     loading,
     addFriend,
+    addCustomFriend,
+    removeCustomFriend: removeCustomFriendById,
     accept,
     decline,
     remove,

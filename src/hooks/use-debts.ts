@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { collection, query, where, orderBy, onSnapshot } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Debt } from '@/lib/firestore-types';
+import { Timestamp } from 'firebase/firestore';
 import { createDebt, updateDebt, deleteDebt } from '@/lib/firestore';
 import { useAuth } from './use-auth';
 
@@ -101,11 +102,27 @@ export function useDebts() {
     return deleteDebt(id);
   };
 
-  const settleDebt = async (id: string) => {
+  const settleDebt = async (id: string, payAmount?: number) => {
     if (!user) throw new Error('Must be logged in to settle a debt');
+    const debt = debts.find((d) => d.id === id);
+    if (!debt) throw new Error('Debt not found');
+
+    const amount = payAmount ?? debt.amount;
+    if (amount <= 0) throw new Error('Payment amount must be greater than zero');
+    if (amount > debt.amount) throw new Error('Payment amount exceeds remaining debt');
+
+    if (amount >= debt.amount - 0.001) {
+      return updateDebt(id, {
+        status: 'settled',
+        settledAt: Timestamp.now(),
+      });
+    }
+
+    const newRemaining = Math.round((debt.amount - amount) * 100) / 100;
     return updateDebt(id, {
-      status: 'settled',
-      settledAt: new Date() as any, // Firebase timestamp handle will convert it if we use serverTimestamp or just pass Date for some conversions, but better to use Timestamp.now() or let update handle Date.
+      amount: newRemaining,
+      paidAmount: (debt.paidAmount || 0) + amount,
+      remainingAmount: newRemaining,
     });
   };
 

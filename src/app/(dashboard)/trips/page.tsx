@@ -19,6 +19,7 @@ import {
   DollarSign,
   X,
   Lock,
+  Unlock,
 } from 'lucide-react'
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -45,6 +46,16 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { cn } from '@/lib/utils'
 import { useTrips } from '@/hooks/use-trips'
 import { useTransactions } from '@/hooks/use-transactions'
@@ -154,16 +165,18 @@ function TripCard({
   tripTransactions,
   tripExpenses = [],
   tripSettlements = [],
-  onDelete,
-  onClose,
+  onDeleteRequest,
+  onCloseRequest,
+  onReopen,
   onAddExpense,
 }: {
   trip: Trip
   tripTransactions: Transaction[]
   tripExpenses?: TripExpense[]
   tripSettlements?: TripSettlement[]
-  onDelete: (id: string) => void
-  onClose: (id: string) => void
+  onDeleteRequest: (trip: Trip) => void
+  onCloseRequest: (id: string) => void
+  onReopen: (id: string) => void
   onAddExpense: (tripId: string) => void
 }) {
   const router = useRouter()
@@ -300,21 +313,27 @@ function TripCard({
           </div>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon">
+              <Button variant="ghost" size="icon" onClick={(e) => e.stopPropagation()}>
                 <MoreHorizontal className="size-4" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
+            <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
               {trip.status === 'active' && (
-                <DropdownMenuItem onClick={() => onClose(trip.id!)}>
+                <DropdownMenuItem onClick={() => onCloseRequest(trip.id!)}>
                   <Lock className="mr-2 size-4" />
                   Close Trip
+                </DropdownMenuItem>
+              )}
+              {trip.status === 'closed' && (
+                <DropdownMenuItem onClick={() => onReopen(trip.id!)}>
+                  <Unlock className="mr-2 size-4" />
+                  Reopen Trip
                 </DropdownMenuItem>
               )}
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 className="text-destructive"
-                onClick={() => onDelete(trip.id!)}
+                onClick={() => onDeleteRequest(trip)}
               >
                 <Trash2 className="mr-2 size-4" />
                 Delete Trip
@@ -359,7 +378,7 @@ function TripCard({
                 className={cn(
                   'text-xl font-bold',
                   myNetBalance > 0
-                    ? 'text-primary'
+                    ? 'text-success'
                     : myNetBalance < 0
                     ? 'text-destructive'
                     : ''
@@ -438,8 +457,8 @@ function TripCard({
                     </div>
                   </div>
                   <div className="text-right">
-                    <span className="font-semibold tabular-nums text-sm block">
-                      {formatCurrencySymbol(tx.currency || trip.tripCurrency || 'THB')}
+                    <span className="font-semibold tabular-nums text-sm block text-destructive">
+                      -{formatCurrencySymbol(tx.currency || trip.tripCurrency || 'THB')}
                       {Math.abs(tx.amount).toLocaleString()}
                     </span>
                     {formatHomeConversion(Math.abs(tx.amount), tx.currency, trip) && (
@@ -488,6 +507,7 @@ export default function TripsPage() {
     addTrip,
     removeTrip,
     endTrip,
+    resumeTrip,
   } = useTrips()
   const { transactions, loading: txLoading, addTransaction } = useTransactions()
 
@@ -503,6 +523,8 @@ export default function TripsPage() {
   // Add Expense Dialog state
   const [isAddExpenseOpen, setIsAddExpenseOpen] = React.useState(false)
   const [expenseTripId, setExpenseTripId] = React.useState<string | null>(null)
+  const [tripToClose, setTripToClose] = React.useState<string | null>(null)
+  const [tripToDelete, setTripToDelete] = React.useState<Trip | null>(null)
   const expenseTrip = [...activeTrips, ...closedTrips].find(t => t.id === expenseTripId)
   const expenseMemberObjects = (expenseTrip?.members || []).map(k => ({
     key: k,
@@ -787,8 +809,9 @@ export default function TripsPage() {
                   tripTransactions={getTransactionsForTrip(trip.id!)}
                   tripExpenses={allTripExpenses.filter((e) => e.tripId === trip.id)}
                   tripSettlements={allTripSettlements.filter((s) => s.tripId === trip.id)}
-                  onDelete={removeTrip}
-                  onClose={endTrip}
+                  onDeleteRequest={setTripToDelete}
+                  onCloseRequest={setTripToClose}
+                  onReopen={resumeTrip}
                   onAddExpense={handleAddExpense}
                 />
               ))}
@@ -823,8 +846,9 @@ export default function TripsPage() {
                   tripTransactions={getTransactionsForTrip(trip.id!)}
                   tripExpenses={allTripExpenses.filter((e) => e.tripId === trip.id)}
                   tripSettlements={allTripSettlements.filter((s) => s.tripId === trip.id)}
-                  onDelete={removeTrip}
-                  onClose={endTrip}
+                  onDeleteRequest={setTripToDelete}
+                  onCloseRequest={setTripToClose}
+                  onReopen={resumeTrip}
                   onAddExpense={handleAddExpense}
                 />
               ))}
@@ -883,6 +907,58 @@ export default function TripsPage() {
           />
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!tripToClose} onOpenChange={(open) => !open && setTripToClose(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Close this trip?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Closing a trip prevents adding new expenses and recording payments.
+              You can reopen it later if needed.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                if (tripToClose) {
+                  await endTrip(tripToClose)
+                  setTripToClose(null)
+                }
+              }}
+            >
+              Close Trip
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={!!tripToDelete} onOpenChange={(open) => !open && setTripToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete &quot;{tripToDelete?.name}&quot;?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently remove the trip. Expenses and settlements linked to this trip
+              will remain in the database but won&apos;t be visible until the trip is restored.
+              This action cannot be undone from the app.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={async () => {
+                if (tripToDelete?.id) {
+                  await removeTrip(tripToDelete.id)
+                  setTripToDelete(null)
+                }
+              }}
+            >
+              Delete Trip
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

@@ -34,39 +34,43 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
-import { cn } from '@/lib/utils'
-import { useTransactions } from '@/hooks/use-transactions'
-import { useAllTripExpenses } from '@/hooks/use-all-trip-expenses'
-import { useDebts } from '@/hooks/use-debts'
-import { useTripDebts } from '@/hooks/use-trip-debts'
-import { useTrips } from '@/hooks/use-trips'
-import { useAuth } from '@/hooks/use-auth'
-import { useUserSettings } from '@/hooks/use-user-settings'
-import { TransactionForm } from '@/components/transactions/transaction-form'
-import {
-  mergeTransactions,
-  filterByTimeRange,
-  filterCurrentMonth,
-  filterPreviousMonth,
-  buildMonthlyOverview,
-  buildCategoryBreakdown,
-  buildWeekdaySpending,
-  getWeekSpendingComparison,
-  getFinancialHabits,
-  computeMonthTotals,
-  computePercentChange,
-  buildDashboardInsights,
-  formatMoney,
-  getDateFromTx,
-  getCategoryIcon,
-} from '@/lib/aggregate-transactions'
+import { cn, amountColorClass } from '@/lib/utils'
+
+// Mock data for charts
+const monthlyData = [
+  { month: 'Jan', income: 45000, expenses: 32000 },
+  { month: 'Feb', income: 48000, expenses: 35000 },
+  { month: 'Mar', income: 52000, expenses: 38000 },
+  { month: 'Apr', income: 47000, expenses: 41000 },
+  { month: 'May', income: 51000, expenses: 36000 },
+  { month: 'Jun', income: 55000, expenses: 42000 },
+]
+
+const spendingTrend = [
+  { day: 'Mon', amount: 1200 },
+  { day: 'Tue', amount: 850 },
+  { day: 'Wed', amount: 1500 },
+  { day: 'Thu', amount: 920 },
+  { day: 'Fri', amount: 2100 },
+  { day: 'Sat', amount: 1800 },
+  { day: 'Sun', amount: 750 },
+]
+
+const categoryData = [
+  { name: 'Food & Dining', value: 12500, color: 'var(--chart-1)' },
+  { name: 'Transport', value: 4200, color: 'var(--chart-2)' },
+  { name: 'Shopping', value: 8300, color: 'var(--chart-3)' },
+  { name: 'Bills', value: 6500, color: 'var(--chart-4)' },
+  { name: 'Entertainment', value: 3200, color: 'var(--chart-5)' },
+]
+
+const recentTransactions = [
+  { id: 1, description: 'Grab Food - Pad Thai', amount: -185, category: 'Food', date: 'Today', icon: '🍜' },
+  { id: 2, description: 'BTS Monthly Pass', amount: -1500, category: 'Transport', date: 'Today', icon: '🚇' },
+  { id: 3, description: 'Salary Deposit', amount: 55000, category: 'Income', date: 'Yesterday', icon: '💰' },
+  { id: 4, description: 'Central Department Store', amount: -2340, category: 'Shopping', date: 'Yesterday', icon: '🛍️' },
+  { id: 5, description: 'Netflix Subscription', amount: -419, category: 'Entertainment', date: '2 days ago', icon: '🎬' },
+]
 
 const chartConfig = {
   income: { label: 'Income', color: 'var(--chart-1)' },
@@ -559,13 +563,18 @@ export default function DashboardPage() {
                       {formatMoney(transaction.amountThb, currency, true)}
                     </span>
                   </div>
-                ))}
-              </div>
-            ) : (
-              <div className="py-8 text-center text-muted-foreground">
-                No transactions yet. Add your first one below.
-              </div>
-            )}
+                  <span
+                    className={cn(
+                      'font-semibold tabular-nums',
+                      amountColorClass(transaction.amount)
+                    )}
+                  >
+                    {transaction.amount > 0 ? '+' : ''}฿
+                    {Math.abs(transaction.amount).toLocaleString()}
+                  </span>
+                </div>
+              ))}
+            </div>
           </CardContent>
         </Card>
 
