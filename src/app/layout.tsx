@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next'
 import { Geist, Geist_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { AuthProvider } from '@/components/auth-context'
+import { LocaleProvider } from '@/components/locale-provider'
 import { ThemeProvider } from '@/components/theme-provider'
 import { Toaster } from '@/components/ui/sonner'
 import './globals.css'
@@ -46,9 +47,11 @@ export default function RootLayout({
           themes={['light', 'dark', 'system']}
         >
           <AuthProvider>
-            {children}
-            <Toaster richColors position="top-center" />
-            {process.env.NODE_ENV === 'production' && <Analytics />}
+            <LocaleProvider>
+              {children}
+              <Toaster richColors position="top-center" />
+              {process.env.NODE_ENV === 'production' && <Analytics />}
+            </LocaleProvider>
           </AuthProvider>
         </ThemeProvider>
       </body>

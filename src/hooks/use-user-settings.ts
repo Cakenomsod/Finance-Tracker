@@ -61,13 +61,51 @@ export function useUserSettings() {
     [user]
   );
 
+  const saveProfile = useCallback(
+    async (data: { displayName?: string; photoURL?: string | null }) => {
+      if (!user) throw new Error('Not logged in');
+      await updateDoc(doc(db, 'users', user.uid), {
+        ...data,
+        updatedAt: serverTimestamp(),
+      });
+    },
+    [user]
+  );
+
+  const saveCurrency = useCallback(
+    async (currency: string) => {
+      if (!user) throw new Error('Not logged in');
+      await updateDoc(doc(db, 'users', user.uid), {
+        currency,
+        updatedAt: serverTimestamp(),
+      });
+    },
+    [user]
+  );
+
+  const saveLocale = useCallback(
+    async (locale: string) => {
+      if (!user) throw new Error('Not logged in');
+      await updateDoc(doc(db, 'users', user.uid), {
+        locale,
+        updatedAt: serverTimestamp(),
+      });
+    },
+    [user]
+  );
+
   return {
     profile,
     loading,
+    currency: profile?.currency ?? 'THB',
+    locale: profile?.locale,
     immich: profile?.immich,
     aiTextProvider: profile?.aiTextProvider ?? 'gemma',
     localAiBaseUrl: profile?.localAiBaseUrl,
     saveImmichSettings,
     saveAiSettings,
+    saveProfile,
+    saveCurrency,
+    saveLocale,
   };
 }

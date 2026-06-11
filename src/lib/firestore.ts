@@ -15,7 +15,7 @@ import {
 } from 'firebase/firestore';
 import { db } from './firebase';
 import {
-  Transaction, Debt, Trip, Category,
+  Transaction, Debt, Trip, Category, RecurringExpense,
   TripExpense, TripSettlement, FriendRequest, CustomFriend,
 } from './firestore-types';
 
@@ -25,6 +25,7 @@ export const transactionsRef = collection(db, 'transactions');
 export const debtsRef = collection(db, 'debts');
 export const tripsRef = collection(db, 'trips');
 export const categoriesRef = collection(db, 'categories');
+export const recurringExpensesRef = collection(db, 'recurring_expenses');
 export const tripExpensesRef = collection(db, 'trip_expenses');
 export const tripSettlementsRef = collection(db, 'trip_settlements');
 export const friendRequestsRef = collection(db, 'friend_requests');
@@ -216,4 +217,29 @@ export const getUserCategories = async (userId: string) => {
   const q = query(categoriesRef, where('userId', '==', userId));
   const snapshot = await getDocs(q);
   return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Category));
+};
+
+export const updateCategory = async (id: string, data: Partial<Omit<Category, 'id' | 'createdAt' | 'userId'>>) => {
+  return await updateDoc(doc(db, 'categories', id), stripUndefined(data));
+};
+
+export const deleteCategory = async (id: string) => {
+  return await deleteDoc(doc(db, 'categories', id));
+};
+
+// --- Recurring Expenses ---
+
+export const createRecurringExpense = async (data: Omit<RecurringExpense, 'id' | 'createdAt'>) => {
+  return await addDoc(recurringExpensesRef, stripUndefined({ ...data, createdAt: serverTimestamp() }));
+};
+
+export const updateRecurringExpense = async (
+  id: string,
+  data: Partial<Omit<RecurringExpense, 'id' | 'createdAt' | 'userId'>>
+) => {
+  return await updateDoc(doc(db, 'recurring_expenses', id), stripUndefined(data));
+};
+
+export const deleteRecurringExpense = async (id: string) => {
+  return await deleteDoc(doc(db, 'recurring_expenses', id));
 };

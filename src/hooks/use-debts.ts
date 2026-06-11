@@ -38,11 +38,13 @@ export function useDebts() {
     let isFromLoaded = false;
     let isToLoaded = false;
 
+    const createdAtMillis = (createdAt: Debt['createdAt'] | null | undefined) =>
+      createdAt?.toMillis?.() ?? (createdAt?.seconds != null ? createdAt.seconds * 1000 : 0);
+
     const updateCombined = () => {
       // Merge, remove duplicates just in case (should not happen here), and sort by date descending
       const combined = [...fromDebts, ...toDebts];
-      // Sort by createdAt descending
-      combined.sort((a, b) => b.createdAt.toMillis() - a.createdAt.toMillis());
+      combined.sort((a, b) => createdAtMillis(b.createdAt) - createdAtMillis(a.createdAt));
       setDebts(combined);
       if (isFromLoaded && isToLoaded) {
         setLoading(false);

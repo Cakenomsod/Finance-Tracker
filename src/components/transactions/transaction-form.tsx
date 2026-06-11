@@ -28,6 +28,16 @@ import { Timestamp } from 'firebase/firestore'
 import { useTrips } from '@/hooks/use-trips'
 import { ContactSelect } from '@/components/friends/contact-select'
 import {
+  TransactionSplitSection,
+  validateTransactionSplit,
+} from '@/components/transactions/transaction-split-section'
+import {
+  primaryPaidByFromSplit,
+  resolveTransactionSplit,
+  type TransactionSplitMode,
+} from '@/lib/transaction-split'
+import type { TripExpensePayer, TripExpenseShare } from '@/lib/firestore-types'
+import {
   buildPaotangPaymentFields,
   computePaotangSplitWithQuota,
   getPaotangCapReasonLabel,
@@ -47,6 +57,7 @@ import {
   parseLocalDateTime,
   toDateFromFirestore,
 } from '@/lib/datetime'
+import { useCategories } from '@/hooks/use-categories'
 
 const formSchema = z.object({
   amount: z.string().min(1, 'Amount is required'),
@@ -56,23 +67,10 @@ const formSchema = z.object({
   date: z.string(),
   time: z.string().min(1, 'Time is required'),
   paidBy: z.string().optional(),
-  splitWith: z.string().optional(),
   tripId: z.string().optional(),
 })
 
 type TransactionFormValues = z.infer<typeof formSchema>
-
-const expenseCategories = [
-  'Food & Dining',
-  'Transport',
-  'Shopping',
-  'Entertainment',
-  'Bills & Utilities',
-  'Health & Fitness',
-  'Accommodation',
-  'Activities',
-  'Others',
-]
 
 interface TransactionFormProps {
   initialData?: Transaction | null;
@@ -90,6 +88,20 @@ interface ReceiptItemInput {
 export function TransactionForm({ initialData, existingTransactions = [], onSubmit, onCancel }: TransactionFormProps) {
   const [isSubmitting, setIsSubmitting] = React.useState(false)
   const { activeTrips } = useTrips()
+  const { categories, expenseCategories, incomeCategories, loading: categoriesLoading } = useCategories()
+
+  const expenseCategoryNames = React.useMemo(
+    () => expenseCategories.map((c) => c.name),
+    [expenseCategories]
+  )
+  const incomeCategoryNames = React.useMemo(
+    () => incomeCategories.map((c) => c.name),
+    [incomeCategories]
+  )
+  const incomeNameSet = React.useMemo(
+    () => new Set(incomeCategoryNames),
+    [incomeCategoryNames]
+  )
 
   const [paymentMethod, setPaymentMethod] = React.useState<PaymentMethod>(
     initialData?.paymentMethod || 'normal'
@@ -105,7 +117,7 @@ export function TransactionForm({ initialData, existingTransactions = [], onSubm
       category: item.category,
       price: String(item.price + (item.tax || 0)),
     })) || [
-      { name: '', category: 'Food & Dining', price: '' }
+      { name: '', category: '', price: '' }
     ]
   )
 
@@ -114,46 +126,88 @@ export function TransactionForm({ initialData, existingTransactions = [], onSubm
   const defaultTime = formatLocalTimeInput(initialDate)
 
   const defaultType = initialData?.type || 'expense'
-  const defaultCategory =
-    initialData?.category ||
-    (defaultType === 'income' ? 'Income' : expenseCategories[0])
 
   const form = useForm<TransactionFormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       amount: initialData ? Math.abs(initialData.amount).toString() : '',
       type: defaultType,
-      category: defaultCategory,
+      category: initialData?.category || '',
       description: initialData?.description || '',
       date: defaultDate,
       time: defaultTime,
       paidBy: initialData?.paidBy || 'Me',
-      splitWith: initialData?.splitWith || '',
       tripId: initialData?.tripId || 'none',
     },
   })
 
   const txType = form.watch('type')
   const selectedCategory = form.watch('category')
-  const isIncome = txType === 'income' || selectedCategory === 'Income'
+  const isIncome = txType === 'income'
 
   React.useEffect(() => {
-    if (txType === 'income' && selectedCategory !== 'Income') {
-      form.setValue('category', 'Income')
+    if (categoriesLoading || initialData?.category) return
+    const type = form.getValues('type')
+    const fallback =
+      type === 'income' ? incomeCategoryNames[0] : expenseCategoryNames[0]
+    if (fallback && !form.getValues('category')) {
+      form.setValue('category', fallback)
     }
-  }, [txType, selectedCategory, form])
+  }, [
+    categoriesLoading,
+    expenseCategoryNames,
+    incomeCategoryNames,
+    initialData?.category,
+    form,
+  ])
 
   React.useEffect(() => {
-    if (selectedCategory === 'Income' && txType !== 'income') {
+    if (categoriesLoading || !expenseCategoryNames[0]) return
+    setReceiptItems((items) => {
+      if (!items.some((item) => !item.category)) return items
+      return items.map((item) =>
+        item.category ? item : { ...item, category: expenseCategoryNames[0] }
+      )
+    })
+  }, [categoriesLoading, expenseCategoryNames])
+
+  React.useEffect(() => {
+    if (txType === 'income' && selectedCategory && !incomeNameSet.has(selectedCategory)) {
+      const fallback = incomeCategoryNames[0]
+      if (fallback) form.setValue('category', fallback)
+    }
+  }, [txType, selectedCategory, incomeNameSet, incomeCategoryNames, form])
+
+  React.useEffect(() => {
+    if (selectedCategory && incomeNameSet.has(selectedCategory) && txType !== 'income') {
       form.setValue('type', 'income')
     }
-  }, [selectedCategory, txType, form])
+  }, [selectedCategory, txType, incomeNameSet, form])
 
-  React.useEffect(() => {
-    if (isIncome && form.getValues('splitWith')) {
-      form.setValue('splitWith', '')
-    }
-  }, [isIncome, form])
+  const resolvedInitialSplit = React.useMemo(
+    () => (initialData && !isIncome ? resolveTransactionSplit(initialData) : null),
+    [initialData, isIncome]
+  )
+
+  const [splitEnabled, setSplitEnabled] = React.useState(
+    () => !!(resolvedInitialSplit && (initialData?.splitWith || initialData?.payers?.length))
+  )
+  const [splitData, setSplitData] = React.useState<{
+    payers: TripExpensePayer[]
+    shares: TripExpenseShare[]
+    splitMode: TransactionSplitMode
+  } | null>(resolvedInitialSplit)
+
+  const handleSplitChange = React.useCallback(
+    (data: {
+      payers: TripExpensePayer[]
+      shares: TripExpenseShare[]
+      splitMode: TransactionSplitMode
+    }) => {
+      setSplitData(data)
+    },
+    []
+  )
 
   React.useEffect(() => {
     if (isIncome && paymentMethod !== 'normal') {
@@ -213,11 +267,11 @@ export function TransactionForm({ initialData, existingTransactions = [], onSubm
       ? computePaotangSplitWithQuota(totalForPayment, paotangUsage, paotangQuotaMode)
       : null
 
-  React.useEffect(() => {
-    if (isOtherPayerPaotang && form.getValues('splitWith')) {
-      form.setValue('splitWith', '')
-    }
-  }, [isOtherPayerPaotang, form])
+  const splitTotal = React.useMemo(() => {
+    if (isOtherPayerPaotang) return totalForPayment
+    if (paymentMethod === 'paotang' && !isIncome) return totalForPayment
+    return totalForPayment
+  }, [isOtherPayerPaotang, paymentMethod, isIncome, totalForPayment])
 
   const handleSubmit = async (values: TransactionFormValues) => {
     setIsSubmitting(true)
@@ -235,7 +289,44 @@ export function TransactionForm({ initialData, existingTransactions = [], onSubm
 
       const usePaotang = !isIncome && paymentMethod === 'paotang'
 
+      if (
+        !isIncome &&
+        splitEnabled &&
+        !isOtherPayerPaotang &&
+        splitData &&
+        splitTotal > 0
+      ) {
+        const splitErrs = validateTransactionSplit(splitTotal, splitData.payers, splitData.shares)
+        if (splitErrs.length > 0) {
+          form.setError('amount', { message: splitErrs[0] })
+          return
+        }
+      }
+
       const finalAmount = values.type === 'expense' ? -Math.abs(rawAmount) : Math.abs(rawAmount)
+
+      let paidBy = isIncome ? (values.paidBy || '') : (values.paidBy || 'Me')
+      let splitWith: string | null = null
+      let payers: TripExpensePayer[] | undefined
+      let shares: TripExpenseShare[] | undefined
+      let splitMode: TransactionSplitMode | undefined
+
+      if (!isIncome && splitEnabled && splitData && !isOtherPayerPaotang) {
+        payers = splitData.payers
+        shares = splitData.shares
+        splitMode = splitData.splitMode
+        paidBy = primaryPaidByFromSplit(splitData)
+        splitWith = null
+      } else if (!isIncome) {
+        payers = []
+        shares = []
+        splitMode = undefined
+        if (isOtherPayerPaotang) {
+          paidBy = values.paidBy || 'Me'
+        } else {
+          paidBy = 'Me'
+        }
+      }
 
       const transactionData: Omit<Transaction, 'id' | 'createdAt' | 'userId'> = {
         amount: finalAmount,
@@ -243,10 +334,11 @@ export function TransactionForm({ initialData, existingTransactions = [], onSubm
         category: values.category,
         description: values.description,
         date: Timestamp.fromDate(parseLocalDateTime(values.date, values.time)),
-        paidBy: isIncome ? (values.paidBy || '') : (values.paidBy || 'Me'),
-        splitWith: isIncome || isPaotangPaidByOther(values.paidBy || 'Me')
-          ? null
-          : (values.splitWith || null),
+        paidBy,
+        splitWith,
+        payers,
+        shares,
+        splitMode,
         tripId: values.tripId && values.tripId !== 'none' ? values.tripId : null,
         receiptUrl: initialData?.receiptUrl || null,
         source: initialData?.source || 'manual',
@@ -294,11 +386,16 @@ export function TransactionForm({ initialData, existingTransactions = [], onSubm
   }
 
   const visibleCategories = React.useMemo(() => {
-    const base = isIncome ? ['Income'] : expenseCategories
+    const base = isIncome ? incomeCategoryNames : expenseCategoryNames
     const current = form.getValues('category')
     if (current && !base.includes(current)) return [...base, current]
     return base
-  }, [isIncome, selectedCategory])
+  }, [isIncome, selectedCategory, incomeCategoryNames, expenseCategoryNames, form])
+
+  const categoryByName = React.useMemo(
+    () => new Map(categories.map((c) => [c.name, c])),
+    [categories]
+  )
 
   return (
     <Form {...form}>
@@ -336,8 +433,9 @@ export function TransactionForm({ initialData, existingTransactions = [], onSubm
               <Select
                 onValueChange={(val) => {
                   field.onChange(val)
-                  if (val === 'expense' && form.getValues('category') === 'Income') {
-                    form.setValue('category', expenseCategories[0])
+                  if (val === 'expense' && incomeNameSet.has(form.getValues('category'))) {
+                    const fallback = expenseCategoryNames[0]
+                    if (fallback) form.setValue('category', fallback)
                   }
                 }}
                 value={field.value}
@@ -386,7 +484,7 @@ export function TransactionForm({ initialData, existingTransactions = [], onSubm
                 onClick={() =>
                   setReceiptItems([
                     ...receiptItems,
-                    { name: '', category: expenseCategories[0], price: '' },
+                    { name: '', category: expenseCategoryNames[0] || '', price: '' },
                   ])
                 }
                 className="h-7 text-xs gap-1"
@@ -422,12 +520,19 @@ export function TransactionForm({ initialData, existingTransactions = [], onSubm
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {(expenseCategories.includes(item.category)
-                          ? expenseCategories
-                          : [...expenseCategories, item.category]
-                        ).map(c => (
-                          <SelectItem key={c} value={c} className="text-xs">{c}</SelectItem>
-                        ))}
+                        {(expenseCategoryNames.includes(item.category)
+                          ? expenseCategoryNames
+                          : item.category
+                            ? [...expenseCategoryNames, item.category]
+                            : expenseCategoryNames
+                        ).map((c) => {
+                          const cat = categoryByName.get(c)
+                          return (
+                            <SelectItem key={c} value={c} className="text-xs">
+                              {cat ? `${cat.icon} ${c}` : c}
+                            </SelectItem>
+                          )
+                        })}
                       </SelectContent>
                     </Select>
 
@@ -556,9 +661,15 @@ export function TransactionForm({ initialData, existingTransactions = [], onSubm
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
-                    {visibleCategories.map((c) => (
-                      <SelectItem key={c} value={c}>{c}</SelectItem>
-                    ))}
+                    {!categoriesLoading &&
+                      visibleCategories.map((c) => {
+                        const cat = categoryByName.get(c)
+                        return (
+                          <SelectItem key={c} value={c}>
+                            {cat ? `${cat.icon} ${c}` : c}
+                          </SelectItem>
+                        )
+                      })}
                   </SelectContent>
                 </Select>
                 <FormMessage />
@@ -772,41 +883,20 @@ export function TransactionForm({ initialData, existingTransactions = [], onSubm
           </div>
         )}
 
-        <div className={cn('grid gap-4', isIncome || isOtherPayerPaotang ? 'grid-cols-1' : 'grid-cols-2')}>
+        {isIncome ? (
           <FormField
             control={form.control}
             name="paidBy"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>{isIncome ? 'Received From' : 'Paid By'}</FormLabel>
-                <FormControl>
-                  <ContactSelect
-                    value={field.value || (isIncome ? '' : 'Me')}
-                    onChange={field.onChange}
-                    placeholder={isIncome ? 'เลือกผู้จ่ายให้ (ไม่บังคับ)' : 'เลือกผู้จ่าย'}
-                    allowNone={isIncome}
-                    noneLabel="ไม่ระบุ"
-                    includeMe={!isIncome}
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-
-          {!isIncome && !isOtherPayerPaotang && (
-          <FormField
-            control={form.control}
-            name="splitWith"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Split With</FormLabel>
+                <FormLabel>Received From</FormLabel>
                 <FormControl>
                   <ContactSelect
                     value={field.value || ''}
                     onChange={field.onChange}
-                    placeholder="เลือกผู้แบ่งจ่าย (ไม่บังคับ)"
+                    placeholder="เลือกผู้จ่ายให้ (ไม่บังคับ)"
                     allowNone
+                    noneLabel="ไม่ระบุ"
                     includeMe={false}
                   />
                 </FormControl>
@@ -814,8 +904,60 @@ export function TransactionForm({ initialData, existingTransactions = [], onSubm
               </FormItem>
             )}
           />
-          )}
-        </div>
+        ) : isOtherPayerPaotang ? (
+          <FormField
+            control={form.control}
+            name="paidBy"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Paid By</FormLabel>
+                <FormControl>
+                  <ContactSelect
+                    value={field.value || ''}
+                    onChange={field.onChange}
+                    placeholder="เลือกผู้จ่าย"
+                    includeMe={false}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        ) : (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <Label>แบ่งค่าใช้จ่ายกับเพื่อน</Label>
+              <button
+                type="button"
+                onClick={() => {
+                  const next = !splitEnabled
+                  setSplitEnabled(next)
+                  if (!next) setSplitData(null)
+                }}
+                className={cn(
+                  'rounded-lg border px-3 py-1.5 text-xs font-medium transition-all',
+                  splitEnabled
+                    ? 'border-primary bg-primary text-primary-foreground'
+                    : 'border-border hover:border-primary/50'
+                )}
+              >
+                {splitEnabled ? 'เปิดอยู่' : 'ปิด'}
+              </button>
+            </div>
+            {splitEnabled && splitTotal > 0 && (
+              <TransactionSplitSection
+                total={splitTotal}
+                initialPayers={resolvedInitialSplit?.payers}
+                initialShares={resolvedInitialSplit?.shares}
+                initialSplitMode={resolvedInitialSplit?.splitMode}
+                onChange={handleSplitChange}
+              />
+            )}
+            {splitEnabled && splitTotal <= 0 && (
+              <p className="text-xs text-muted-foreground">กรอกจำนวนเงินก่อนเพื่อตั้งค่าการแบ่งจ่าย</p>
+            )}
+          </div>
+        )}
 
         {activeTrips.length > 0 && (
           <FormField
@@ -881,7 +1023,7 @@ export function TransactionForm({ initialData, existingTransactions = [], onSubm
           <Button type="button" variant="outline" onClick={onCancel}>
             Cancel
           </Button>
-          <Button type="submit" disabled={isSubmitting}>
+          <Button type="submit" disabled={isSubmitting || categoriesLoading}>
             {isSubmitting ? 'Saving...' : 'Save Transaction'}
           </Button>
         </div>

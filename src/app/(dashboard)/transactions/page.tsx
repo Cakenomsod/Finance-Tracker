@@ -61,6 +61,7 @@ import { cn, amountColorClass } from '@/lib/utils'
 import { getTransactionEffectiveAmount, getPaotangCapReasonLabel, isPaotangPayment, PAOTANG_GOV_PERCENT } from '@/lib/transaction-payment'
 import { useTransactions } from '@/hooks/use-transactions'
 import { useAllTripExpenses } from '@/hooks/use-all-trip-expenses'
+import { useCategories } from '@/hooks/use-categories'
 import { TransactionForm } from '@/components/transactions/transaction-form'
 import { TransactionAiPanel } from '@/components/transactions/transaction-ai-panel'
 import { Transaction } from '@/lib/firestore-types'
@@ -70,30 +71,20 @@ import {
   toDateFromFirestore,
 } from '@/lib/datetime'
 
-const categories = [
-  'All Categories',
-  'Food & Dining',
-  'Transport',
-  'Shopping',
-  'Entertainment',
-  'Bills & Utilities',
-  'Health & Fitness',
-  'Income',
-]
-
-const categoryColors: Record<string, string> = {
-  'Food & Dining': 'bg-chart-1/20 text-chart-1',
-  'Transport': 'bg-chart-2/20 text-chart-2',
-  'Shopping': 'bg-chart-3/20 text-chart-3',
-  'Entertainment': 'bg-chart-4/20 text-chart-4',
-  'Bills & Utilities': 'bg-chart-5/20 text-chart-5',
-  'Health & Fitness': 'bg-primary/20 text-primary',
-  'Income': 'bg-success/20 text-success',
-}
-
 export default function TransactionsPage() {
   const { transactions, loading: txLoading, addTransaction, editTransaction, removeTransaction } = useTransactions()
   const { allTripExpenses, loading: tripLoading } = useAllTripExpenses()
+  const { categories } = useCategories()
+
+  const filterCategories = React.useMemo(
+    () => ['All Categories', ...categories.map((c) => c.name)],
+    [categories]
+  )
+
+  const categoryByName = React.useMemo(
+    () => new Map(categories.map((c) => [c.name, c])),
+    [categories]
+  )
   
   const loading = txLoading || tripLoading
 
@@ -219,7 +210,7 @@ export default function TransactionsPage() {
               <SelectValue placeholder="Category" />
             </SelectTrigger>
             <SelectContent>
-              {categories.map((category) => (
+              {filterCategories.map((category) => (
                 <SelectItem key={category} value={category}>
                   {category}
                 </SelectItem>
@@ -384,9 +375,11 @@ export default function TransactionsPage() {
                       const txDate = toDateFromFirestore(transaction.date)
                       if (!txDate) return ''
                       return (
-                        <div className="space-y-0.5">
-                          <span>{formatTransactionDisplayDate(txDate)}</span>
-                          <span className="text-[11px] text-muted-foreground">
+                        <div className="flex flex-col gap-1.5 py-0.5">
+                          <span className="block text-sm font-medium leading-none text-foreground">
+                            {formatTransactionDisplayDate(txDate)}
+                          </span>
+                          <span className="block text-xs tabular-nums leading-none text-muted-foreground">
                             {formatTransactionDisplayTime(txDate)}
                           </span>
                         </div>
@@ -409,15 +402,23 @@ export default function TransactionsPage() {
                     </div>
                   </TableCell>
                   <TableCell>
-                    <Badge
-                      variant="secondary"
-                      className={cn(
-                        'font-normal',
-                        categoryColors[transaction.category] || 'bg-muted'
-                      )}
-                    >
-                      {transaction.category}
-                    </Badge>
+                    {(() => {
+                      const cat = categoryByName.get(transaction.category)
+                      return (
+                        <Badge
+                          variant="secondary"
+                          className="font-normal"
+                          style={
+                            cat?.color
+                              ? { backgroundColor: `${cat.color}20`, color: cat.color }
+                              : undefined
+                          }
+                        >
+                          {cat?.icon ? `${cat.icon} ` : ''}
+                          {transaction.category}
+                        </Badge>
+                      )
+                    })()}
                   </TableCell>
                   <TableCell className="text-muted-foreground">{transaction.paidBy || 'Me'}</TableCell>
                   <TableCell

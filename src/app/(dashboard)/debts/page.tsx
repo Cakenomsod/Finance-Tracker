@@ -58,6 +58,7 @@ import { useTripDebts } from '@/hooks/use-trip-debts'
 import { useTransactions } from '@/hooks/use-transactions'
 import { useAuth } from '@/hooks/use-auth'
 import { Debt, Transaction } from '@/lib/firestore-types'
+import { TransactionForm } from '@/components/transactions/transaction-form'
 import { createTripSettlement } from '@/lib/firestore'
 import { Timestamp } from 'firebase/firestore'
 
@@ -65,8 +66,15 @@ interface UIGlobalDebt extends Omit<Debt, 'createdAt'> {
   fromDisplayName?: string
   toDisplayName?: string
   isTripDebt?: boolean
+  isTransactionDebt?: boolean
   tripIds?: string[]
   createdAt?: any
+}
+
+function debtSourceLabel(debt: UIGlobalDebt): string {
+  if (debt.isTripDebt) return 'ทริป'
+  if (debt.isTransactionDebt) return 'ธุรกรรม'
+  return 'บันทึกเอง'
 }
 
 function resolveDebtDescription(debt: UIGlobalDebt, txById: Map<string, Transaction>): string {
@@ -98,12 +106,14 @@ function DebtTable({
   txById,
   onSettle,
   onDelete,
+  onViewTransaction,
 }: {
   debts: UIGlobalDebt[]
   type: 'owe' | 'owed'
   txById: Map<string, Transaction>
   onSettle: (id: string) => void
   onDelete: (id: string) => void
+  onViewTransaction: (txId: string) => void
 }) {
   return (
     <Card>
@@ -127,9 +137,17 @@ function DebtTable({
                   : debt.fromDisplayName || debt.fromUserId
               const itemLabel = resolveDebtDescription(debt, txById)
               const initials = person.substring(0, 2).toUpperCase()
+              const relatedTxId = debt.relatedTxIds?.[0]
+              const canViewTx = !!relatedTxId && txById.has(relatedTxId)
 
               return (
-                <TableRow key={debt.id} className="group">
+                <TableRow
+                  key={debt.id}
+                  className={cn('group', canViewTx && 'cursor-pointer')}
+                  onClick={() => {
+                    if (canViewTx) onViewTransaction(relatedTxId)
+                  }}
+                >
                   <TableCell className="text-muted-foreground">{formatDebtDate(debt)}</TableCell>
                   <TableCell>
                     <p className="max-w-[280px] truncate font-medium" title={itemLabel}>
@@ -160,7 +178,7 @@ function DebtTable({
                   </TableCell>
                   <TableCell>
                     <Badge variant="outline" className="text-xs font-normal">
-                      {debt.isTripDebt ? 'ทริป' : 'บันทึกเอง'}
+                      {debtSourceLabel(debt)}
                     </Badge>
                   </TableCell>
                   <TableCell
@@ -178,7 +196,14 @@ function DebtTable({
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-1">
                       {debt.status === 'pending' && (
-                        <Button size="sm" variant="outline" onClick={() => onSettle(debt.id!)}>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            onSettle(debt.id!)
+                          }}
+                        >
                           {type === 'owe' ? (
                             <>
                               <Send className="mr-1.5 size-3" />
@@ -194,13 +219,27 @@ function DebtTable({
                       )}
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button size="icon" variant="ghost" className="size-8">
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="size-8"
+                            onClick={(e) => e.stopPropagation()}
+                          >
                             <MoreHorizontal className="size-4" />
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          {debt.isTripDebt ? (
-                            <DropdownMenuItem disabled>สร้างอัตโนมัติจากทริป</DropdownMenuItem>
+                          {canViewTx && (
+                            <DropdownMenuItem
+                              onClick={() => onViewTransaction(relatedTxId!)}
+                            >
+                              ดูรายละเอียดธุรกรรม
+                            </DropdownMenuItem>
+                          )}
+                          {debt.isTripDebt || debt.isTransactionDebt ? (
+                            <DropdownMenuItem disabled>
+                              {debt.isTripDebt ? 'สร้างอัตโนมัติจากทริป' : 'สร้างอัตโนมัติจากธุรกรรม'}
+                            </DropdownMenuItem>
                           ) : (
                             <DropdownMenuItem
                               className="text-destructive"
@@ -228,7 +267,7 @@ export default function DebtsPage() {
   const { user } = useAuth()
   const { debts, loading, addDebt, settleDebt, removeDebt } = useDebts()
   const { tripDebts, loading: tripLoading } = useTripDebts()
-  const { transactions } = useTransactions()
+  const { transactions, editTransaction } = useTransactions()
 
   const txById = React.useMemo(() => {
     const map = new Map<string, Transaction>()
@@ -246,13 +285,23 @@ export default function DebtsPage() {
   const [settleDebtData, setSettleDebtData] = React.useState<UIGlobalDebt | null>(null)
   const [isSettleOpen, setIsSettleOpen] = React.useState(false)
   const [settleAmount, setSettleAmount] = React.useState<string>('')
+  const [editingTransaction, setEditingTransaction] = React.useState<Transaction | null>(null)
+  const [isTxDetailOpen, setIsTxDetailOpen] = React.useState(false)
 
   if (loading || tripLoading) {
     return <div className="p-6">Loading debts...</div>
   }
 
-  // Map manual debts
-  const manualPending = debts.filter(d => d.status === 'pending').map(d => ({ ...d } as UIGlobalDebt))
+  // Map manual debts (includes auto-synced transaction debts)
+  const manualPending = debts
+    .filter((d) => d.status === 'pending')
+    .map(
+      (d) =>
+        ({
+          ...d,
+          isTransactionDebt: (d.relatedTxIds?.length ?? 0) > 0,
+        }) as UIGlobalDebt
+    )
   
   // Map trip debts
   const mappedTripDebts: UIGlobalDebt[] = tripDebts.map(td => {
@@ -342,6 +391,13 @@ export default function DebtsPage() {
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'บันทึกการชำระไม่สำเร็จ')
     }
+  }
+
+  const handleViewTransaction = (txId: string) => {
+    const tx = txById.get(txId)
+    if (!tx) return
+    setEditingTransaction(tx)
+    setIsTxDetailOpen(true)
   }
 
   const handleAddDebt = async () => {
@@ -479,7 +535,7 @@ export default function DebtsPage() {
       </Card>
 
       {/* Debts Tabs */}
-      <Tabs defaultValue="owed-to-you" className="w-full">
+      <Tabs defaultValue="you-owe" className="w-full">
         <TabsList className="w-full justify-start">
           <TabsTrigger value="you-owe" className="gap-2">
               <AlertCircle className="size-4" />
@@ -502,20 +558,6 @@ export default function DebtsPage() {
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="owed-to-you" className="mt-4">
-          {owedToYou.length === 0 ? (
-            <div className="py-8 text-center text-muted-foreground">ยังไม่มีใครติดเงินคุณ</div>
-          ) : (
-            <DebtTable
-              debts={owedToYou}
-              type="owed"
-              txById={txById}
-              onSettle={handleSettleClick}
-              onDelete={removeDebt}
-            />
-          )}
-        </TabsContent>
-
         <TabsContent value="you-owe" className="mt-4">
           {youOwe.length === 0 ? (
             <div className="py-8 text-center text-muted-foreground">คุณยังไม่ติดใคร</div>
@@ -526,6 +568,22 @@ export default function DebtsPage() {
               txById={txById}
               onSettle={handleSettleClick}
               onDelete={removeDebt}
+              onViewTransaction={handleViewTransaction}
+            />
+          )}
+        </TabsContent>
+
+        <TabsContent value="owed-to-you" className="mt-4">
+          {owedToYou.length === 0 ? (
+            <div className="py-8 text-center text-muted-foreground">ยังไม่มีใครติดเงินคุณ</div>
+          ) : (
+            <DebtTable
+              debts={owedToYou}
+              type="owed"
+              txById={txById}
+              onSettle={handleSettleClick}
+              onDelete={removeDebt}
+              onViewTransaction={handleViewTransaction}
             />
           )}
         </TabsContent>
@@ -611,6 +669,39 @@ export default function DebtsPage() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      <Dialog
+        open={isTxDetailOpen}
+        onOpenChange={(open) => {
+          setIsTxDetailOpen(open)
+          if (!open) setEditingTransaction(null)
+        }}
+      >
+        <DialogContent className="max-h-[90vh] overflow-y-auto overflow-x-hidden sm:max-w-[680px]">
+          <DialogHeader>
+            <DialogTitle>รายละเอียดธุรกรรม</DialogTitle>
+            <DialogDescription>
+              แก้ไขธุรกรรมนี้จะอัปเดตหนี้ที่เกี่ยวข้องโดยอัตโนมัติ
+            </DialogDescription>
+          </DialogHeader>
+          {editingTransaction && (
+            <TransactionForm
+              key={editingTransaction.id}
+              initialData={editingTransaction}
+              existingTransactions={transactions}
+              onSubmit={async (data) => {
+                await editTransaction(editingTransaction.id!, data)
+                setIsTxDetailOpen(false)
+                setEditingTransaction(null)
+              }}
+              onCancel={() => {
+                setIsTxDetailOpen(false)
+                setEditingTransaction(null)
+              }}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={isSettleOpen} onOpenChange={setIsSettleOpen}>
         <DialogContent>

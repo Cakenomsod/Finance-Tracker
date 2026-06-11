@@ -18,6 +18,8 @@ export interface UserProfile {
   photoURL: string | null;
   partnerId: string | null;
   currency: string;
+  /** User language preference (en | th) */
+  locale?: string;
   defaultCategories: string[];
   immich?: ImmichSettings;
   aiTextProvider?: AiTextProvider;
@@ -54,6 +56,10 @@ export interface Transaction {
   date: Timestamp;
   paidBy: string;
   splitWith: string | null;
+  /** Multi-payer split (display name or Me in userId); preferred over splitWith */
+  payers?: TripExpensePayer[];
+  shares?: TripExpenseShare[];
+  splitMode?: 'equal' | 'custom' | 'solo';
   tripId: string | null;
   receiptUrl: string | null;
   source: ExpenseSource;
@@ -225,5 +231,20 @@ export interface Category {
   icon: string;
   color: string;
   type: 'income' | 'expense';
+  monthlyBudget?: number;
+  createdAt: Timestamp;
+}
+
+export type RecurringFrequency = 'weekly' | 'monthly' | 'yearly';
+
+// recurring_expenses/{id}
+export interface RecurringExpense {
+  id?: string;
+  userId: string;
+  name: string;
+  amount: number;
+  frequency: RecurringFrequency;
+  nextDate: Timestamp;
+  category?: string;
   createdAt: Timestamp;
 }

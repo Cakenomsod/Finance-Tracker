@@ -2,16 +2,12 @@
 
 import * as React from 'react'
 import {
-  User,
-  CreditCard,
   Bell,
   Palette,
   Shield,
   Download,
   Trash2,
   ChevronRight,
-  Plus,
-  Edit2,
   Sparkles,
   MessageCircle,
   Moon,
@@ -22,52 +18,20 @@ import {
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Separator } from '@/components/ui/separator'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { cn } from '@/lib/utils'
 import { useTheme } from 'next-themes'
 import { useUserSettings } from '@/hooks/use-user-settings'
-import { AiTextProvider } from '@/lib/firestore-types'
+import { useLocale } from '@/components/locale-provider'
+import { ProfileSettings } from '@/components/settings/profile-settings'
+import { CategoriesSettings } from '@/components/settings/categories-settings'
+import { RecurringExpensesSettings } from '@/components/settings/recurring-expenses-settings'
 import { toast } from 'sonner'
 
-import { auth } from '@/lib/firebase'; // 🔑 เพิ่มบรรทัดนี้ที่บนสุดของไฟล์
-
-// Mock data
-const categories = [
-  { id: '1', name: 'Food & Dining', icon: '🍜', color: '#10B981', budget: 15000 },
-  { id: '2', name: 'Transport', icon: '🚇', color: '#F59E0B', budget: 5000 },
-  { id: '3', name: 'Shopping', icon: '🛍️', color: '#EF4444', budget: 8000 },
-  { id: '4', name: 'Entertainment', icon: '🎬', color: '#8B5CF6', budget: 5000 },
-  { id: '5', name: 'Bills & Utilities', icon: '📄', color: '#3B82F6', budget: 7000 },
-  { id: '6', name: 'Health & Fitness', icon: '💪', color: '#EC4899', budget: 3000 },
-]
-
-const recurringExpenses = [
-  { id: '1', name: 'Netflix', amount: 419, frequency: 'Monthly', nextDate: '2024-07-01' },
-  { id: '2', name: 'Spotify', amount: 149, frequency: 'Monthly', nextDate: '2024-07-05' },
-  { id: '3', name: 'Gym Membership', amount: 1200, frequency: 'Monthly', nextDate: '2024-07-10' },
-  { id: '4', name: 'Internet', amount: 599, frequency: 'Monthly', nextDate: '2024-07-15' },
-]
+import { auth } from '@/lib/firebase'
 
 const notificationSettings = [
   { id: 'daily_summary', title: 'Daily Summary', description: 'Receive daily spending summary', enabled: true },
@@ -79,7 +43,8 @@ const notificationSettings = [
 
 export default function SettingsPage() {
   const { theme, setTheme, resolvedTheme } = useTheme()
-  const { immich, localAiBaseUrl } = useUserSettings()
+  const { immich } = useUserSettings()
+  const { t } = useLocale()
   const [mounted, setMounted] = React.useState(false)
   const [notifications, setNotifications] = React.useState(notificationSettings)
   const [testingImmich, setTestingImmich] = React.useState(false)
@@ -147,190 +112,13 @@ export default function SettingsPage() {
     <div className="flex flex-col gap-6 p-6">
       {/* Page Header */}
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
-        <p className="text-muted-foreground">
-          Manage your account and app preferences.
-        </p>
+        <h1 className="text-2xl font-semibold tracking-tight">{t('settings.title')}</h1>
+        <p className="text-muted-foreground">{t('settings.subtitle')}</p>
       </div>
 
-      {/* Profile Section */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <User className="size-5" />
-            Profile
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center gap-4">
-            <Avatar className="size-16">
-              <AvatarFallback className="bg-primary/20 text-primary text-xl">
-                JD
-              </AvatarFallback>
-            </Avatar>
-            <div className="flex-1">
-              <h3 className="text-lg font-semibold">John Doe</h3>
-              <p className="text-sm text-muted-foreground">john@example.com</p>
-            </div>
-            <Button variant="outline">Edit Profile</Button>
-          </div>
-          <Separator className="my-6" />
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="grid gap-2">
-              <Label htmlFor="currency">Currency</Label>
-              <Select defaultValue="thb">
-                <SelectTrigger id="currency">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="thb">Thai Baht (฿)</SelectItem>
-                  <SelectItem value="usd">US Dollar ($)</SelectItem>
-                  <SelectItem value="eur">Euro (€)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="language">Language</Label>
-              <Select defaultValue="en">
-                <SelectTrigger id="language">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="en">English</SelectItem>
-                  <SelectItem value="th">ไทย</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Categories Management */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <div>
-            <CardTitle className="flex items-center gap-2">
-              <CreditCard className="size-5" />
-              Categories
-            </CardTitle>
-            <CardDescription>Manage spending categories and budgets</CardDescription>
-          </div>
-          <Dialog>
-            <DialogTrigger asChild>
-              <Button size="sm" className="gap-2">
-                <Plus className="size-4" />
-                Add Category
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Add Category</DialogTitle>
-                <DialogDescription>Create a new spending category</DialogDescription>
-              </DialogHeader>
-              <div className="grid gap-4 py-4">
-                <div className="grid gap-2">
-                  <Label>Category Name</Label>
-                  <Input placeholder="e.g., Groceries" />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="grid gap-2">
-                    <Label>Icon</Label>
-                    <Input placeholder="🛒" />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label>Monthly Budget (฿)</Label>
-                    <Input type="number" placeholder="5000" />
-                  </div>
-                </div>
-              </div>
-              <DialogFooter>
-                <Button>Save Category</Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            {categories.map((category) => (
-              <div
-                key={category.id}
-                className="flex items-center justify-between rounded-lg border p-3"
-              >
-                <div className="flex items-center gap-3">
-                  <div
-                    className="flex size-10 items-center justify-center rounded-lg text-lg"
-                    style={{ backgroundColor: `${category.color}20` }}
-                  >
-                    {category.icon}
-                  </div>
-                  <div>
-                    <p className="font-medium">{category.name}</p>
-                    <p className="text-sm text-muted-foreground">
-                      Budget: ฿{category.budget.toLocaleString()}/month
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button variant="ghost" size="icon">
-                    <Edit2 className="size-4" />
-                  </Button>
-                  <Button variant="ghost" size="icon" className="text-destructive">
-                    <Trash2 className="size-4" />
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Recurring Expenses */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <div>
-            <CardTitle className="flex items-center gap-2">
-              <CreditCard className="size-5" />
-              Recurring Expenses
-            </CardTitle>
-            <CardDescription>Track subscriptions and regular payments</CardDescription>
-          </div>
-          <Button size="sm" variant="outline" className="gap-2">
-            <Plus className="size-4" />
-            Add Recurring
-          </Button>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            {recurringExpenses.map((expense) => (
-              <div
-                key={expense.id}
-                className="flex items-center justify-between rounded-lg border p-3"
-              >
-                <div>
-                  <p className="font-medium">{expense.name}</p>
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Badge variant="outline" className="text-xs">
-                      {expense.frequency}
-                    </Badge>
-                    <span>Next: {new Date(expense.nextDate).toLocaleDateString('en-US', {
-                      month: 'short',
-                      day: 'numeric',
-                    })}</span>
-                  </div>
-                </div>
-                <div className="flex items-center gap-4">
-                  <span className="font-semibold tabular-nums">
-                    ฿{expense.amount.toLocaleString()}
-                  </span>
-                  <Button variant="ghost" size="icon">
-                    <Edit2 className="size-4" />
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+      <ProfileSettings />
+      <CategoriesSettings />
+      <RecurringExpensesSettings />
 
       {/* Notifications */}
       <Card>
