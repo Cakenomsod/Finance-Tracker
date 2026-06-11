@@ -193,6 +193,14 @@ export interface FriendRequest {
   updatedAt: Timestamp;
 }
 
+/** custom_friends/{id} — local-only contacts without an app account */
+export interface CustomFriend {
+  id?: string;
+  userId: string;
+  name: string;
+  createdAt: Timestamp;
+}
+
 // categories/{categoryId}
 export interface Category {
   id?: string;

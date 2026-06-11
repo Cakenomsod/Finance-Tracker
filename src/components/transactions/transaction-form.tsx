@@ -26,6 +26,7 @@ import { Label } from '@/components/ui/label'
 import { Transaction } from '@/lib/firestore-types'
 import { Timestamp } from 'firebase/firestore'
 import { useTrips } from '@/hooks/use-trips'
+import { ContactSelect } from '@/components/friends/contact-select'
 
 const formSchema = z.object({
   amount: z.string().min(1, 'Amount is required'),
@@ -414,7 +415,11 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
               <FormItem>
                 <FormLabel>Paid By</FormLabel>
                 <FormControl>
-                  <Input placeholder="Me or Friend's name" {...field} />
+                  <ContactSelect
+                    value={field.value || 'Me'}
+                    onChange={field.onChange}
+                    placeholder="เลือกผู้จ่าย"
+                  />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -428,7 +433,13 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
               <FormItem>
                 <FormLabel>Split With</FormLabel>
                 <FormControl>
-                  <Input placeholder="Friend's name (optional)" {...field} />
+                  <ContactSelect
+                    value={field.value || ''}
+                    onChange={field.onChange}
+                    placeholder="เลือกผู้แบ่งจ่าย (ไม่บังคับ)"
+                    allowNone
+                    includeMe={false}
+                  />
                 </FormControl>
                 <FormMessage />
               </FormItem>

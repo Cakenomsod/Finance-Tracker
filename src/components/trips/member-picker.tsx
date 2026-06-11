@@ -26,7 +26,7 @@ interface MemberPickerProps {
 }
 
 export function MemberPicker({ value, onChange, selfUid, className }: MemberPickerProps) {
-  const { friends } = useFriends()
+  const { friends, customFriends } = useFriends()
   const [manualName, setManualName] = React.useState('')
 
   const selectedKeys = new Set(value.map((m) => m.key))
@@ -72,9 +72,9 @@ export function MemberPicker({ value, onChange, selfUid, className }: MemberPick
       )}
 
       {/* Friends list */}
-      {availableFriends.length > 0 && (
+      {(availableFriends.length > 0 || customFriends.length > 0) && (
         <div>
-          <p className="text-xs text-muted-foreground mb-2">เพื่อนของคุณ</p>
+          <p className="text-xs text-muted-foreground mb-2">รายชื่อของคุณ</p>
           <div className="flex flex-wrap gap-2">
             {availableFriends.map((f) => {
               const isSelected = selectedKeys.has(f.uid)
@@ -96,6 +96,31 @@ export function MemberPicker({ value, onChange, selfUid, className }: MemberPick
                     </AvatarFallback>
                   </Avatar>
                   {f.displayName}
+                  {isSelected && <UserCheck className="size-3" />}
+                </button>
+              )
+            })}
+            {customFriends.map((cf) => {
+              const key = `custom:${cf.id}`
+              const isSelected = selectedKeys.has(key)
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => toggle({ key, displayName: cf.name, isManual: true })}
+                  className={cn(
+                    'flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-medium transition-all',
+                    isSelected
+                      ? 'bg-primary text-primary-foreground border-primary'
+                      : 'bg-background border-border hover:border-primary/50'
+                  )}
+                >
+                  <Avatar className="size-5">
+                    <AvatarFallback className="text-[9px]">
+                      {cf.name.substring(0, 2).toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
+                  {cf.name}
                   {isSelected && <UserCheck className="size-3" />}
                 </button>
               )

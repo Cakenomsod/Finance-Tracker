@@ -15,8 +15,6 @@ import {
   Tag,
   User,
   X,
-  Sparkles,
-  Check,
 } from 'lucide-react'
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -87,12 +85,6 @@ const categoryColors: Record<string, string> = {
   'Income': 'bg-primary/20 text-primary',
 }
 
-interface ParsedItem {
-  name: string
-  amount: number
-  category: string
-}
-
 export default function TransactionsPage() {
   const { transactions, loading: txLoading, addTransaction, editTransaction, removeTransaction } = useTransactions()
   const { allTripExpenses, loading: tripLoading } = useAllTripExpenses()
@@ -102,9 +94,6 @@ export default function TransactionsPage() {
   const [searchQuery, setSearchQuery] = React.useState('')
   const [selectedCategory, setSelectedCategory] = React.useState('All Categories')
   const [selectedRows, setSelectedRows] = React.useState<string[]>([])
-  const [naturalInput, setNaturalInput] = React.useState('')
-  const [parsedItems, setParsedItems] = React.useState<ParsedItem[]>([])
-  const [showParsedDialog, setShowParsedDialog] = React.useState(false)
   const [isAddDialogOpen, setIsAddDialogOpen] = React.useState(false)
   const [editingTransaction, setEditingTransaction] = React.useState<Transaction | null>(null)
   const [ocrDraft, setOcrDraft] = React.useState<Omit<Transaction, 'id' | 'createdAt' | 'userId'> | null>(null)
@@ -163,29 +152,6 @@ export default function TransactionsPage() {
     return matchesSearch && matchesCategory
   })
 
-  // Handle natural language input
-  const handleNaturalInput = () => {
-    if (!naturalInput.trim()) return
-
-    // Simple parser for natural language input like "Fried rice 60 coffee 45 water 20"
-    const regex = /([a-zA-Z\s]+)\s*(\d+)/g
-    const items: ParsedItem[] = []
-    let match
-
-    while ((match = regex.exec(naturalInput)) !== null) {
-      items.push({
-        name: match[1].trim(),
-        amount: parseInt(match[2], 10),
-        category: 'Food & Dining', // Default category
-      })
-    }
-
-    if (items.length > 0) {
-      setParsedItems(items)
-      setShowParsedDialog(true)
-    }
-  }
-
   const handleRowSelect = (id: string) => {
     setSelectedRows((prev) =>
       prev.includes(id) ? prev.filter((rowId) => rowId !== id) : [...prev, id]
@@ -217,29 +183,6 @@ export default function TransactionsPage() {
           setIsAddDialogOpen(true)
         }}
       />
-
-      {/* Natural Language Input */}
-      <Card className="border-dashed border-primary/30 bg-gradient-to-r from-primary/5 to-transparent">
-        <CardContent className="pt-6">
-          <div className="flex items-center gap-2">
-            <Sparkles className="size-5 text-primary" />
-            <span className="text-sm font-medium">Quick Add with AI</span>
-          </div>
-          <div className="mt-3 flex gap-2">
-            <Input
-              placeholder="Type naturally: &quot;Fried rice 60 coffee 45 water 20&quot;"
-              value={naturalInput}
-              onChange={(e) => setNaturalInput(e.target.value)}
-              className="flex-1"
-              onKeyDown={(e) => e.key === 'Enter' && handleNaturalInput()}
-            />
-            <Button onClick={handleNaturalInput}>Parse & Add</Button>
-          </div>
-          <p className="mt-2 text-xs text-muted-foreground">
-            AI will automatically detect item names, amounts, and categories
-          </p>
-        </CardContent>
-      </Card>
 
       {/* Filters and Actions */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -559,57 +502,6 @@ export default function TransactionsPage() {
           </CardContent>
         </Card>
       </div>
-
-      {/* Parsed Items Dialog */}
-      <Dialog open={showParsedDialog} onOpenChange={setShowParsedDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Confirm Parsed Items</DialogTitle>
-            <DialogDescription>
-              Review the items parsed from your input before saving.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3 py-4">
-            {parsedItems.map((item, index) => (
-              <div
-                key={index}
-                className="flex items-center justify-between rounded-lg border p-3"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="flex size-8 items-center justify-center rounded-lg bg-muted">
-                    <Check className="size-4 text-primary" />
-                  </div>
-                  <div>
-                    <p className="font-medium capitalize">{item.name}</p>
-                    <p className="text-xs text-muted-foreground">{item.category}</p>
-                  </div>
-                </div>
-                <span className="font-semibold tabular-nums">฿{item.amount}</span>
-              </div>
-            ))}
-            <div className="flex items-center justify-between border-t pt-3">
-              <span className="font-medium">Total</span>
-              <span className="text-lg font-bold">
-                ฿{parsedItems.reduce((sum, item) => sum + item.amount, 0)}
-              </span>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowParsedDialog(false)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={() => {
-                setShowParsedDialog(false)
-                setNaturalInput('')
-                setParsedItems([])
-              }}
-            >
-              Save All
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Floating Add Button (Mobile) */}
       <Button

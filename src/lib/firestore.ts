@@ -16,7 +16,7 @@ import {
 import { db } from './firebase';
 import {
   Transaction, Debt, Trip, Category,
-  TripExpense, TripSettlement, FriendRequest,
+  TripExpense, TripSettlement, FriendRequest, CustomFriend,
 } from './firestore-types';
 
 // Collection References
@@ -28,6 +28,7 @@ export const categoriesRef = collection(db, 'categories');
 export const tripExpensesRef = collection(db, 'trip_expenses');
 export const tripSettlementsRef = collection(db, 'trip_settlements');
 export const friendRequestsRef = collection(db, 'friend_requests');
+export const customFriendsRef = collection(db, 'custom_friends');
 
 // --- Transactions ---
 
@@ -176,6 +177,23 @@ export const getUserProfile = async (uid: string) => {
   const snap = await getDoc(doc(db, 'users', uid));
   if (!snap.exists()) return null;
   return { uid: snap.id, ...snap.data() } as { uid: string; displayName: string; email: string; photoURL: string | null };
+};
+
+// --- Custom Friends (local contacts without app account) ---
+
+export const createCustomFriend = async (userId: string, name: string) => {
+  const trimmed = name.trim();
+  if (!trimmed) throw new Error('กรุณากรอกชื่อ');
+
+  return await addDoc(customFriendsRef, {
+    userId,
+    name: trimmed,
+    createdAt: serverTimestamp(),
+  });
+};
+
+export const deleteCustomFriend = async (id: string) => {
+  return await deleteDoc(doc(db, 'custom_friends', id));
 };
 
 // --- Categories ---
