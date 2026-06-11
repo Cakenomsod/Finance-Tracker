@@ -37,13 +37,10 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 🗑️ 2. สั่งลบรูปภาพ (ส่งอาร์เรย์ ids ตรงๆ เข้าไปตามที่ฟังก์ชันของ client ต้องการ)
-    // หมายเหตุ: มั่นใจว่าด้านบนของไฟล์มีบรรทัด const ids = ... แกะเตรียมไว้แล้วนะคัรบ
     await deleteImmichAssets(immich, ids as string[]);
     
     return NextResponse.json({ ok: true });
   } catch (error) {
-    // 💡 ตรงนี้แหละ! สั่งพ่น log ฝั่งเซิร์ฟเวอร์ดูให้ชัดๆ เลยว่า คอมบ้านตอบปฏิเสธอะไรกลับมา
     console.error('[API Immich Delete] จริงๆ แล้วพังเพราะอะไรกันแน่:', error);
     
     const message = error instanceof Error ? error.message : 'Delete failed';

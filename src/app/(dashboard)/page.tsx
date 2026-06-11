@@ -1,5 +1,8 @@
 'use client'
 
+import * as React from 'react'
+import Link from 'next/link'
+import { format } from 'date-fns'
 import {
   TrendingUp,
   TrendingDown,
@@ -11,6 +14,8 @@ import {
   Sparkles,
   MoreHorizontal,
   Plus,
+  Loader2,
+  MapPin,
 } from 'lucide-react'
 import {
   Bar,
@@ -23,65 +28,50 @@ import {
   XAxis,
   YAxis,
   CartesianGrid,
-  ResponsiveContainer,
 } from 'recharts'
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Progress } from '@/components/ui/progress'
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
-
-// Mock data for charts
-const monthlyData = [
-  { month: 'Jan', income: 45000, expenses: 32000 },
-  { month: 'Feb', income: 48000, expenses: 35000 },
-  { month: 'Mar', income: 52000, expenses: 38000 },
-  { month: 'Apr', income: 47000, expenses: 41000 },
-  { month: 'May', income: 51000, expenses: 36000 },
-  { month: 'Jun', income: 55000, expenses: 42000 },
-]
-
-const spendingTrend = [
-  { day: 'Mon', amount: 1200 },
-  { day: 'Tue', amount: 850 },
-  { day: 'Wed', amount: 1500 },
-  { day: 'Thu', amount: 920 },
-  { day: 'Fri', amount: 2100 },
-  { day: 'Sat', amount: 1800 },
-  { day: 'Sun', amount: 750 },
-]
-
-const categoryData = [
-  { name: 'Food & Dining', value: 12500, color: 'var(--chart-1)' },
-  { name: 'Transport', value: 4200, color: 'var(--chart-2)' },
-  { name: 'Shopping', value: 8300, color: 'var(--chart-3)' },
-  { name: 'Bills', value: 6500, color: 'var(--chart-4)' },
-  { name: 'Entertainment', value: 3200, color: 'var(--chart-5)' },
-]
-
-const recentTransactions = [
-  { id: 1, description: 'Grab Food - Pad Thai', amount: -185, category: 'Food', date: 'Today', icon: '🍜' },
-  { id: 2, description: 'BTS Monthly Pass', amount: -1500, category: 'Transport', date: 'Today', icon: '🚇' },
-  { id: 3, description: 'Salary Deposit', amount: 55000, category: 'Income', date: 'Yesterday', icon: '💰' },
-  { id: 4, description: 'Central Department Store', amount: -2340, category: 'Shopping', date: 'Yesterday', icon: '🛍️' },
-  { id: 5, description: 'Netflix Subscription', amount: -419, category: 'Entertainment', date: '2 days ago', icon: '🎬' },
-]
+import { useTransactions } from '@/hooks/use-transactions'
+import { useAllTripExpenses } from '@/hooks/use-all-trip-expenses'
+import { useDebts } from '@/hooks/use-debts'
+import { useTripDebts } from '@/hooks/use-trip-debts'
+import { useTrips } from '@/hooks/use-trips'
+import { useAuth } from '@/hooks/use-auth'
+import { useUserSettings } from '@/hooks/use-user-settings'
+import { TransactionForm } from '@/components/transactions/transaction-form'
+import {
+  mergeTransactions,
+  filterByTimeRange,
+  filterCurrentMonth,
+  filterPreviousMonth,
+  buildMonthlyOverview,
+  buildCategoryBreakdown,
+  buildWeekdaySpending,
+  getWeekSpendingComparison,
+  getFinancialHabits,
+  computeMonthTotals,
+  computePercentChange,
+  buildDashboardInsights,
+  formatMoney,
+  getDateFromTx,
+  getCategoryIcon,
+} from '@/lib/aggregate-transactions'
 
 const chartConfig = {
-  income: {
-    label: 'Income',
-    color: 'var(--chart-1)',
-  },
-  expenses: {
-    label: 'Expenses',
-    color: 'var(--chart-3)',
-  },
-  amount: {
-    label: 'Amount',
-    color: 'var(--chart-1)',
-  },
+  income: { label: 'Income', color: 'var(--chart-1)' },
+  expenses: { label: 'Expenses', color: 'var(--chart-3)' },
+  amount: { label: 'Amount', color: 'var(--chart-1)' },
 }
 
 function StatCard({
@@ -132,48 +122,183 @@ function StatCard({
   )
 }
 
+function formatRelativeDate(date: Date): string {
+  const now = new Date()
+  const diffMs = now.getTime() - date.getTime()
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+
+  if (diffDays === 0) return 'Today'
+  if (diffDays === 1) return 'Yesterday'
+  if (diffDays < 7) return `${diffDays} days ago`
+  return format(date, 'MMM d')
+}
+
 export default function DashboardPage() {
+  const { user } = useAuth()
+  const { profile } = useUserSettings()
+  const { transactions, loading: txLoading, addTransaction } = useTransactions()
+  const { allTripExpenses, loading: tripLoading } = useAllTripExpenses()
+  const { debts, loading: debtLoading } = useDebts()
+  const { tripDebts, loading: tripDebtLoading } = useTripDebts()
+  const { trips, loading: tripsLoading } = useTrips()
+
+  const [isAddDialogOpen, setIsAddDialogOpen] = React.useState(false)
+
+  const loading = txLoading || tripLoading || debtLoading || tripDebtLoading || tripsLoading
+  const currency = profile?.currency || 'THB'
+
+  const allCombined = React.useMemo(
+    () => mergeTransactions(transactions, allTripExpenses),
+    [transactions, allTripExpenses]
+  )
+
+  const last6Months = React.useMemo(
+    () => filterByTimeRange(allCombined, '6months'),
+    [allCombined]
+  )
+
+  const currentMonth = React.useMemo(() => filterCurrentMonth(allCombined), [allCombined])
+  const previousMonth = React.useMemo(() => filterPreviousMonth(allCombined), [allCombined])
+
+  const monthlyData = React.useMemo(() => buildMonthlyOverview(last6Months), [last6Months])
+  const categoryData = React.useMemo(() => buildCategoryBreakdown(currentMonth), [currentMonth])
+  const spendingTrend = React.useMemo(() => buildWeekdaySpending(allCombined), [allCombined])
+  const weekComparison = React.useMemo(() => getWeekSpendingComparison(allCombined), [allCombined])
+  const habits = React.useMemo(() => getFinancialHabits(last6Months), [last6Months])
+  const insights = React.useMemo(
+    () => buildDashboardInsights(currentMonth, habits),
+    [currentMonth, habits]
+  )
+
+  const currentTotals = React.useMemo(() => computeMonthTotals(currentMonth), [currentMonth])
+  const previousTotals = React.useMemo(() => computeMonthTotals(previousMonth), [previousMonth])
+
+  const netChange = React.useMemo(
+    () => computePercentChange(currentTotals.net, previousTotals.net),
+    [currentTotals.net, previousTotals.net]
+  )
+  const incomeChange = React.useMemo(
+    () => computePercentChange(currentTotals.income, previousTotals.income),
+    [currentTotals.income, previousTotals.income]
+  )
+  const expenseChange = React.useMemo(
+    () => computePercentChange(currentTotals.expenses, previousTotals.expenses),
+    [currentTotals.expenses, previousTotals.expenses]
+  )
+  const savingsChange = React.useMemo(
+    () => computePercentChange(currentTotals.savingsRate, previousTotals.savingsRate),
+    [currentTotals.savingsRate, previousTotals.savingsRate]
+  )
+
+  const recentTransactions = React.useMemo(() => allCombined.slice(0, 5), [allCombined])
+
+  const debtSummary = React.useMemo(() => {
+    const manualPending = debts.filter((d) => d.status === 'pending')
+
+    const mappedTripDebts = tripDebts.map((td) => {
+      if (td.amount > 0) {
+        return {
+          fromUserId: td.personId,
+          toUserId: user!.uid,
+          amount: td.amount,
+        }
+      }
+      return {
+        fromUserId: user!.uid,
+        toUserId: td.personId,
+        amount: Math.abs(td.amount),
+      }
+    })
+
+    const allPending = [
+      ...manualPending.map((d) => ({ fromUserId: d.fromUserId, toUserId: d.toUserId, amount: d.amount })),
+      ...mappedTripDebts,
+    ]
+
+    const youOwe = allPending.filter((d) => d.fromUserId === user?.uid)
+    const owedToYou = allPending.filter((d) => d.toUserId === user?.uid)
+
+    const totalOwed = youOwe.reduce((sum, d) => sum + d.amount, 0)
+    const totalOwedToYou = owedToYou.reduce((sum, d) => sum + d.amount, 0)
+    const netBalance = totalOwedToYou - totalOwed
+
+    const uniqueOwePeople = new Set(youOwe.map((d) => d.toUserId)).size
+    const uniqueOwedPeople = new Set(owedToYou.map((d) => d.fromUserId)).size
+
+    return { totalOwed, totalOwedToYou, netBalance, uniqueOwePeople, uniqueOwedPeople }
+  }, [debts, tripDebts, user])
+
+  const activeTrips = React.useMemo(
+    () => trips.filter((t) => t.status === 'active'),
+    [trips]
+  )
+
+  const currentMonthLabel = format(new Date(), 'MMMM yyyy')
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center p-12">
+        <div className="text-center">
+          <Loader2 className="mx-auto size-8 animate-spin text-muted-foreground" />
+          <p className="mt-2 text-muted-foreground">Loading dashboard...</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="flex flex-col gap-6 p-6">
       {/* Page Header */}
       <div className="flex flex-col gap-1">
         <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
         <p className="text-muted-foreground">
-          Welcome back! Here&apos;s your financial overview for June 2024.
+          Welcome back! Here&apos;s your financial overview for {currentMonthLabel}.
+          {activeTrips.length > 0 && (
+            <span className="ml-2 inline-flex items-center gap-1">
+              <MapPin className="size-3" />
+              {activeTrips.length} active trip{activeTrips.length > 1 ? 's' : ''}
+            </span>
+          )}
         </p>
       </div>
 
       {/* Quick Stats Grid */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <StatCard
-          title="Total Balance"
-          value="฿127,450"
-          change="+12.5%"
-          changeType="positive"
+          title="Net Cash Flow"
+          value={formatMoney(currentTotals.net, currency, true)}
+          change={netChange.value}
+          changeType={netChange.type}
           icon={Wallet}
           subtitle="vs last month"
         />
         <StatCard
           title="Monthly Income"
-          value="฿55,000"
-          change="+8.2%"
-          changeType="positive"
+          value={formatMoney(currentTotals.income, currency)}
+          change={incomeChange.value}
+          changeType={incomeChange.type}
           icon={ArrowUpRight}
           subtitle="vs last month"
         />
         <StatCard
           title="Monthly Expenses"
-          value="฿42,000"
-          change="+15.3%"
-          changeType="negative"
+          value={formatMoney(currentTotals.expenses, currency)}
+          change={expenseChange.value}
+          changeType={
+            expenseChange.type === 'positive'
+              ? 'negative'
+              : expenseChange.type === 'negative'
+                ? 'positive'
+                : 'neutral'
+          }
           icon={ArrowDownRight}
           subtitle="vs last month"
         />
         <StatCard
           title="Savings Rate"
-          value="23.6%"
-          change="-3.1%"
-          changeType="negative"
+          value={`${currentTotals.savingsRate}%`}
+          change={savingsChange.value}
+          changeType={savingsChange.type}
           icon={TrendingUp}
           subtitle="vs last month"
         />
@@ -188,31 +313,39 @@ export default function DashboardPage() {
               <CardTitle>Income vs Expenses</CardTitle>
               <CardDescription>Monthly comparison over 6 months</CardDescription>
             </div>
-            <Button variant="ghost" size="icon">
-              <MoreHorizontal className="size-4" />
+            <Button variant="ghost" size="icon" asChild>
+              <Link href="/analytics">
+                <MoreHorizontal className="size-4" />
+              </Link>
             </Button>
           </CardHeader>
           <CardContent>
-            <ChartContainer config={chartConfig} className="h-[280px] w-full">
-              <BarChart data={monthlyData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" vertical={false} />
-                <XAxis
-                  dataKey="month"
-                  tickLine={false}
-                  axisLine={false}
-                  className="text-xs fill-muted-foreground"
-                />
-                <YAxis
-                  tickLine={false}
-                  axisLine={false}
-                  tickFormatter={(value) => `฿${value / 1000}k`}
-                  className="text-xs fill-muted-foreground"
-                />
-                <ChartTooltip content={<ChartTooltipContent />} />
-                <Bar dataKey="income" fill="var(--chart-1)" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="expenses" fill="var(--chart-3)" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ChartContainer>
+            {monthlyData.length > 0 ? (
+              <ChartContainer config={chartConfig} className="h-[280px] w-full">
+                <BarChart data={monthlyData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" vertical={false} />
+                  <XAxis
+                    dataKey="month"
+                    tickLine={false}
+                    axisLine={false}
+                    className="text-xs fill-muted-foreground"
+                  />
+                  <YAxis
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={(value) => `฿${value / 1000}k`}
+                    className="text-xs fill-muted-foreground"
+                  />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <Bar dataKey="income" fill="var(--chart-1)" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="expenses" fill="var(--chart-3)" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ChartContainer>
+            ) : (
+              <div className="flex h-[280px] items-center justify-center text-muted-foreground">
+                No transaction data yet
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -223,39 +356,47 @@ export default function DashboardPage() {
             <CardDescription>This month&apos;s breakdown</CardDescription>
           </CardHeader>
           <CardContent>
-            <ChartContainer config={chartConfig} className="mx-auto h-[180px] w-full">
-              <PieChart>
-                <ChartTooltip content={<ChartTooltipContent />} />
-                <Pie
-                  data={categoryData}
-                  dataKey="value"
-                  nameKey="name"
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={50}
-                  outerRadius={80}
-                  paddingAngle={2}
-                >
-                  {categoryData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
+            {categoryData.length > 0 ? (
+              <>
+                <ChartContainer config={chartConfig} className="mx-auto h-[180px] w-full">
+                  <PieChart>
+                    <ChartTooltip content={<ChartTooltipContent />} />
+                    <Pie
+                      data={categoryData}
+                      dataKey="value"
+                      nameKey="name"
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={50}
+                      outerRadius={80}
+                      paddingAngle={2}
+                    >
+                      {categoryData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                  </PieChart>
+                </ChartContainer>
+                <div className="mt-4 space-y-2">
+                  {categoryData.slice(0, 3).map((category) => (
+                    <div key={category.name} className="flex items-center justify-between text-sm">
+                      <div className="flex items-center gap-2">
+                        <div
+                          className="size-3 rounded-full"
+                          style={{ backgroundColor: category.color }}
+                        />
+                        <span className="text-muted-foreground">{category.name}</span>
+                      </div>
+                      <span className="font-medium">{formatMoney(category.value, currency)}</span>
+                    </div>
                   ))}
-                </Pie>
-              </PieChart>
-            </ChartContainer>
-            <div className="mt-4 space-y-2">
-              {categoryData.slice(0, 3).map((category) => (
-                <div key={category.name} className="flex items-center justify-between text-sm">
-                  <div className="flex items-center gap-2">
-                    <div
-                      className="size-3 rounded-full"
-                      style={{ backgroundColor: category.color }}
-                    />
-                    <span className="text-muted-foreground">{category.name}</span>
-                  </div>
-                  <span className="font-medium">฿{category.value.toLocaleString()}</span>
                 </div>
-              ))}
-            </div>
+              </>
+            ) : (
+              <div className="flex h-[180px] items-center justify-center text-muted-foreground">
+                No expenses this month
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -266,38 +407,55 @@ export default function DashboardPage() {
               <CardTitle>Weekly Spending Trend</CardTitle>
               <CardDescription>Daily spending pattern this week</CardDescription>
             </div>
-            <Badge variant="secondary" className="bg-primary/10 text-primary">
-              <TrendingDown className="mr-1 size-3" />
-              -8% vs last week
-            </Badge>
+            {weekComparison.value !== 'New' && weekComparison.value !== '0%' && (
+              <Badge
+                variant="secondary"
+                className={cn(
+                  weekComparison.type === 'negative' ? 'bg-primary/10 text-primary' : 'bg-destructive/10 text-destructive'
+                )}
+              >
+                {weekComparison.type === 'negative' ? (
+                  <TrendingDown className="mr-1 size-3" />
+                ) : (
+                  <TrendingUp className="mr-1 size-3" />
+                )}
+                {weekComparison.value} vs last week
+              </Badge>
+            )}
           </CardHeader>
           <CardContent>
-            <ChartContainer config={chartConfig} className="h-[200px] w-full">
-              <LineChart data={spendingTrend} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" vertical={false} />
-                <XAxis
-                  dataKey="day"
-                  tickLine={false}
-                  axisLine={false}
-                  className="text-xs fill-muted-foreground"
-                />
-                <YAxis
-                  tickLine={false}
-                  axisLine={false}
-                  tickFormatter={(value) => `฿${value}`}
-                  className="text-xs fill-muted-foreground"
-                />
-                <ChartTooltip content={<ChartTooltipContent />} />
-                <Line
-                  type="monotone"
-                  dataKey="amount"
-                  stroke="var(--chart-1)"
-                  strokeWidth={2}
-                  dot={{ fill: 'var(--chart-1)', r: 4 }}
-                  activeDot={{ r: 6 }}
-                />
-              </LineChart>
-            </ChartContainer>
+            {spendingTrend.some((d) => d.amount > 0) ? (
+              <ChartContainer config={chartConfig} className="h-[200px] w-full">
+                <LineChart data={spendingTrend} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" vertical={false} />
+                  <XAxis
+                    dataKey="day"
+                    tickLine={false}
+                    axisLine={false}
+                    className="text-xs fill-muted-foreground"
+                  />
+                  <YAxis
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={(value) => `฿${value}`}
+                    className="text-xs fill-muted-foreground"
+                  />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <Line
+                    type="monotone"
+                    dataKey="amount"
+                    stroke="var(--chart-1)"
+                    strokeWidth={2}
+                    dot={{ fill: 'var(--chart-1)', r: 4 }}
+                    activeDot={{ r: 6 }}
+                  />
+                </LineChart>
+              </ChartContainer>
+            ) : (
+              <div className="flex h-[200px] items-center justify-center text-muted-foreground">
+                No spending this week yet
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -308,8 +466,8 @@ export default function DashboardPage() {
               <CardTitle>Debt Summary</CardTitle>
               <CardDescription>Shared expenses overview</CardDescription>
             </div>
-            <Button variant="ghost" size="sm">
-              View All
+            <Button variant="ghost" size="sm" asChild>
+              <Link href="/debts">View All</Link>
             </Button>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -319,9 +477,13 @@ export default function DashboardPage() {
                   <Users className="size-4 text-destructive" />
                   <span className="text-sm font-medium">You Owe</span>
                 </div>
-                <span className="text-lg font-bold text-destructive">฿3,250</span>
+                <span className="text-lg font-bold text-destructive">
+                  {formatMoney(debtSummary.totalOwed, currency)}
+                </span>
               </div>
-              <p className="mt-1 text-xs text-muted-foreground">2 people</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {debtSummary.uniqueOwePeople} {debtSummary.uniqueOwePeople === 1 ? 'person' : 'people'}
+              </p>
             </div>
             <div className="rounded-lg bg-primary/10 p-4">
               <div className="flex items-center justify-between">
@@ -329,13 +491,25 @@ export default function DashboardPage() {
                   <CreditCard className="size-4 text-primary" />
                   <span className="text-sm font-medium">Owed to You</span>
                 </div>
-                <span className="text-lg font-bold text-primary">฿5,800</span>
+                <span className="text-lg font-bold text-primary">
+                  {formatMoney(debtSummary.totalOwedToYou, currency)}
+                </span>
               </div>
-              <p className="mt-1 text-xs text-muted-foreground">3 people</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {debtSummary.uniqueOwedPeople}{' '}
+                {debtSummary.uniqueOwedPeople === 1 ? 'person' : 'people'}
+              </p>
             </div>
             <div className="flex items-center justify-between border-t pt-4">
               <span className="text-sm text-muted-foreground">Net Balance</span>
-              <span className="text-lg font-bold text-primary">+฿2,550</span>
+              <span
+                className={cn(
+                  'text-lg font-bold',
+                  debtSummary.netBalance >= 0 ? 'text-primary' : 'text-destructive'
+                )}
+              >
+                {formatMoney(debtSummary.netBalance, currency, true)}
+              </span>
             </div>
           </CardContent>
         </Card>
@@ -350,43 +524,48 @@ export default function DashboardPage() {
               <CardTitle>Recent Transactions</CardTitle>
               <CardDescription>Your latest financial activities</CardDescription>
             </div>
-            <Button variant="outline" size="sm">
-              View All
+            <Button variant="outline" size="sm" asChild>
+              <Link href="/transactions">View All</Link>
             </Button>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              {recentTransactions.map((transaction) => (
-                <div
-                  key={transaction.id}
-                  className="flex items-center justify-between rounded-lg p-2 transition-colors hover:bg-muted/50"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="flex size-10 items-center justify-center rounded-lg bg-muted text-lg">
-                      {transaction.icon}
-                    </div>
-                    <div>
-                      <p className="font-medium">{transaction.description}</p>
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <Badge variant="outline" className="text-[10px]">
-                          {transaction.category}
-                        </Badge>
-                        <span>{transaction.date}</span>
+            {recentTransactions.length > 0 ? (
+              <div className="space-y-4">
+                {recentTransactions.map((transaction) => (
+                  <div
+                    key={transaction.id}
+                    className="flex items-center justify-between rounded-lg p-2 transition-colors hover:bg-muted/50"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="flex size-10 items-center justify-center rounded-lg bg-muted text-lg">
+                        {getCategoryIcon(transaction.category, transaction.amountThb)}
+                      </div>
+                      <div>
+                        <p className="font-medium">{transaction.description}</p>
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <Badge variant="outline" className="text-[10px]">
+                            {transaction.category}
+                          </Badge>
+                          <span>{formatRelativeDate(getDateFromTx(transaction))}</span>
+                        </div>
                       </div>
                     </div>
+                    <span
+                      className={cn(
+                        'font-semibold tabular-nums',
+                        transaction.amountThb > 0 ? 'text-primary' : 'text-foreground'
+                      )}
+                    >
+                      {formatMoney(transaction.amountThb, currency, true)}
+                    </span>
                   </div>
-                  <span
-                    className={cn(
-                      'font-semibold tabular-nums',
-                      transaction.amount > 0 ? 'text-primary' : 'text-foreground'
-                    )}
-                  >
-                    {transaction.amount > 0 ? '+' : ''}฿
-                    {Math.abs(transaction.amount).toLocaleString()}
-                  </span>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            ) : (
+              <div className="py-8 text-center text-muted-foreground">
+                No transactions yet. Add your first one below.
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -397,31 +576,42 @@ export default function DashboardPage() {
               <div className="rounded-lg bg-primary/20 p-2">
                 <Sparkles className="size-4 text-primary" />
               </div>
-              <CardTitle>AI Insights</CardTitle>
+              <CardTitle>Insights</CardTitle>
             </div>
-            <CardDescription>Smart observations from your data</CardDescription>
+            <CardDescription>Observations from your spending data</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="rounded-lg bg-background/50 p-3">
-              <p className="text-sm">
-                <span className="font-medium text-warning">Spending Alert:</span> You spent 35% more on
-                food this month compared to your average.
-              </p>
-            </div>
-            <div className="rounded-lg bg-background/50 p-3">
-              <p className="text-sm">
-                <span className="font-medium text-primary">Pattern Detected:</span> Your weekend
-                spending is typically 2x higher than weekdays.
-              </p>
-            </div>
-            <div className="rounded-lg bg-background/50 p-3">
-              <p className="text-sm">
-                <span className="font-medium text-primary">Savings Tip:</span> Consider reducing
-                entertainment expenses by ฿1,500 to hit your savings goal.
-              </p>
-            </div>
-            <Button variant="outline" className="w-full">
-              View All Insights
+            {insights.length > 0 ? (
+              insights.map((insight, i) => (
+                <div key={i} className="rounded-lg bg-background/50 p-3">
+                  <p className="text-sm">
+                    <span
+                      className={cn(
+                        'font-medium',
+                        insight.type === 'alert' && 'text-warning',
+                        insight.type === 'pattern' && 'text-primary',
+                        insight.type === 'tip' && 'text-primary'
+                      )}
+                    >
+                      {insight.type === 'alert'
+                        ? 'Spending Alert:'
+                        : insight.type === 'pattern'
+                          ? 'Pattern Detected:'
+                          : 'Savings Tip:'}
+                    </span>{' '}
+                    {insight.text}
+                  </p>
+                </div>
+              ))
+            ) : (
+              <div className="rounded-lg bg-background/50 p-3">
+                <p className="text-sm text-muted-foreground">
+                  Add transactions to see personalized insights.
+                </p>
+              </div>
+            )}
+            <Button variant="outline" className="w-full" asChild>
+              <Link href="/insights">View All Insights</Link>
             </Button>
           </CardContent>
         </Card>
@@ -432,16 +622,36 @@ export default function DashboardPage() {
         <CardContent className="flex items-center justify-center py-8">
           <div className="text-center">
             <p className="mb-2 text-muted-foreground">Quick Add Expense</p>
-            <Button className="gap-2">
+            <Button className="gap-2" onClick={() => setIsAddDialogOpen(true)}>
               <Plus className="size-4" />
               Add Transaction
             </Button>
             <p className="mt-2 text-xs text-muted-foreground">
-              Or type naturally: &quot;Coffee 45 lunch 120&quot;
+              Or go to{' '}
+              <Link href="/transactions" className="text-primary hover:underline">
+                Transactions
+              </Link>{' '}
+              for AI-powered quick add
             </p>
           </div>
         </CardContent>
       </Card>
+
+      <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Add Transaction</DialogTitle>
+            <DialogDescription>Record a new income or expense.</DialogDescription>
+          </DialogHeader>
+          <TransactionForm
+            onSubmit={async (data) => {
+              await addTransaction(data)
+              setIsAddDialogOpen(false)
+            }}
+            onCancel={() => setIsAddDialogOpen(false)}
+          />
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

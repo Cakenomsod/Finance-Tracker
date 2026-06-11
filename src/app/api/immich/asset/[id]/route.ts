@@ -28,13 +28,9 @@ export async function GET(
     if (configDoc.exists) {
       const currentImmichUrl = configDoc.data()?.immich_url;
 
-      // 🎯 3. ถ้าบนคลาวด์มียังมีลิงก์อัปเดตอยู่ ให้เอาลิงก์ไดนามิกนี้ไปสวมแทนที่ตัวเก่าในคอนฟิกทันที
       if (currentImmichUrl) {
-        // แอบสลับช่องสัญญานไปใช้ลิงก์มุดท่อตัวใหม่ล่าสุดจากคอมบ้าน
         immich.baseUrl = currentImmichUrl; 
         
-        // หมายเหตุ: โครงสร้างภายในวัตถุ immich ของคุณน่าจะมีหน้าตาประมาณ { baseUrl, apiKey }
-        // การระบุบรรทัดนี้จะช่วยให้ฟังก์ชันข้างล่างดึงภาพผ่านท่อที่ถูกต้องได้ทันทีครับ
       }
     }
 
