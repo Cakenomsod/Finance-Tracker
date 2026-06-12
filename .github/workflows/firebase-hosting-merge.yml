@@ -47,10 +47,13 @@ jobs:
       - name: Create Service Account Key
         run: echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' > firebase-service-account.json
 
+      - name: Install Firebase CLI
+        run: npm install -g firebase-tools@15.18.0
+
       - name: Deploy to Firebase
         run: |
-          ./node_modules/.bin/firebase experiments:enable webframeworks
-          ./node_modules/.bin/firebase deploy --only hosting --project ${{ secrets.NEXT_PUBLIC_FIREBASE_PROJECT_ID }} --force
+          firebase experiments:enable webframeworks
+          firebase deploy --only hosting --project ${{ secrets.NEXT_PUBLIC_FIREBASE_PROJECT_ID }} --force
         env:
           GOOGLE_APPLICATION_CREDENTIALS: firebase-service-account.json
           NEXT_PUBLIC_FIREBASE_API_KEY: ${{ secrets.NEXT_PUBLIC_FIREBASE_API_KEY }}
