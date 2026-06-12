@@ -45,7 +45,9 @@ jobs:
         run: echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' > firebase-service-account.json
 
       - name: Deploy Preview
-        run: ./node_modules/.bin/firebase deploy --only hosting --project ${{ secrets.NEXT_PUBLIC_FIREBASE_PROJECT_ID }} --force
+        run: |
+          ./node_modules/.bin/firebase experiments:enable webframeworks
+          ./node_modules/.bin/firebase deploy --only hosting --project ${{ secrets.NEXT_PUBLIC_FIREBASE_PROJECT_ID }} --force
         env:
           GOOGLE_APPLICATION_CREDENTIALS: firebase-service-account.json
           NEXT_PUBLIC_FIREBASE_API_KEY: ${{ secrets.NEXT_PUBLIC_FIREBASE_API_KEY }}
