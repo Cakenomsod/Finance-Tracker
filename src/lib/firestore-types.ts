@@ -237,7 +237,9 @@ export interface Category {
   createdAt: Timestamp;
 }
 
-export type RecurringFrequency = 'weekly' | 'monthly' | 'yearly';
+export type RecurringFrequencyUnit = 'daily' | 'weekly' | 'monthly' | 'yearly';
+/** @deprecated Use RecurringFrequencyUnit */
+export type RecurringFrequency = RecurringFrequencyUnit;
 
 // recurring_expenses/{id}
 export interface RecurringExpense {
@@ -245,7 +247,9 @@ export interface RecurringExpense {
   userId: string;
   name: string;
   amount: number;
-  frequency: RecurringFrequency;
+  frequency: RecurringFrequencyUnit;
+  /** Pay every N units (default 1) */
+  frequencyInterval?: number;
   nextDate: Timestamp;
   category?: string;
   createdAt: Timestamp;

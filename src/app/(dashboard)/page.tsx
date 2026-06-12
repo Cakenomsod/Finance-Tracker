@@ -50,6 +50,7 @@ import { useTrips } from '@/hooks/use-trips'
 import { useAuth } from '@/hooks/use-auth'
 import { useUserSettings } from '@/hooks/use-user-settings'
 import { TransactionForm } from '@/components/transactions/transaction-form'
+import { RecurringDueCard } from '@/components/dashboard/recurring-due-card'
 import {
   mergeTransactions,
   filterByTimeRange,
@@ -261,6 +262,8 @@ export default function DashboardPage() {
           )}
         </p>
       </div>
+
+      <RecurringDueCard />
 
       {/* Quick Stats Grid */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">

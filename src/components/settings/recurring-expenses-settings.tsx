@@ -37,15 +37,17 @@ import { useRecurringExpenses } from '@/hooks/use-recurring-expenses';
 import { useCategories } from '@/hooks/use-categories';
 import { useUserSettings } from '@/hooks/use-user-settings';
 import { useLocale } from '@/components/locale-provider';
-import { RecurringExpense, RecurringFrequency } from '@/lib/firestore-types';
+import { RecurringExpense, RecurringFrequencyUnit } from '@/lib/firestore-types';
 import { formatMoney } from '@/lib/aggregate-transactions';
 import { formatLocalDateInput } from '@/lib/datetime';
+import { formatFrequencyLabel, normalizeFrequencyInterval } from '@/lib/recurring-expenses';
 import { toast } from 'sonner';
 
 interface RecurringFormState {
   name: string;
   amount: string;
-  frequency: RecurringFrequency;
+  frequency: RecurringFrequencyUnit;
+  frequencyInterval: string;
   nextDate: string;
   category: string;
 }
@@ -54,6 +56,7 @@ const emptyForm = (): RecurringFormState => ({
   name: '',
   amount: '',
   frequency: 'monthly',
+  frequencyInterval: '1',
   nextDate: formatLocalDateInput(new Date()),
   category: '',
 });
@@ -66,19 +69,11 @@ function expenseToForm(expense: RecurringExpense): RecurringFormState {
     name: expense.name,
     amount: String(expense.amount),
     frequency: expense.frequency,
+    frequencyInterval: String(normalizeFrequencyInterval(expense.frequencyInterval)),
     nextDate: formatLocalDateInput(date),
     category: expense.category || '',
   };
 }
-
-const frequencyLabel = (
-  freq: RecurringFrequency,
-  t: (key: 'settings.weekly' | 'settings.monthly' | 'settings.yearly') => string
-) => {
-  if (freq === 'weekly') return t('settings.weekly');
-  if (freq === 'yearly') return t('settings.yearly');
-  return t('settings.monthly');
-};
 
 export function RecurringExpensesSettings() {
   const { expenses, loading, addExpense, editExpense, removeExpense } = useRecurringExpenses();
@@ -112,6 +107,7 @@ export function RecurringExpensesSettings() {
         name: form.name.trim(),
         amount: Number(form.amount),
         frequency: form.frequency,
+        frequencyInterval: normalizeFrequencyInterval(Number(form.frequencyInterval)),
         nextDate,
         category: form.category || undefined,
       };
@@ -187,7 +183,7 @@ export function RecurringExpensesSettings() {
                     <p className="font-medium">{expense.name}</p>
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
                       <Badge variant="outline" className="text-xs">
-                        {frequencyLabel(expense.frequency, t)}
+                        {formatFrequencyLabel(expense.frequencyInterval, expense.frequency, locale)}
                       </Badge>
                       <span>
                         {t('settings.next')}: {formatNextDate(expense)}
@@ -249,24 +245,6 @@ export function RecurringExpensesSettings() {
                 />
               </div>
               <div className="grid gap-2">
-                <Label>{t('settings.frequency')}</Label>
-                <Select
-                  value={form.frequency}
-                  onValueChange={(v) => setForm((f) => ({ ...f, frequency: v as RecurringFrequency }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="weekly">{t('settings.weekly')}</SelectItem>
-                    <SelectItem value="monthly">{t('settings.monthly')}</SelectItem>
-                    <SelectItem value="yearly">{t('settings.yearly')}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="grid gap-2">
                 <Label>{t('settings.nextDate')}</Label>
                 <Input
                   type="date"
@@ -274,6 +252,37 @@ export function RecurringExpensesSettings() {
                   onChange={(e) => setForm((f) => ({ ...f, nextDate: e.target.value }))}
                 />
               </div>
+            </div>
+            <div className="grid gap-2">
+              <Label>{t('settings.payEvery')}</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="number"
+                  min={1}
+                  step={1}
+                  className="w-24"
+                  value={form.frequencyInterval}
+                  onChange={(e) => setForm((f) => ({ ...f, frequencyInterval: e.target.value }))}
+                />
+                <Select
+                  value={form.frequency}
+                  onValueChange={(v) =>
+                    setForm((f) => ({ ...f, frequency: v as RecurringFrequencyUnit }))
+                  }
+                >
+                  <SelectTrigger className="flex-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="daily">{t('settings.daily')}</SelectItem>
+                    <SelectItem value="weekly">{t('settings.weekly')}</SelectItem>
+                    <SelectItem value="monthly">{t('settings.monthly')}</SelectItem>
+                    <SelectItem value="yearly">{t('settings.yearly')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid gap-4">
               <div className="grid gap-2">
                 <Label>{t('settings.categories')}</Label>
                 <Select
@@ -301,7 +310,14 @@ export function RecurringExpensesSettings() {
             </Button>
             <Button
               onClick={handleSave}
-              disabled={saving || !form.name.trim() || !form.amount || !form.nextDate}
+              disabled={
+                saving ||
+                !form.name.trim() ||
+                !form.amount ||
+                !form.nextDate ||
+                !form.frequencyInterval ||
+                Number(form.frequencyInterval) < 1
+              }
             >
               {t('settings.save')}
             </Button>

@@ -4,7 +4,15 @@
     "ignore": [
       "firebase.json",
       "**/.*",
-      "**/node_modules/**"
+      "**/node_modules/**",
+      ".github/**",
+      "**/*.md",
+      "public copy/**",
+      "Stracture.md",
+      "API.txt",
+      ".next/**",
+      "out/**",
+      ".firebase/**"
     ],
     "frameworksBackend": {
       "region": "us-central1"
