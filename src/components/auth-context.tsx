@@ -96,7 +96,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = async () => {
     try {
       await firebaseSignOut(auth);
-      window.location.href = '/login';
+      // Clear session cookie before redirect — middleware blocks /login while __session exists
+      await fetch('/api/auth/session', { method: 'DELETE' });
+      window.location.assign('/login');
     } catch (error) {
       console.error('Error signing out:', error);
     }

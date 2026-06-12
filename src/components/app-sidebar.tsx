@@ -207,7 +207,9 @@ export function AppSidebar({ children }: { children: React.ReactNode }) {
                   <DropdownMenuItem>Profile</DropdownMenuItem>
                   <DropdownMenuItem>Preferences</DropdownMenuItem>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => signOut()}>Sign out</DropdownMenuItem>
+                  <DropdownMenuItem onSelect={(e) => { e.preventDefault(); void signOut(); }}>
+                    Sign out
+                  </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             </SidebarMenuItem>

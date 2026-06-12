@@ -12,6 +12,7 @@ import {
   orderBy,
   Timestamp,
   or,
+  deleteField,
 } from 'firebase/firestore';
 import { db } from './firebase';
 import {
@@ -210,7 +211,7 @@ export const deleteCustomFriend = async (id: string) => {
 // --- Categories ---
 
 export const createCategory = async (data: Omit<Category, 'id' | 'createdAt'>) => {
-  return await addDoc(categoriesRef, { ...data, createdAt: serverTimestamp() });
+  return await addDoc(categoriesRef, stripUndefined({ ...data, createdAt: serverTimestamp() }));
 };
 
 export const getUserCategories = async (userId: string) => {
@@ -219,8 +220,18 @@ export const getUserCategories = async (userId: string) => {
   return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Category));
 };
 
-export const updateCategory = async (id: string, data: Partial<Omit<Category, 'id' | 'createdAt' | 'userId'>>) => {
-  return await updateDoc(doc(db, 'categories', id), stripUndefined(data));
+export const updateCategory = async (
+  id: string,
+  data: Partial<Omit<Category, 'id' | 'createdAt' | 'userId' | 'monthlyBudget'>> & {
+    monthlyBudget?: number | null;
+  }
+) => {
+  const payload: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (value === undefined) continue;
+    payload[key] = value === null ? deleteField() : value;
+  }
+  return await updateDoc(doc(db, 'categories', id), payload);
 };
 
 export const deleteCategory = async (id: string) => {

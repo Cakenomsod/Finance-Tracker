@@ -30,6 +30,9 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE() {
   const cookieStore = await cookies();
-  cookieStore.delete('__session');
+  cookieStore.delete({
+    name: '__session',
+    path: '/',
+  });
   return NextResponse.json({ status: 'success' });
 }

@@ -71,6 +71,7 @@ export function useCategories() {
               await Promise.all(duplicateIds.map((id) => deleteCategory(id)));
             } catch (err) {
               console.error('Failed to deduplicate categories:', err);
+            } finally {
               dedupingUsers.delete(user.uid);
             }
             return;
@@ -101,16 +102,47 @@ export function useCategories() {
   const addCategory = useCallback(
     async (data: Omit<Category, 'id' | 'createdAt' | 'userId'>) => {
       if (!user) throw new Error('Not logged in');
+      const key = categoryKey({ name: data.name, type: data.type });
+      if (categories.some((c) => categoryKey(c) === key)) {
+        throw new Error('DUPLICATE_CATEGORY');
+      }
       return createCategory({ ...data, userId: user.uid });
     },
-    [user]
+    [user, categories]
   );
 
   const editCategory = useCallback(
-    async (id: string, data: Partial<Omit<Category, 'id' | 'createdAt' | 'userId'>>) => {
+    async (
+      id: string,
+      data: Partial<Omit<Category, 'id' | 'createdAt' | 'userId' | 'monthlyBudget'>> & {
+        monthlyBudget?: number | null;
+      }
+    ) => {
+      if (data.name != null && data.type != null) {
+        const key = categoryKey({ name: data.name, type: data.type });
+        if (categories.some((c) => c.id !== id && categoryKey(c) === key)) {
+          throw new Error('DUPLICATE_CATEGORY');
+        }
+      } else if (data.name != null) {
+        const existing = categories.find((c) => c.id === id);
+        if (existing) {
+          const key = categoryKey({ name: data.name, type: existing.type });
+          if (categories.some((c) => c.id !== id && categoryKey(c) === key)) {
+            throw new Error('DUPLICATE_CATEGORY');
+          }
+        }
+      } else if (data.type != null) {
+        const existing = categories.find((c) => c.id === id);
+        if (existing) {
+          const key = categoryKey({ name: existing.name, type: data.type });
+          if (categories.some((c) => c.id !== id && categoryKey(c) === key)) {
+            throw new Error('DUPLICATE_CATEGORY');
+          }
+        }
+      }
       return updateCategory(id, data);
     },
-    []
+    [categories]
   );
 
   const removeCategory = useCallback(async (id: string) => {
