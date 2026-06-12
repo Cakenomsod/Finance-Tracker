@@ -59,6 +59,7 @@ function mapExpenseToTransaction(
     tripExpenseId: expenseId,
     immichAssetId: primary,
     ...(ids.length ? { immichAssetIds: ids } : {}),
+    ...(expense.note ? { note: expense.note } : {}),
   };
 }
 
@@ -116,6 +117,7 @@ export async function updateTripExpenseWithTransaction(
   }
   if (expense.category !== undefined) txUpdate.category = expense.category;
   if (expense.description !== undefined) txUpdate.description = expense.description;
+  if (expense.note !== undefined) txUpdate.note = expense.note || undefined;
   if (expense.date !== undefined) txUpdate.date = expense.date;
   if (expense.items !== undefined) txUpdate.items = expense.items;
   if (expense.baseAmount !== undefined) txUpdate.baseAmount = expense.baseAmount;

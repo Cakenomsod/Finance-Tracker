@@ -61,10 +61,13 @@ import { cn, amountColorClass } from '@/lib/utils'
 import { getTransactionEffectiveAmount, getPaotangCapReasonLabel, isPaotangPayment, PAOTANG_GOV_PERCENT } from '@/lib/transaction-payment'
 import { useTransactions } from '@/hooks/use-transactions'
 import { useAllTripExpenses } from '@/hooks/use-all-trip-expenses'
+import { useAuth } from '@/hooks/use-auth'
+import { getTripExpenseUserShare } from '@/lib/trip-balance'
 import { useCategories } from '@/hooks/use-categories'
 import { TransactionForm } from '@/components/transactions/transaction-form'
 import { TransactionAiPanel } from '@/components/transactions/transaction-ai-panel'
 import { DateGroupDividerRow } from '@/components/transactions/date-group-divider'
+import { TransactionMobileList } from '@/components/transactions/transaction-mobile-list'
 import { Transaction } from '@/lib/firestore-types'
 import {
   formatTransactionDisplayTime,
@@ -73,6 +76,7 @@ import {
 } from '@/lib/datetime'
 
 export default function TransactionsPage() {
+  const { user } = useAuth()
   const { transactions, loading: txLoading, addTransaction, editTransaction, removeTransaction } = useTransactions()
   const { allTripExpenses, loading: tripLoading } = useAllTripExpenses()
   const { categories } = useCategories()
@@ -95,10 +99,13 @@ export default function TransactionsPage() {
   const [isAddDialogOpen, setIsAddDialogOpen] = React.useState(false)
   const [editingTransaction, setEditingTransaction] = React.useState<Transaction | null>(null)
   const [ocrDraft, setOcrDraft] = React.useState<Omit<Transaction, 'id' | 'createdAt' | 'userId'> | null>(null)
+  const [pendingImmichAssetIds, setPendingImmichAssetIds] = React.useState<string[]>([])
 
-  // Merge legacy transactions and trip expenses
+  // Merge legacy transactions and trip expenses (trip rows show only the user's share)
   const allCombined = React.useMemo(() => {
-    const legacy = transactions.map(tx => {
+    const legacy = transactions
+      .filter((tx) => !tx.tripExpenseId)
+      .map((tx) => {
       const factor = tx.currency === 'JPY' ? 0.22 : 1
       const effectiveAmount = getTransactionEffectiveAmount(tx)
       return {
@@ -116,18 +123,23 @@ export default function TransactionsPage() {
         paotangCapReason: tx.paotangCapReason,
         paotangSubsidy: tx.paotangSubsidy,
         rawTx: tx,
-        rawEx: null
+        rawEx: null,
+        note: tx.note,
       }
     })
 
-    const newExps = allTripExpenses.map(ex => {
+    const newExps = allTripExpenses.flatMap((ex) => {
+      const myShare = user ? getTripExpenseUserShare(ex, user.uid) : ex.totalAmount
+      if (user && myShare <= 0) return []
+
       const factor = ex.currency === 'JPY' ? 0.22 : 1
-      const payersStr = ex.payers.map(p => p.displayName).join(', ')
-      return {
+      const payersStr = ex.payers.map((p) => p.displayName).join(', ')
+      const personalAmount = -myShare
+      return [{
         id: ex.id,
         description: ex.description,
-        amount: -ex.totalAmount, // Expenses are negative in transaction view
-        amountThb: -ex.totalAmount * factor,
+        amount: personalAmount,
+        amountThb: personalAmount * factor,
         category: ex.category || 'Other',
         date: ex.date,
         paidBy: payersStr,
@@ -138,8 +150,9 @@ export default function TransactionsPage() {
         paotangCapReason: undefined,
         fullAmount: -ex.totalAmount,
         rawTx: null,
-        rawEx: ex
-      }
+        rawEx: ex,
+        note: ex.note,
+      }]
     })
 
     const combined = [...legacy, ...newExps]
@@ -149,13 +162,14 @@ export default function TransactionsPage() {
       return dateB - dateA
     })
     return combined
-  }, [transactions, allTripExpenses])
+  }, [transactions, allTripExpenses, user?.uid])
 
   // Filter transactions
   const filteredTransactions = allCombined.filter((t) => {
     const descMatches = t.description?.toLowerCase().includes(searchQuery.toLowerCase()) || false
+    const noteMatches = t.note?.toLowerCase().includes(searchQuery.toLowerCase()) || false
     const catMatches = t.category?.toLowerCase().includes(searchQuery.toLowerCase()) || false
-    const matchesSearch = descMatches || catMatches
+    const matchesSearch = descMatches || noteMatches || catMatches
     const matchesCategory =
       selectedCategory === 'All Categories' || t.category === selectedCategory
     return matchesSearch && matchesCategory
@@ -194,8 +208,9 @@ export default function TransactionsPage() {
       </div>
 
       <TransactionAiPanel
-        onOpenDraftForm={(draft) => {
+        onOpenDraftForm={(draft, immichIds) => {
           setOcrDraft(draft)
+          setPendingImmichAssetIds(immichIds || [])
           setEditingTransaction(null)
           setIsAddDialogOpen(true)
         }}
@@ -253,6 +268,7 @@ export default function TransactionsPage() {
             if (!open) {
               setEditingTransaction(null)
               setOcrDraft(null)
+              setPendingImmichAssetIds([])
             }
           }}>
             <DialogTrigger asChild>
@@ -276,6 +292,7 @@ export default function TransactionsPage() {
                 key={editingTransaction?.id || (ocrDraft ? 'ocr-draft' : 'new')}
                 initialData={editingTransaction || (ocrDraft as Transaction | null)}
                 existingTransactions={transactions}
+                pendingImmichAssetIds={pendingImmichAssetIds}
                 onSubmit={async (data) => {
                   if (editingTransaction) {
                     await editTransaction(editingTransaction.id!, data)
@@ -285,11 +302,13 @@ export default function TransactionsPage() {
                   setIsAddDialogOpen(false)
                   setEditingTransaction(null)
                   setOcrDraft(null)
+                  setPendingImmichAssetIds([])
                 }}
                 onCancel={() => {
                   setIsAddDialogOpen(false)
                   setEditingTransaction(null)
                   setOcrDraft(null)
+                  setPendingImmichAssetIds([])
                 }}
               />
             </DialogContent>
@@ -299,7 +318,7 @@ export default function TransactionsPage() {
 
       {/* Selected Actions */}
       {selectedRows.length > 0 && (
-        <div className="flex items-center gap-2 rounded-lg bg-muted p-2">
+        <div className="flex flex-wrap items-center gap-2 rounded-lg bg-muted p-2">
           <span className="text-sm text-muted-foreground">
             {selectedRows.length} selected
           </span>
@@ -326,7 +345,20 @@ export default function TransactionsPage() {
         </div>
       )}
 
-      <Card>
+      <TransactionMobileList
+        transactions={filteredTransactions}
+        loading={loading}
+        categoryByName={categoryByName}
+        selectedRows={selectedRows}
+        onRowSelect={handleRowSelect}
+        onEdit={(tx) => {
+          setEditingTransaction(tx)
+          setIsAddDialogOpen(true)
+        }}
+        onDelete={(id, tx) => removeTransaction(id, tx)}
+      />
+
+      <Card className="hidden md:block">
         <CardContent className="p-0">
           <div className="w-full overflow-x-auto">
             <Table>
@@ -406,6 +438,11 @@ export default function TransactionsPage() {
                           <Badge variant="outline" className="ml-2 text-[10px]">Trip Expense</Badge>
                         )}
                       </p>
+                      {transaction.note && (
+                        <p className="mt-0.5 text-xs text-muted-foreground line-clamp-1">
+                          📝 {transaction.note}
+                        </p>
+                      )}
                     </div>
                   </TableCell>
                   <TableCell>
@@ -448,6 +485,11 @@ export default function TransactionsPage() {
                             <span className="text-[10px] text-muted-foreground block font-normal">
                               เต็ม ฿{Math.abs(fullAmount).toLocaleString()}
                               {' · '}รัฐ {PAOTANG_GOV_PERCENT}% (ตามโควต้า)
+                            </span>
+                          )}
+                          {!transaction.isLegacy && Math.abs(fullAmount) !== Math.abs(displayAmount) && (
+                            <span className="text-[10px] text-muted-foreground block font-normal">
+                              เต็ม {isJpy ? '¥' : '฿'}{Math.abs(fullAmount).toLocaleString()}
                             </span>
                           )}
                           {transaction.isPaotang && transaction.paotangQuotaCapped && (
@@ -545,10 +587,12 @@ export default function TransactionsPage() {
         </Card>
       </div>
 
-      {/* Floating Add Button (Mobile) */}
+      {/* Floating Add Button (Mobile) — above bottom nav */}
       <Button
         size="lg"
-        className="fixed bottom-6 right-6 size-14 rounded-full shadow-lg md:hidden"
+        onClick={() => setIsAddDialogOpen(true)}
+        className="fixed right-4 z-40 size-14 rounded-full shadow-lg bottom-[calc(4.5rem+env(safe-area-inset-bottom))] md:hidden"
+        aria-label="Add transaction"
       >
         <Plus className="size-6" />
       </Button>

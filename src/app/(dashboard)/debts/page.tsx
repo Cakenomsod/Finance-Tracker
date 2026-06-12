@@ -154,7 +154,145 @@ function DebtTable({
   )
 
   return (
-    <Card>
+    <>
+      <div className="space-y-3 md:hidden">
+        {groupedDebts.map((group) => (
+          <div key={group.dateKey} className="overflow-hidden rounded-lg border bg-card">
+            <table className="w-full">
+              <tbody>
+                <DateGroupDividerRow label={group.label} colSpan={1} />
+              </tbody>
+            </table>
+            <div className="divide-y">
+              {group.items.map((debt) => {
+                const person =
+                  type === 'owe'
+                    ? debt.toDisplayName || debt.toUserId
+                    : debt.fromDisplayName || debt.fromUserId
+                const itemLabel = resolveDebtDescription(debt, txById)
+                const initials = person.substring(0, 2).toUpperCase()
+                const relatedTxId = debt.relatedTxIds?.[0]
+                const canViewTx = !!relatedTxId && txById.has(relatedTxId)
+                const debtDate = resolveDebtDate(debt, txById)
+
+                return (
+                  <div
+                    key={debt.id}
+                    className={cn('p-4', canViewTx && 'cursor-pointer')}
+                    onClick={() => {
+                      if (canViewTx) onViewTransaction(relatedTxId)
+                    }}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium leading-snug">{itemLabel}</p>
+                        {debtDate && (
+                          <p className="mt-0.5 text-xs text-muted-foreground tabular-nums">
+                            {formatTransactionDisplayTime(debtDate)}
+                          </p>
+                        )}
+                        <div className="mt-2 flex items-center gap-2">
+                          <Avatar className="size-7 shrink-0">
+                            <AvatarFallback
+                              className={cn(
+                                'text-[10px] font-medium',
+                                type === 'owe'
+                                  ? 'bg-destructive/20 text-destructive'
+                                  : 'bg-success/20 text-success'
+                              )}
+                            >
+                              {initials}
+                            </AvatarFallback>
+                          </Avatar>
+                          <span className="text-sm text-muted-foreground truncate">
+                            {type === 'owe' ? 'เจ้าหนี้' : 'ลูกหนี้'}: {person}
+                          </span>
+                        </div>
+                        <Badge variant="outline" className="mt-2 text-xs font-normal">
+                          {debtSourceLabel(debt)}
+                        </Badge>
+                      </div>
+                      <p
+                        className={cn(
+                          'shrink-0 text-lg font-semibold tabular-nums',
+                          type === 'owe' ? 'text-destructive' : 'text-success'
+                        )}
+                      >
+                        {type === 'owe' ? '-' : '+'}฿
+                        {debt.amount.toLocaleString(undefined, {
+                          minimumFractionDigits: 0,
+                          maximumFractionDigits: 2,
+                        })}
+                      </p>
+                    </div>
+                    {debt.status === 'pending' && (
+                      <div className="mt-3 flex items-center gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="flex-1"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            onSettle(debt.id!)
+                          }}
+                        >
+                          {type === 'owe' ? (
+                            <>
+                              <Send className="mr-1.5 size-3" />
+                              จ่ายคืน
+                            </>
+                          ) : (
+                            <>
+                              <Check className="mr-1.5 size-3" />
+                              รับเงิน
+                            </>
+                          )}
+                        </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="size-8 shrink-0"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <MoreHorizontal className="size-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            {canViewTx && (
+                              <DropdownMenuItem
+                                onClick={() => onViewTransaction(relatedTxId!)}
+                              >
+                                ดูรายละเอียดธุรกรรม
+                              </DropdownMenuItem>
+                            )}
+                            {debt.isTripDebt || debt.isTransactionDebt ? (
+                              <DropdownMenuItem disabled>
+                                {debt.isTripDebt ? 'สร้างอัตโนมัติจากทริป' : 'สร้างอัตโนมัติจากธุรกรรม'}
+                              </DropdownMenuItem>
+                            ) : (
+                              <DropdownMenuItem
+                                className="text-destructive"
+                                onClick={() => onDelete(debt.id!)}
+                              >
+                                <Trash2 className="mr-2 size-4" />
+                                ลบ
+                              </DropdownMenuItem>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <Card className="hidden md:block">
       <CardContent className="p-0">
         <Table>
           <TableHeader>
@@ -307,6 +445,7 @@ function DebtTable({
         </Table>
       </CardContent>
     </Card>
+    </>
   )
 }
 
@@ -668,7 +807,7 @@ export default function DebtsPage() {
 
       {/* Debts Tabs */}
       <Tabs defaultValue="you-owe" className="w-full">
-        <TabsList className="w-full justify-start">
+        <TabsList className="w-full justify-start overflow-x-auto">
           <TabsTrigger value="you-owe" className="gap-2">
               <AlertCircle className="size-4" />
               You Owe
@@ -733,7 +872,49 @@ export default function DebtsPage() {
               {paymentHistory.length === 0 ? (
                 <div className="px-6 py-8 text-center text-muted-foreground">ยังไม่มีประวัติการจ่ายคืน</div>
               ) : (
-                <Table>
+                <>
+                <div className="divide-y md:hidden">
+                  {groupedPaymentHistory.map((group) => (
+                    <div key={group.dateKey}>
+                      <div className="px-4 py-2">
+                        <DateGroupDividerRow label={group.label} colSpan={1} />
+                      </div>
+                      {group.items.map((payment) => (
+                        <div key={payment.id} className="px-4 py-4">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="font-medium">{payment.label}</p>
+                              {payment.date && (
+                                <p className="mt-0.5 text-xs text-muted-foreground tabular-nums">
+                                  {formatTransactionDisplayTime(payment.date)}
+                                </p>
+                              )}
+                              <p className="mt-2 text-sm text-muted-foreground">
+                                {payment.isReceived ? 'รับจาก' : 'จ่ายให้'} {payment.person}
+                              </p>
+                              <Badge variant="outline" className="mt-2 text-xs font-normal">
+                                {payment.source}
+                              </Badge>
+                            </div>
+                            <p
+                              className={cn(
+                                'shrink-0 font-semibold tabular-nums',
+                                payment.isReceived ? 'text-primary' : 'text-muted-foreground'
+                              )}
+                            >
+                              {payment.isReceived ? '+' : '-'}฿
+                              {payment.amount.toLocaleString(undefined, {
+                                minimumFractionDigits: 0,
+                                maximumFractionDigits: 2,
+                              })}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+                <Table className="hidden md:table">
                   <TableHeader>
                     <TableRow className="hover:bg-transparent">
                       <TableHead className="pl-6">รายการ</TableHead>
@@ -796,6 +977,7 @@ export default function DebtsPage() {
                     ))}
                   </TableBody>
                 </Table>
+                </>
               )}
             </CardContent>
           </Card>

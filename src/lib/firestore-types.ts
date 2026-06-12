@@ -85,6 +85,7 @@ export interface Transaction {
   /** True when gov subsidy was reduced due to quota limits */
   paotangQuotaCapped?: boolean;
   paotangCapReason?: 'daily' | 'monthly' | 'total' | null;
+  note?: string;
 }
 
 // debts/{debtId}

@@ -16,7 +16,6 @@ import {
   Command,
   Plus,
   ChevronDown,
-  Wallet,
   UserPlus2,
   Bell,
 } from 'lucide-react'
@@ -50,6 +49,9 @@ import { cn } from '@/lib/utils'
 
 import { useAuth } from '@/hooks/use-auth'
 import { useFriends } from '@/hooks/use-friends'
+import { useQuickAdd } from '@/components/quick-add-context'
+import { MobileBottomNav } from '@/components/mobile-bottom-nav'
+import { AppLogo } from '@/components/app-logo'
 import { Badge } from '@/components/ui/badge'
 
 const mainNavItems = [
@@ -74,6 +76,7 @@ export function AppSidebar({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const { user, signOut } = useAuth()
   const { pendingReceived } = useFriends()
+  const { openQuickAdd, openSearch } = useQuickAdd()
   const pendingCount = pendingReceived.length
 
   return (
@@ -85,7 +88,7 @@ export function AppSidebar({ children }: { children: React.ReactNode }) {
               <SidebarMenuButton size="lg" asChild>
                 <Link href="/">
                   <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                    <Wallet className="size-4" />
+                    <AppLogo />
                   </div>
                   <div className="flex flex-col gap-0.5 leading-none">
                     <span className="font-semibold">Finance</span>
@@ -224,27 +227,30 @@ export function AppSidebar({ children }: { children: React.ReactNode }) {
           <div className="flex-1">
             <Button
               variant="outline"
+              onClick={openSearch}
               className={cn(
                 "relative h-9 w-full max-w-sm justify-start rounded-lg bg-muted/50 text-sm text-muted-foreground hover:bg-muted"
               )}
             >
               <Search className="mr-2 size-4" />
-              <span>Search transactions...</span>
+              <span className="truncate">Search transactions...</span>
               <kbd className="pointer-events-none absolute right-2 hidden h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium sm:flex">
                 <Command className="size-3" />K
               </kbd>
             </Button>
           </div>
 
-          <Button size="sm" className="gap-2">
+          <Button size="sm" className="gap-2" onClick={openQuickAdd}>
             <Plus className="size-4" />
             <span className="hidden sm:inline">Add Expense</span>
           </Button>
         </header>
 
-        <main className="flex-1 overflow-auto">
+        <main className="flex-1 overflow-auto pb-[calc(4rem+env(safe-area-inset-bottom))] md:pb-0">
           {children}
         </main>
+
+        <MobileBottomNav />
       </SidebarInset>
     </SidebarProvider>
   )

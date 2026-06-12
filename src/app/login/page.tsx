@@ -3,7 +3,7 @@
 import { useAuth } from '@/hooks/use-auth';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { Wallet } from 'lucide-react';
+import { AppLogo } from '@/components/app-logo';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState, Suspense } from 'react';
 
@@ -35,7 +35,9 @@ function LoginContent() {
   if (loading) {
     return (
       <div className="flex flex-col items-center gap-4">
-        <div className="size-12 animate-pulse rounded-full bg-primary/20"></div>
+        <div className="flex size-12 animate-pulse items-center justify-center rounded-2xl bg-primary/20 text-primary">
+          <AppLogo className="size-6" />
+        </div>
         <p className="text-sm text-muted-foreground">Loading...</p>
       </div>
     );
@@ -45,7 +47,7 @@ function LoginContent() {
     <Card className="w-full max-w-md border-border/40 bg-background/60 backdrop-blur-xl relative z-10">
       <CardHeader className="text-center space-y-4">
         <div className="mx-auto flex size-16 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lg shadow-primary/20">
-          <Wallet className="size-8" />
+          <AppLogo className="size-8" />
         </div>
         <div className="space-y-1">
           <CardTitle className="text-2xl font-bold tracking-tight">Finance</CardTitle>
@@ -111,7 +113,9 @@ export default function LoginPage() {
 
       <Suspense fallback={
         <div className="flex flex-col items-center gap-4 relative z-10">
-          <div className="size-12 animate-pulse rounded-full bg-primary/20"></div>
+          <div className="flex size-12 animate-pulse items-center justify-center rounded-2xl bg-primary/20 text-primary">
+            <AppLogo className="size-6" />
+          </div>
           <p className="text-sm text-muted-foreground text-white">Loading...</p>
         </div>
       }>

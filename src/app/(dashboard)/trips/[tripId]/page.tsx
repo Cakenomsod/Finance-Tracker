@@ -467,26 +467,26 @@ export default function TripDetailPage() {
   return (
     <div className="flex flex-col gap-6 p-6">
       {/* Header */}
-      <div className="flex items-start justify-between">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => router.push('/trips')}>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex items-start gap-3 sm:gap-4">
+          <Button variant="ghost" size="icon" className="shrink-0" onClick={() => router.push('/trips')}>
             <ArrowLeft className="size-5" />
           </Button>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-semibold tracking-tight">{trip.name}</h1>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">{trip.name}</h1>
               <Badge variant={trip.status === 'active' ? 'default' : 'secondary'}
                 className={cn(trip.status === 'active' && 'bg-primary/20 text-primary')}>
                 {trip.status === 'active' ? 'Active' : 'Closed'}
               </Badge>
             </div>
-            <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground">
+            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
               {trip.description && (
-                <span className="flex items-center gap-1"><MapPin className="size-3" />{trip.description}</span>
+                <span className="flex items-center gap-1"><MapPin className="size-3 shrink-0" />{trip.description}</span>
               )}
               {startDate && (
                 <span className="flex items-center gap-1">
-                  <Calendar className="size-3" />
+                  <Calendar className="size-3 shrink-0" />
                   {startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                   {endDate && startDate.toDateString() !== endDate.toDateString() &&
                     ` - ${endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`}
@@ -495,10 +495,11 @@ export default function TripDetailPage() {
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2 self-end sm:self-auto">
           {trip.status === 'active' && (
             <Button className="gap-2" onClick={() => setIsAddExpenseOpen(true)}>
-              <Plus className="size-4" /> Add Expense
+              <Plus className="size-4" />
+              <span className="hidden sm:inline">Add Expense</span>
             </Button>
           )}
           <DropdownMenu>
@@ -699,6 +700,16 @@ export default function TripDetailPage() {
                                 <span className="mx-1">·</span>
                                 {txDate.toLocaleTimeString('en-GB', timeOptions)}
                               </p>
+                              {ex.rawEx?.note && (
+                                <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">
+                                  📝 {ex.rawEx.note}
+                                </p>
+                              )}
+                              {!ex.rawEx?.note && ex.rawTx?.note && (
+                                <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">
+                                  📝 {ex.rawTx.note}
+                                </p>
+                              )}
                             </div>
                           </div>
                           <div className="flex items-center gap-2">

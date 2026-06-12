@@ -180,6 +180,12 @@ export function isCurrentUserKey(key: string, userId: string): boolean {
   return key === userId || key.toLowerCase() === 'me'
 }
 
+/** User's personal cost for a trip expense (their share, regardless of reimbursement status). */
+export function getTripExpenseUserShare(expense: TripExpense, userId: string): number {
+  const entry = expense.shares.find((s) => isCurrentUserKey(s.userId, userId))
+  return entry?.amount ?? 0
+}
+
 export interface TripDebtSummary {
   personId: string
   personName: string

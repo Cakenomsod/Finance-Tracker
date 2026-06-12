@@ -23,6 +23,9 @@ import {
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
+import { OptionalNoteField } from '@/components/shared/optional-note-field'
+import { ImmichAttachmentsField } from '@/components/shared/immich-attachments-field'
+import { collectImmichAssetIds } from '@/lib/immich/asset-ids'
 import { Transaction } from '@/lib/firestore-types'
 import { Timestamp } from 'firebase/firestore'
 import { useTrips } from '@/hooks/use-trips'
@@ -75,6 +78,7 @@ type TransactionFormValues = z.infer<typeof formSchema>
 interface TransactionFormProps {
   initialData?: Transaction | null;
   existingTransactions?: Transaction[];
+  pendingImmichAssetIds?: string[];
   onSubmit: (data: Omit<Transaction, 'id' | 'createdAt' | 'userId'>) => Promise<void>;
   onCancel: () => void;
 }
@@ -85,7 +89,13 @@ interface ReceiptItemInput {
   price: string
 }
 
-export function TransactionForm({ initialData, existingTransactions = [], onSubmit, onCancel }: TransactionFormProps) {
+export function TransactionForm({
+  initialData,
+  existingTransactions = [],
+  pendingImmichAssetIds,
+  onSubmit,
+  onCancel,
+}: TransactionFormProps) {
   const [isSubmitting, setIsSubmitting] = React.useState(false)
   const { activeTrips } = useTrips()
   const { categories, expenseCategories, incomeCategories, loading: categoriesLoading } = useCategories()
@@ -106,6 +116,28 @@ export function TransactionForm({ initialData, existingTransactions = [], onSubm
   const [paymentMethod, setPaymentMethod] = React.useState<PaymentMethod>(
     initialData?.paymentMethod || 'normal'
   )
+  const [note, setNote] = React.useState(initialData?.note || '')
+  const [attachmentIds, setAttachmentIds] = React.useState<string[]>(() =>
+    collectImmichAssetIds({
+      immichAssetId: initialData?.immichAssetId,
+      immichAssetIds: initialData?.immichAssetIds,
+    })
+  )
+
+  React.useEffect(() => {
+    setAttachmentIds(
+      collectImmichAssetIds({
+        immichAssetId: initialData?.immichAssetId,
+        immichAssetIds: initialData?.immichAssetIds,
+      })
+    )
+  }, [initialData?.id])
+
+  React.useEffect(() => {
+    if (pendingImmichAssetIds?.length) {
+      setAttachmentIds((prev) => [...new Set([...prev, ...pendingImmichAssetIds])])
+    }
+  }, [pendingImmichAssetIds])
 
   const [inputMode, setInputMode] = React.useState<'standard' | 'receipt'>(
     initialData?.items && initialData.items.length > 0 ? 'receipt' : 'standard'
@@ -143,6 +175,7 @@ export function TransactionForm({ initialData, existingTransactions = [], onSubm
 
   const txType = form.watch('type')
   const selectedCategory = form.watch('category')
+  const selectedTripId = form.watch('tripId')
   const isIncome = txType === 'income'
 
   React.useEffect(() => {
@@ -328,6 +361,9 @@ export function TransactionForm({ initialData, existingTransactions = [], onSubm
         }
       }
 
+      const uniqueAttachmentIds = [...new Set(attachmentIds)]
+      const primaryAttachment = uniqueAttachmentIds[0] ?? null
+
       const transactionData: Omit<Transaction, 'id' | 'createdAt' | 'userId'> = {
         amount: finalAmount,
         type: values.type,
@@ -340,9 +376,18 @@ export function TransactionForm({ initialData, existingTransactions = [], onSubm
         shares,
         splitMode,
         tripId: values.tripId && values.tripId !== 'none' ? values.tripId : null,
-        receiptUrl: initialData?.receiptUrl || null,
+        receiptUrl: primaryAttachment ? `/api/immich/asset/${primaryAttachment}` : null,
         source: initialData?.source || 'manual',
         currency: 'THB',
+        note: note.trim() || undefined,
+      }
+
+      if (uniqueAttachmentIds.length) {
+        transactionData.immichAssetIds = uniqueAttachmentIds
+        transactionData.immichAssetId = primaryAttachment
+      } else {
+        transactionData.immichAssetIds = undefined
+        transactionData.immichAssetId = null
       }
 
       if (isReceiptMode) {
@@ -400,6 +445,11 @@ export function TransactionForm({ initialData, existingTransactions = [], onSubm
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4 py-4">
+        <ImmichAttachmentsField
+          value={attachmentIds}
+          onChange={setAttachmentIds}
+          tripId={selectedTripId}
+        />
         {/* Input Mode Selector */}
         <div className="flex gap-1 p-1 bg-muted rounded-lg">
           <button
@@ -570,6 +620,21 @@ export function TransactionForm({ initialData, existingTransactions = [], onSubm
                 </div>
               ))}
             </div>
+
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                setReceiptItems([
+                  ...receiptItems,
+                  { name: '', category: expenseCategoryNames[0] || '', price: '' },
+                ])
+              }
+              className="h-8 w-full gap-1 border-dashed text-xs"
+            >
+              <Plus className="size-3" /> เพิ่มรายการ
+            </Button>
 
             <div className="border-t pt-4 mt-2">
               <div className="flex items-center justify-between">
@@ -1018,6 +1083,8 @@ export function TransactionForm({ initialData, existingTransactions = [], onSubm
             />
           </div>
         </div>
+
+        <OptionalNoteField value={note} onChange={setNote} />
 
         <div className="flex justify-end gap-2 pt-4">
           <Button type="button" variant="outline" onClick={onCancel}>
