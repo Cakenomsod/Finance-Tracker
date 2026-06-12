@@ -55,7 +55,9 @@ export function mergeTransactions(
   transactions: Transaction[],
   allTripExpenses: TripExpense[]
 ): CombinedTransaction[] {
-  const legacy = transactions.map((tx) => {
+  const legacy = transactions
+    .filter((tx) => !tx.tripExpenseId)
+    .map((tx) => {
     const factor = tx.currency === 'JPY' ? JPY_TO_THB : 1
     return {
       id: tx.id,

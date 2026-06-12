@@ -60,7 +60,6 @@ import { cn } from '@/lib/utils'
 import { useTrips } from '@/hooks/use-trips'
 import { useTransactions } from '@/hooks/use-transactions'
 import { useAuth } from '@/hooks/use-auth'
-import { useTripExpenses } from '@/hooks/use-trip-expenses'
 import { Trip, Transaction, TripExpense, TripSettlement } from '@/lib/firestore-types'
 import { MemberPicker, PickedMember } from '@/components/trips/member-picker'
 import { TripExpenseFormV2 } from '@/components/trips/trip-expense-form'
@@ -71,6 +70,7 @@ import {
   type TripSettingsValue,
 } from '@/components/trips/trip-settings-fields'
 import { convertToHomeCurrency, formatCurrencySymbol, formatHomeConversion } from '@/lib/trip-currency'
+import { saveTripExpenseWithTransaction } from '@/lib/sync-expense-transaction'
 import { Timestamp, collection, query, where, onSnapshot } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 
@@ -530,7 +530,6 @@ export default function TripsPage() {
     key: k,
     displayName: expenseTrip?.memberProfiles?.[k]?.displayName || k,
   }))
-  const { addExpense } = useTripExpenses(expenseTripId || '')
 
   const loading = tripsLoading || txLoading
 
@@ -580,7 +579,7 @@ export default function TripsPage() {
 
   // Group transactions by tripId
   const getTransactionsForTrip = (tripId: string) =>
-    transactions.filter((tx) => tx.tripId === tripId)
+    transactions.filter((tx) => tx.tripId === tripId && !tx.tripExpenseId)
 
   // All trip-related transactions
   const allTripTransactions = transactions.filter((tx) => tx.tripId)
@@ -896,7 +895,10 @@ export default function TripsPage() {
             initialData={null}
             onSubmit={async (data) => {
               if (!expenseTripId || !user) return
-              await addExpense({ ...data, tripId: expenseTripId, userId: user.uid })
+              await saveTripExpenseWithTransaction(
+                { ...data, tripId: expenseTripId, userId: user.uid },
+                user.uid
+              )
               setIsAddExpenseOpen(false)
               setExpenseTripId(null)
             }}

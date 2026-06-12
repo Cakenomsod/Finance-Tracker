@@ -55,9 +55,11 @@ import {
 import { cn } from '@/lib/utils'
 import { useDebts } from '@/hooks/use-debts'
 import { useTripDebts } from '@/hooks/use-trip-debts'
+import { useTripSettlements } from '@/hooks/use-trip-settlements'
 import { useTransactions } from '@/hooks/use-transactions'
+import { allocateSettlementAcrossTrips } from '@/lib/trip-balance'
 import { useAuth } from '@/hooks/use-auth'
-import { Debt, Transaction } from '@/lib/firestore-types'
+import { Debt, Transaction, TripSettlement } from '@/lib/firestore-types'
 import { TransactionForm } from '@/components/transactions/transaction-form'
 import { DateGroupDividerRow } from '@/components/transactions/date-group-divider'
 import { createTripSettlement } from '@/lib/firestore'
@@ -113,6 +115,22 @@ function resolveSettledDebtDate(
   const settledDate = toDateFromFirestore(debt.settledAt)
   if (settledDate) return settledDate
   return resolveDebtDate(debt as UIGlobalDebt, txById)
+}
+
+interface PaymentHistoryItem {
+  id: string
+  label: string
+  person: string
+  isReceived: boolean
+  amount: number
+  date: Date | null
+  source: 'ทริป' | 'ธุรกรรม' | 'บันทึกเอง'
+}
+
+function resolveSettlementSource(settlement: TripSettlement): PaymentHistoryItem['source'] {
+  if (settlement.tripId) return 'ทริป'
+  if (settlement.note?.startsWith('debt:')) return 'บันทึกเอง'
+  return 'บันทึกเอง'
 }
 
 function DebtTable({
@@ -295,7 +313,8 @@ function DebtTable({
 export default function DebtsPage() {
   const { user } = useAuth()
   const { debts, loading, addDebt, settleDebt, removeDebt } = useDebts()
-  const { tripDebts, loading: tripLoading } = useTripDebts()
+  const { tripDebts, tripBalanceData, loading: tripLoading } = useTripDebts()
+  const { settlements: paymentSettlements, loading: settlementsLoading } = useTripSettlements()
   const { transactions, editTransaction } = useTransactions()
 
   const txById = React.useMemo(() => {
@@ -317,16 +336,77 @@ export default function DebtsPage() {
   const [editingTransaction, setEditingTransaction] = React.useState<Transaction | null>(null)
   const [isTxDetailOpen, setIsTxDetailOpen] = React.useState(false)
 
-  const settledDebts = React.useMemo(
-    () => debts.filter((d) => d.status === 'settled'),
-    [debts]
-  )
-  const groupedSettledDebts = React.useMemo(
-    () => groupItemsByDate(settledDebts, (debt) => resolveSettledDebtDate(debt, txById)),
-    [settledDebts, txById]
+  const debtById = React.useMemo(() => {
+    const map = new Map<string, Debt>()
+    debts.forEach((d) => {
+      if (d.id) map.set(d.id, d)
+    })
+    return map
+  }, [debts])
+
+  const paymentHistory = React.useMemo((): PaymentHistoryItem[] => {
+    const items: PaymentHistoryItem[] = paymentSettlements.map((settlement) => {
+      const isReceived = settlement.toUserId === user?.uid
+      const person = isReceived
+        ? settlement.fromDisplayName || settlement.fromUserId
+        : settlement.toDisplayName || settlement.toUserId
+
+      let label = 'การชำระหนี้'
+      if (settlement.tripId) {
+        label = 'ค่าใช้จ่ายจากทริป'
+      } else if (settlement.note?.startsWith('debt:')) {
+        const debt = debtById.get(settlement.note.slice(5))
+        label = debt
+          ? resolveDebtDescription({ ...debt, isTransactionDebt: (debt.relatedTxIds?.length ?? 0) > 0 }, txById)
+          : 'ชำระหนี้'
+      }
+
+      return {
+        id: settlement.id || `${settlement.fromUserId}-${settlement.date?.seconds}`,
+        label,
+        person,
+        isReceived,
+        amount: settlement.amount,
+        date: toDateFromFirestore(settlement.date),
+        source: resolveSettlementSource(settlement),
+      }
+    })
+
+    const settledDebts = debts.filter((d) => d.status === 'settled')
+    settledDebts.forEach((debt) => {
+      const hasSettlement = paymentSettlements.some(
+        (s) =>
+          s.note === `debt:${debt.id}` ||
+          (s.fromUserId === debt.fromUserId &&
+            s.toUserId === debt.toUserId &&
+            !s.tripId &&
+            Math.abs(s.amount - (debt.paidAmount || debt.amount)) < 0.01)
+      )
+      if (hasSettlement) return
+
+      const isReceived = debt.toUserId === user?.uid
+      items.push({
+        id: `debt-${debt.id}`,
+        label: resolveDebtDescription(debt as UIGlobalDebt, txById),
+        person: isReceived
+          ? debt.fromDisplayName || debt.fromUserId
+          : debt.toDisplayName || debt.toUserId,
+        isReceived,
+        amount: debt.paidAmount || debt.amount,
+        date: resolveSettledDebtDate(debt, txById),
+        source: (debt.relatedTxIds?.length ?? 0) > 0 ? 'ธุรกรรม' : 'บันทึกเอง',
+      })
+    })
+
+    return items.sort((a, b) => (b.date?.getTime() || 0) - (a.date?.getTime() || 0))
+  }, [paymentSettlements, debts, debtById, user?.uid, txById])
+
+  const groupedPaymentHistory = React.useMemo(
+    () => groupItemsByDate(paymentHistory, (item) => item.date),
+    [paymentHistory]
   )
 
-  if (loading || tripLoading) {
+  if (loading || tripLoading || settlementsLoading) {
     return <div className="p-6">Loading debts...</div>
   }
 
@@ -407,16 +487,31 @@ export default function DebtsPage() {
 
     try {
       if (settleDebtData.isTripDebt) {
-        await createTripSettlement({
-          userId: user!.uid,
-          fromUserId: settleDebtData.fromUserId,
-          fromDisplayName: settleDebtData.fromDisplayName || settleDebtData.fromUserId,
-          toUserId: settleDebtData.toUserId,
-          toDisplayName: settleDebtData.toDisplayName || settleDebtData.toUserId,
-          amount: payAmount,
-          isPartial: payAmount < settleDebtData.amount - 0.001,
-          date: Timestamp.now(),
-        })
+        const tripIds = settleDebtData.tripIds || []
+        const allocations = allocateSettlementAcrossTrips(
+          tripIds,
+          tripBalanceData.trips,
+          tripBalanceData.expenses,
+          tripBalanceData.settlements,
+          tripBalanceData.legacyTxs,
+          settleDebtData.fromUserId,
+          settleDebtData.toUserId,
+          payAmount
+        )
+
+        for (const { tripId, amount } of allocations) {
+          await createTripSettlement({
+            userId: user!.uid,
+            tripId,
+            fromUserId: settleDebtData.fromUserId,
+            fromDisplayName: settleDebtData.fromDisplayName || settleDebtData.fromUserId,
+            toUserId: settleDebtData.toUserId,
+            toDisplayName: settleDebtData.toDisplayName || settleDebtData.toUserId,
+            amount,
+            isPartial: payAmount < settleDebtData.amount - 0.001,
+            date: Timestamp.now(),
+          })
+        }
       } else {
         await settleDebt(settleDebtData.id!, payAmount)
       }
@@ -591,7 +686,10 @@ export default function DebtsPage() {
 
           <TabsTrigger value="history" className="gap-2">
             <History className="size-4" />
-            History
+            ประวัติการจ่ายคืน
+            <Badge variant="secondary" className="ml-1 rounded-full">
+              {paymentHistory.length}
+            </Badge>
           </TabsTrigger>
         </TabsList>
 
@@ -628,40 +726,33 @@ export default function DebtsPage() {
         <TabsContent value="history" className="mt-4">
           <Card>
             <CardHeader>
-              <CardTitle>ประวัติการชำระ</CardTitle>
-              <CardDescription>รายการหนี้ที่ชำระครบแล้ว</CardDescription>
+              <CardTitle>ประวัติการจ่ายคืน</CardTitle>
+              <CardDescription>รายการจ่ายคืนทั้งหมด รวมทริปและหนี้ทั่วไป</CardDescription>
             </CardHeader>
             <CardContent className="p-0 pb-4">
-              {settledDebts.length === 0 ? (
-                <div className="px-6 py-8 text-center text-muted-foreground">ยังไม่มีประวัติการชำระ</div>
+              {paymentHistory.length === 0 ? (
+                <div className="px-6 py-8 text-center text-muted-foreground">ยังไม่มีประวัติการจ่ายคืน</div>
               ) : (
                 <Table>
                   <TableHeader>
                     <TableRow className="hover:bg-transparent">
                       <TableHead className="pl-6">รายการ</TableHead>
                       <TableHead>คู่รายการ</TableHead>
+                      <TableHead className="w-[90px]">แหล่ง</TableHead>
                       <TableHead className="pr-6 text-right">จำนวนเงิน</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {groupedSettledDebts.map((group) => (
+                    {groupedPaymentHistory.map((group) => (
                       <React.Fragment key={group.dateKey}>
-                        <DateGroupDividerRow label={group.label} colSpan={3} />
-                        {group.items.map((payment) => {
-                      const isReceived = payment.toUserId === user?.uid
-                      const person = isReceived
-                        ? payment.fromDisplayName || payment.fromUserId
-                        : payment.toDisplayName || payment.toUserId
-                      const label = resolveDebtDescription(payment as UIGlobalDebt, txById)
-                      const paymentDate = resolveSettledDebtDate(payment, txById)
-
-                      return (
+                        <DateGroupDividerRow label={group.label} colSpan={4} />
+                        {group.items.map((payment) => (
                         <TableRow key={payment.id}>
-                          <TableCell className="max-w-[240px] pl-6 truncate font-medium" title={label}>
-                            {label}
-                            {paymentDate && (
+                          <TableCell className="max-w-[240px] pl-6 truncate font-medium" title={payment.label}>
+                            {payment.label}
+                            {payment.date && (
                               <p className="text-xs font-normal text-muted-foreground tabular-nums">
-                                {formatTransactionDisplayTime(paymentDate)}
+                                {formatTransactionDisplayTime(payment.date)}
                               </p>
                             )}
                           </TableCell>
@@ -670,33 +761,37 @@ export default function DebtsPage() {
                               <div
                                 className={cn(
                                   'flex size-7 items-center justify-center rounded-full',
-                                  isReceived
+                                  payment.isReceived
                                     ? 'bg-primary/20 text-primary'
                                     : 'bg-muted text-muted-foreground'
                                 )}
                               >
-                                {isReceived ? (
+                                {payment.isReceived ? (
                                   <ArrowRight className="size-3.5 rotate-180" />
                                 ) : (
                                   <ArrowRight className="size-3.5" />
                                 )}
                               </div>
                               <span>
-                                {isReceived ? 'รับจาก' : 'จ่ายให้'} {person}
+                                {payment.isReceived ? 'รับจาก' : 'จ่ายให้'} {payment.person}
                               </span>
                             </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className="text-xs font-normal">
+                              {payment.source}
+                            </Badge>
                           </TableCell>
                           <TableCell
                             className={cn(
                               'pr-6 text-right font-semibold tabular-nums',
-                              isReceived ? 'text-success' : 'text-destructive'
+                              payment.isReceived ? 'text-success' : 'text-destructive'
                             )}
                           >
-                            {isReceived ? '+' : '-'}฿{payment.amount.toLocaleString()}
+                            {payment.isReceived ? '+' : '-'}฿{payment.amount.toLocaleString()}
                           </TableCell>
                         </TableRow>
-                      )
-                        })}
+                        ))}
                       </React.Fragment>
                     ))}
                   </TableBody>

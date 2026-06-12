@@ -3,7 +3,7 @@ import { collection, query, where, orderBy, onSnapshot } from 'firebase/firestor
 import { db } from '@/lib/firebase';
 import { Debt } from '@/lib/firestore-types';
 import { Timestamp } from 'firebase/firestore';
-import { createDebt, updateDebt, deleteDebt } from '@/lib/firestore';
+import { createDebt, updateDebt, deleteDebt, createTripSettlement } from '@/lib/firestore';
 import { useAuth } from './use-auth';
 
 export function useDebts() {
@@ -113,18 +113,33 @@ export function useDebts() {
     if (amount <= 0) throw new Error('Payment amount must be greater than zero');
     if (amount > debt.amount) throw new Error('Payment amount exceeds remaining debt');
 
-    if (amount >= debt.amount - 0.001) {
-      return updateDebt(id, {
+    const isFullPayment = amount >= debt.amount - 0.001;
+
+    if (isFullPayment) {
+      await updateDebt(id, {
         status: 'settled',
         settledAt: Timestamp.now(),
+        paidAmount: (debt.paidAmount || 0) + amount,
+      });
+    } else {
+      const newRemaining = Math.round((debt.amount - amount) * 100) / 100;
+      await updateDebt(id, {
+        amount: newRemaining,
+        paidAmount: (debt.paidAmount || 0) + amount,
+        remainingAmount: newRemaining,
       });
     }
 
-    const newRemaining = Math.round((debt.amount - amount) * 100) / 100;
-    return updateDebt(id, {
-      amount: newRemaining,
-      paidAmount: (debt.paidAmount || 0) + amount,
-      remainingAmount: newRemaining,
+    await createTripSettlement({
+      userId: user.uid,
+      fromUserId: debt.fromUserId,
+      fromDisplayName: debt.fromDisplayName || debt.fromUserId,
+      toUserId: debt.toUserId,
+      toDisplayName: debt.toDisplayName || debt.toUserId,
+      amount,
+      isPartial: !isFullPayment,
+      date: Timestamp.now(),
+      note: debt.id ? `debt:${debt.id}` : undefined,
     });
   };
 

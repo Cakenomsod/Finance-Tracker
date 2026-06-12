@@ -110,7 +110,7 @@ export default function TripDetailPage() {
     if (trip) setEditTripSettings(tripSettingsFromTrip(trip))
   }, [trip?.id, trip?.countryCode, trip?.tripCurrency, trip?.exchangeRate])
 
-  const tripTxs = transactions.filter((tx) => tx.tripId === tripId)
+  const tripTxs = transactions.filter((tx) => tx.tripId === tripId && !tx.tripExpenseId)
   // Record Payment Dialog state
   const [isRecordPaymentOpen, setIsRecordPaymentOpen] = React.useState(false)
   const [recordPaymentData, setRecordPaymentData] = React.useState<{ from: string, to: string, amount: number } | null>(null)
