@@ -2,8 +2,8 @@
 
 import * as React from 'react'
 import {
-  UserPlus, UserCheck, Users,
-  Clock, Check, X, Mail, UserRound, Trash2,
+  UserPlus, Users,
+  Clock, Check, X, Mail, UserRound,
 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -11,13 +11,14 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { SortableFriendList } from '@/components/friends/sortable-friend-list'
 import { useFriends } from '@/hooks/use-friends'
 
 export default function FriendsPage() {
   const {
-    friends, customFriends, pendingReceived, pendingSent,
+    friendListItems, pendingReceived, pendingSent,
     loading, addFriend, addCustomFriend, removeCustomFriend,
-    accept, decline, remove,
+    reorderContacts, accept, decline, remove,
   } = useFriends()
   const [searchEmail, setSearchEmail] = React.useState('')
   const [customName, setCustomName] = React.useState('')
@@ -60,7 +61,7 @@ export default function FriendsPage() {
     }
   }
 
-  const totalContacts = friends.length + customFriends.length
+  const totalContacts = friendListItems.length
 
   return (
     <div className="flex flex-col gap-6 p-6">
@@ -162,51 +163,13 @@ export default function FriendsPage() {
                   <p className="mt-3 text-sm">ยังไม่มีรายชื่อ — ลองเพิ่มเพื่อนหรือเพิ่มรายชื่อเองด้านบน</p>
                 </div>
               ) : (
-                <div className="space-y-3">
-                  {friends.map((friend) => (
-                    <div key={friend.uid} className="flex items-center justify-between rounded-lg border p-4">
-                      <div className="flex items-center gap-3">
-                        <Avatar className="size-10">
-                          <AvatarFallback className="bg-primary/20 text-primary text-sm">
-                            {friend.displayName.substring(0, 2).toUpperCase()}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div>
-                          <p className="font-medium">{friend.displayName}</p>
-                          <p className="text-xs text-muted-foreground">มีบัญชีในระบบ</p>
-                        </div>
-                      </div>
-                      <Badge variant="outline" className="text-primary border-primary/30">
-                        <UserCheck className="mr-1 size-3" /> เพื่อน
-                      </Badge>
-                    </div>
-                  ))}
-                  {customFriends.map((cf) => (
-                    <div key={cf.id} className="flex items-center justify-between rounded-lg border p-4">
-                      <div className="flex items-center gap-3">
-                        <Avatar className="size-10">
-                          <AvatarFallback className="bg-muted text-sm">
-                            {cf.name.substring(0, 2).toUpperCase()}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div>
-                          <p className="font-medium">{cf.name}</p>
-                          <p className="text-xs text-muted-foreground">รายชื่อที่เพิ่มเอง (ไม่มีบัญชี)</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Badge variant="secondary">รายชื่อเอง</Badge>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-destructive hover:text-destructive"
-                          onClick={() => cf.id && removeCustomFriend(cf.id)}
-                        >
-                          <Trash2 className="size-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
+                <div className="space-y-4">
+                  <p className="text-xs text-muted-foreground">ลากไอคอน ⋮⋮ เพื่อจัดลำดับรายชื่อตามใจคุณ</p>
+                  <SortableFriendList
+                    items={friendListItems}
+                    onReorder={reorderContacts}
+                    onRemoveCustom={removeCustomFriend}
+                  />
                 </div>
               )}
             </CardContent>

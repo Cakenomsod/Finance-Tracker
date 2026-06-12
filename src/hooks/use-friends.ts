@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { collection, query, where, onSnapshot, doc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { FriendRequest, CustomFriend } from '@/lib/firestore-types';
 import {
@@ -10,7 +10,9 @@ import {
   getUserProfile,
   createCustomFriend,
   deleteCustomFriend,
+  updateContactOrder,
 } from '@/lib/firestore';
+import { contactKeyForCustom, mergeContactOrder, sortByContactOrder } from '@/lib/contact-order';
 import { useAuth } from './use-auth';
 
 export interface Friend {
@@ -27,15 +29,24 @@ export interface Contact {
   isSelf?: boolean;
 }
 
+export interface FriendListItem {
+  key: string;
+  type: 'friend' | 'custom';
+  displayName: string;
+  photoURL?: string | null;
+  customId?: string;
+}
+
 export function useFriends() {
   const { user } = useAuth();
   const [requests, setRequests] = useState<FriendRequest[]>([]);
   const [customFriends, setCustomFriends] = useState<CustomFriend[]>([]);
   const [profiles, setProfiles] = useState<Record<string, { displayName: string; photoURL: string | null }>>({});
+  const [contactOrder, setContactOrder] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!user) { setRequests([]); setCustomFriends([]); setLoading(false); return; }
+    if (!user) { setRequests([]); setCustomFriends([]); setContactOrder([]); setLoading(false); return; }
 
     const q = query(
       collection(db, 'friend_requests'),
@@ -73,7 +84,12 @@ export function useFriends() {
       setLoading(false);
     });
 
-    return () => { unsub1(); unsub2(); unsub3(); };
+    const unsub4 = onSnapshot(doc(db, 'users', user.uid), (snap) => {
+      const data = snap.data();
+      setContactOrder(Array.isArray(data?.contactOrder) ? data.contactOrder : []);
+    });
+
+    return () => { unsub1(); unsub2(); unsub3(); unsub4(); };
   }, [user]);
 
   const accepted = requests.filter(r => r.status === 'accepted');
@@ -141,19 +157,73 @@ export function useFriends() {
     };
   });
 
-  const contacts: Contact[] = [
+  const allContactKeys = useMemo(
+    () => [
+      ...friends.map((f) => f.uid),
+      ...customFriends.map((cf) => contactKeyForCustom(cf.id!)),
+    ],
+    [friends, customFriends],
+  );
+
+  const mergedContactOrder = useMemo(
+    () => mergeContactOrder(contactOrder, allContactKeys),
+    [contactOrder, allContactKeys],
+  );
+
+  const friendListItems: FriendListItem[] = useMemo(() => {
+    const items: FriendListItem[] = [
+      ...friends.map((f) => ({
+        key: f.uid,
+        type: 'friend' as const,
+        displayName: f.displayName,
+        photoURL: f.photoURL,
+      })),
+      ...customFriends.map((cf) => ({
+        key: contactKeyForCustom(cf.id!),
+        type: 'custom' as const,
+        displayName: cf.name,
+        customId: cf.id,
+      })),
+    ];
+    return sortByContactOrder(items, (item) => item.key, mergedContactOrder);
+  }, [friends, customFriends, mergedContactOrder]);
+
+  const sortedFriends = useMemo(
+    () => sortByContactOrder(friends, (f) => f.uid, mergedContactOrder),
+    [friends, mergedContactOrder],
+  );
+
+  const sortedCustomFriends = useMemo(
+    () => sortByContactOrder(customFriends, (cf) => contactKeyForCustom(cf.id!), mergedContactOrder),
+    [customFriends, mergedContactOrder],
+  );
+
+  const contacts: Contact[] = useMemo(() => [
     { key: 'me', displayName: 'Me', isSelf: true },
-    ...friends.map(f => ({
-      key: f.uid,
-      displayName: f.displayName,
-      photoURL: f.photoURL,
+    ...friendListItems.map((item) => ({
+      key: item.key,
+      displayName: item.displayName,
+      photoURL: item.photoURL,
+      isCustom: item.type === 'custom',
     })),
-    ...customFriends.map(cf => ({
-      key: `custom:${cf.id}`,
-      displayName: cf.name,
-      isCustom: true,
-    })),
-  ];
+  ], [friendListItems]);
+
+  const appendContactKey = useCallback(async (key: string) => {
+    if (!user) return;
+    const nextOrder = mergeContactOrder(contactOrder, [...allContactKeys, key]);
+    if (!nextOrder.includes(key)) {
+      nextOrder.push(key);
+    }
+    await updateContactOrder(user.uid, nextOrder);
+  }, [user, contactOrder, allContactKeys]);
+
+  const reorderContacts = useCallback(async (keys: string[]) => {
+    if (!user) return;
+    const validKeys = new Set(allContactKeys);
+    const nextOrder = keys.filter((key) => validKeys.has(key));
+    const missing = allContactKeys.filter((key) => !nextOrder.includes(key));
+    await updateContactOrder(user.uid, [...nextOrder, ...missing]);
+  }, [user, allContactKeys]);
 
   const addFriend = async (email: string) => {
     if (!user) throw new Error('Not logged in');
@@ -181,20 +251,35 @@ export function useFriends() {
     if (friends.some(f => f.displayName.toLowerCase() === lower)) {
       throw new Error('มีชื่อนี้ในรายชื่อเพื่อนแล้ว');
     }
-    await createCustomFriend(user.uid, trimmed);
+    const id = await createCustomFriend(user.uid, trimmed);
+    await appendContactKey(contactKeyForCustom(id));
   };
 
   const removeCustomFriendById = async (id: string) => {
+    if (!user) return;
     await deleteCustomFriend(id);
+    const key = contactKeyForCustom(id);
+    await updateContactOrder(
+      user.uid,
+      contactOrder.filter((k) => k !== key),
+    );
   };
 
-  const accept = (requestId: string) => respondFriendRequest(requestId, 'accepted');
+  const accept = async (requestId: string) => {
+    const req = requests.find((r) => r.id === requestId);
+    await respondFriendRequest(requestId, 'accepted');
+    if (req && user) {
+      const friendUid = req.fromUserId === user.uid ? req.toUserId : req.fromUserId;
+      await appendContactKey(friendUid);
+    }
+  };
   const decline = (requestId: string) => respondFriendRequest(requestId, 'declined');
   const remove = (requestId: string) => deleteFriendRequest(requestId);
 
   return {
-    friends,
-    customFriends,
+    friends: sortedFriends,
+    customFriends: sortedCustomFriends,
+    friendListItems,
     contacts,
     pendingReceived,
     pendingSent,
@@ -202,6 +287,7 @@ export function useFriends() {
     addFriend,
     addCustomFriend,
     removeCustomFriend: removeCustomFriendById,
+    reorderContacts,
     accept,
     decline,
     remove,

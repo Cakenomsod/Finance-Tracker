@@ -26,7 +26,7 @@ interface MemberPickerProps {
 }
 
 export function MemberPicker({ value, onChange, selfUid, className }: MemberPickerProps) {
-  const { friends, customFriends } = useFriends()
+  const { friendListItems } = useFriends()
   const [manualName, setManualName] = React.useState('')
 
   const selectedKeys = new Set(value.map((m) => m.key))
@@ -49,7 +49,9 @@ export function MemberPicker({ value, onChange, selfUid, className }: MemberPick
 
   const remove = (key: string) => onChange(value.filter((m) => m.key !== key))
 
-  const availableFriends = friends.filter((f) => f.uid !== selfUid)
+  const availableContacts = friendListItems.filter(
+    (item) => item.type !== 'friend' || item.key !== selfUid,
+  )
 
   return (
     <div className={cn('space-y-3', className)}>
@@ -72,17 +74,22 @@ export function MemberPicker({ value, onChange, selfUid, className }: MemberPick
       )}
 
       {/* Friends list */}
-      {(availableFriends.length > 0 || customFriends.length > 0) && (
+      {availableContacts.length > 0 && (
         <div>
           <p className="text-xs text-muted-foreground mb-2">รายชื่อของคุณ</p>
           <div className="flex flex-wrap gap-2">
-            {availableFriends.map((f) => {
-              const isSelected = selectedKeys.has(f.uid)
+            {availableContacts.map((item) => {
+              const isSelected = selectedKeys.has(item.key)
               return (
                 <button
-                  key={f.uid}
+                  key={item.key}
                   type="button"
-                  onClick={() => toggle({ key: f.uid, displayName: f.displayName, photoURL: f.photoURL })}
+                  onClick={() => toggle({
+                    key: item.key,
+                    displayName: item.displayName,
+                    photoURL: item.photoURL,
+                    isManual: item.type === 'custom',
+                  })}
                   className={cn(
                     'flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-medium transition-all',
                     isSelected
@@ -92,35 +99,10 @@ export function MemberPicker({ value, onChange, selfUid, className }: MemberPick
                 >
                   <Avatar className="size-5">
                     <AvatarFallback className="text-[9px]">
-                      {f.displayName.substring(0, 2).toUpperCase()}
+                      {item.displayName.substring(0, 2).toUpperCase()}
                     </AvatarFallback>
                   </Avatar>
-                  {f.displayName}
-                  {isSelected && <UserCheck className="size-3" />}
-                </button>
-              )
-            })}
-            {customFriends.map((cf) => {
-              const key = `custom:${cf.id}`
-              const isSelected = selectedKeys.has(key)
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => toggle({ key, displayName: cf.name, isManual: true })}
-                  className={cn(
-                    'flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-medium transition-all',
-                    isSelected
-                      ? 'bg-primary text-primary-foreground border-primary'
-                      : 'bg-background border-border hover:border-primary/50'
-                  )}
-                >
-                  <Avatar className="size-5">
-                    <AvatarFallback className="text-[9px]">
-                      {cf.name.substring(0, 2).toUpperCase()}
-                    </AvatarFallback>
-                  </Avatar>
-                  {cf.name}
+                  {item.displayName}
                   {isSelected && <UserCheck className="size-3" />}
                 </button>
               )

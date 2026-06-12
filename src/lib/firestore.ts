@@ -197,10 +197,18 @@ export const createCustomFriend = async (userId: string, name: string) => {
   const trimmed = name.trim();
   if (!trimmed) throw new Error('กรุณากรอกชื่อ');
 
-  return await addDoc(customFriendsRef, {
+  const ref = await addDoc(customFriendsRef, {
     userId,
     name: trimmed,
     createdAt: serverTimestamp(),
+  });
+  return ref.id;
+};
+
+export const updateContactOrder = async (userId: string, contactOrder: string[]) => {
+  await updateDoc(doc(db, 'users', userId), {
+    contactOrder,
+    updatedAt: serverTimestamp(),
   });
 };
 

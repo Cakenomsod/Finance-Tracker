@@ -26,6 +26,8 @@ export interface UserProfile {
   localAiBaseUrl?: string;
   /** Immich album for non-trip receipt attachments */
   immichGeneralAlbumId?: string | null;
+  /** User-defined display order for friends & custom contacts (uid or custom:{id}) */
+  contactOrder?: string[];
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }
