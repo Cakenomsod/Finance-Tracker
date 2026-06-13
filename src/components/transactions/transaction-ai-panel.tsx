@@ -5,7 +5,10 @@ import { receiptParseToTransactionDraft } from '@/lib/ai/receipt-mapper'
 import { ReceiptParseResult } from '@/lib/ai/receipt-schema'
 import { Transaction } from '@/lib/firestore-types'
 import { AiReceiptReviewDialog } from '@/components/ai/ai-receipt-review-dialog'
-import { AiExpenseQuickInput } from '@/components/ai/ai-expense-quick-input'
+import {
+  AiExpenseQuickInput,
+  type AiExpenseQuickInputHandle,
+} from '@/components/ai/ai-expense-quick-input'
 
 export interface TransactionAiPanelProps {
   currency?: 'THB' | 'JPY'
@@ -15,16 +18,37 @@ export interface TransactionAiPanelProps {
   ) => void
 }
 
-export function TransactionAiPanel({
-  currency = 'THB',
-  onOpenDraftForm,
-}: TransactionAiPanelProps) {
+export interface TransactionAiPanelHandle {
+  completeActiveJob: () => void
+}
+
+export const TransactionAiPanel = React.forwardRef<
+  TransactionAiPanelHandle,
+  TransactionAiPanelProps
+>(function TransactionAiPanel({ currency = 'THB', onOpenDraftForm }, ref) {
+  const aiInputRef = React.useRef<AiExpenseQuickInputHandle>(null)
+  const activeJobIdRef = React.useRef<string | null>(null)
+
   const [reviewOpen, setReviewOpen] = React.useState(false)
   const [pendingResult, setPendingResult] = React.useState<ReceiptParseResult | null>(null)
   const [pendingImmichIds, setPendingImmichIds] = React.useState<string[]>([])
   const [reviewImmichIds, setReviewImmichIds] = React.useState<string[]>([])
 
-  const handleReview = (result: ReceiptParseResult, immichIds: string[]) => {
+  React.useImperativeHandle(ref, () => ({
+    completeActiveJob: () => {
+      if (activeJobIdRef.current) {
+        aiInputRef.current?.completeJob(activeJobIdRef.current)
+        activeJobIdRef.current = null
+      }
+    },
+  }))
+
+  const handleReview = (
+    result: ReceiptParseResult,
+    immichIds: string[],
+    jobId: string
+  ) => {
+    activeJobIdRef.current = jobId
     setPendingResult(result)
     setReviewImmichIds(immichIds.length ? immichIds : pendingImmichIds)
     setReviewOpen(true)
@@ -41,6 +65,7 @@ export function TransactionAiPanel({
   return (
     <>
       <AiExpenseQuickInput
+        ref={aiInputRef}
         storageScope="transactions"
         aiTextProvider="gemma"
         showTextProviderSelect={true}
@@ -62,4 +87,4 @@ export function TransactionAiPanel({
       />
     </>
   )
-}
+})

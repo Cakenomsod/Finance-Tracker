@@ -65,7 +65,7 @@ import { useAuth } from '@/hooks/use-auth'
 import { getTripExpenseUserShare } from '@/lib/trip-balance'
 import { useCategories } from '@/hooks/use-categories'
 import { TransactionForm } from '@/components/transactions/transaction-form'
-import { TransactionAiPanel } from '@/components/transactions/transaction-ai-panel'
+import { TransactionAiPanel, type TransactionAiPanelHandle } from '@/components/transactions/transaction-ai-panel'
 import { DateGroupDividerRow } from '@/components/transactions/date-group-divider'
 import { TransactionMobileList } from '@/components/transactions/transaction-mobile-list'
 import { Transaction } from '@/lib/firestore-types'
@@ -100,6 +100,7 @@ export default function TransactionsPage() {
   const [editingTransaction, setEditingTransaction] = React.useState<Transaction | null>(null)
   const [ocrDraft, setOcrDraft] = React.useState<Omit<Transaction, 'id' | 'createdAt' | 'userId'> | null>(null)
   const [pendingImmichAssetIds, setPendingImmichAssetIds] = React.useState<string[]>([])
+  const transactionAiPanelRef = React.useRef<TransactionAiPanelHandle>(null)
 
   // Merge legacy transactions and trip expenses (trip rows show only the user's share)
   const allCombined = React.useMemo(() => {
@@ -208,6 +209,7 @@ export default function TransactionsPage() {
       </div>
 
       <TransactionAiPanel
+        ref={transactionAiPanelRef}
         onOpenDraftForm={(draft, immichIds) => {
           setOcrDraft(draft)
           setPendingImmichAssetIds(immichIds || [])
@@ -298,6 +300,9 @@ export default function TransactionsPage() {
                     await editTransaction(editingTransaction.id!, data)
                   } else {
                     await addTransaction({ ...data, source: data.source || (ocrDraft ? 'ai' : 'manual') })
+                  }
+                  if (ocrDraft && !editingTransaction) {
+                    transactionAiPanelRef.current?.completeActiveJob()
                   }
                   setIsAddDialogOpen(false)
                   setEditingTransaction(null)

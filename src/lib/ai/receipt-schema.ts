@@ -13,6 +13,8 @@ export const receiptParseSchema = z.object({
   description: z.string(),
   category: z.string(),
   date: z.string(),
+  /** Transaction time HH:mm (24-hour), when visible on receipt/slip */
+  time: z.string().optional(),
   totalAmount: z.number().positive(),
   currency: z.enum(['THB', 'JPY']).optional(),
   taxMode: z.enum(['exclusive', 'inclusive']).optional(),
@@ -41,6 +43,7 @@ Required JSON shape:
   "description": string,
   "category": string,
   "date": "YYYY-MM-DD",
+  "time": "HH:mm" (optional, 24-hour),
   "totalAmount": number,
   "currency": "THB" | "JPY" (optional),
   "taxMode": "exclusive" | "inclusive" (optional),
@@ -53,7 +56,8 @@ Extraction rules:
 - documentType: "receipt" for store/restaurant receipts; "transfer_slip" for bank or payment app transfer screenshots
 - description: short label — store name, merchant, or transfer memo (Thai or English)
 - category: exactly one of: Food & Dining, Transport, Shopping, Entertainment, Bills & Utilities, Health & Fitness, Accommodation, Activities, Others
-- date: transaction date as YYYY-MM-DD; use today's date only if truly unreadable
+- date: transaction date as YYYY-MM-DD from the receipt or slip; use today's date only if truly unreadable
+- time: transaction time as HH:mm (24-hour) — look for printed time near the date, payment timestamp, "เวลา", "Time", or POS clock; convert 12h AM/PM to 24h; omit only if no time is visible anywhere on the image
 - totalAmount: final paid amount as a plain number (no symbols, no commas)
 - currency: THB for ฿/baht, JPY for ¥/yen; omit if unknown
 - taxMode: "exclusive" if tax is added on top, "inclusive" if tax is included in prices
@@ -75,6 +79,7 @@ Use the same JSON shape as receipt parsing:
   "description": string,
   "category": string,
   "date": "YYYY-MM-DD",
+  "time": "HH:mm" (optional, 24-hour),
   "totalAmount": number,
   "currency": "THB" | "JPY" (optional),
   "items": [{ "name": string, "category": string, "price": number }] (optional)
@@ -82,9 +87,10 @@ Use the same JSON shape as receipt parsing:
 
 Rules:
 - NEVER ask questions or give advice — only extract data for a form
-- "ไก่ทอด 20 บาท" → description "ไก่ทอด", totalAmount 20, category "Food & Dining", date = today
+- "ไก่ทอด 20 บาท" → description "ไก่ทอด", totalAmount 20, category "Food & Dining", date = today, time = current time HH:mm if not stated
 - Multiple items: "ไก่ทอด 20 กาแฟ 45" → items array + totalAmount = sum of prices
 - "บ" or "บาท" = THB; use today's date (YYYY-MM-DD) unless a date is stated
+- If user mentions time ("14:30", "2 ทุ่ม", "บ่าย 3"): convert to HH:mm and fill time field
 - category: one of Food & Dining, Transport, Shopping, Entertainment, Bills & Utilities, Health & Fitness, Accommodation, Activities, Others
 - documentType is always "receipt" for text input
 - description: short summary of the expense (main item or comma-separated names)

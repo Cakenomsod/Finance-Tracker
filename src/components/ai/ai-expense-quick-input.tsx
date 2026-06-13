@@ -28,7 +28,7 @@ export interface AiExpenseQuickInputProps {
   /** แสดงตัวเลือก Local / Gemini สำหรับทั้งข้อความและรูปใบเสร็จ */
   showTextProviderSelect?: boolean
   /** เรียกเมื่อผู้ใช้กดตรวจสอบ/แก้ไขจาก job ที่เสร็จแล้ว */
-  onReview?: (result: ReceiptParseResult, immichIds: string[]) => void
+  onReview?: (result: ReceiptParseResult, immichIds: string[], jobId: string) => void
   pendingImmichIds?: string[]
   onImmichNoteReady?: (assetId: string) => void
 }
@@ -43,15 +43,25 @@ function statusLabel(job: AiParseJob) {
   return job.error || 'แยกไม่สำเร็จ'
 }
 
-export function AiExpenseQuickInput({
-  tripId,
-  storageScope,
-  aiTextProvider = 'gemma',
-  showTextProviderSelect = true,
-  onReview,
-  pendingImmichIds = [],
-  onImmichNoteReady,
-}: AiExpenseQuickInputProps) {
+export interface AiExpenseQuickInputHandle {
+  completeJob: (jobId: string) => void
+}
+
+export const AiExpenseQuickInput = React.forwardRef<
+  AiExpenseQuickInputHandle,
+  AiExpenseQuickInputProps
+>(function AiExpenseQuickInput(
+  {
+    tripId,
+    storageScope,
+    aiTextProvider = 'gemma',
+    showTextProviderSelect = true,
+    onReview,
+    pendingImmichIds = [],
+    onImmichNoteReady,
+  },
+  ref
+) {
   const [input, setInput] = React.useState('')
   const [textProvider, setTextProvider] = React.useState<AiTextProvider>(aiTextProvider)
   const [uploadingNote, setUploadingNote] = React.useState(false)
@@ -104,6 +114,14 @@ export function AiExpenseQuickInput({
   const removeJob = React.useCallback((id: string) => {
     setJobs((prev) => prev.filter((j) => j.id !== id))
   }, [])
+
+  React.useImperativeHandle(
+    ref,
+    () => ({
+      completeJob: (jobId: string) => removeJob(jobId),
+    }),
+    [removeJob]
+  )
 
   const runTextJob = async (job: AiParseJob, text: string) => {
     try {
@@ -436,7 +454,7 @@ export function AiExpenseQuickInput({
                     size="sm"
                     variant="secondary"
                     className="h-7 w-full text-xs"
-                    onClick={() => onReview(job.result!, job.immichIds)}
+                    onClick={() => onReview(job.result!, job.immichIds, job.id)}
                   >
                     ตรวจสอบ / แก้ไข
                   </Button>
@@ -452,4 +470,4 @@ export function AiExpenseQuickInput({
       </p>
     </div>
   )
-}
+})

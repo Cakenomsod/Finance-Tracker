@@ -45,7 +45,7 @@ import { useAuth } from '@/hooks/use-auth'
 import { useTripExpenses } from '@/hooks/use-trip-expenses'
 import { useTripSettlements } from '@/hooks/use-trip-settlements'
 import { TripExpenseFormV2 } from '@/components/trips/trip-expense-form'
-import { TripAiPanel } from '@/components/trips/trip-ai-panel'
+import { TripAiPanel, type TripAiPanelHandle } from '@/components/trips/trip-ai-panel'
 import {
   saveTripExpenseWithTransaction,
   updateTripExpenseWithTransaction,
@@ -101,6 +101,7 @@ export default function TripDetailPage() {
   const [expandedReceipts, setExpandedReceipts] = React.useState<Record<string, boolean>>({})
   const [showCloseConfirm, setShowCloseConfirm] = React.useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false)
+  const tripAiPanelRef = React.useRef<TripAiPanelHandle>(null)
 
   const trip = trips.find((t) => t.id === tripId)
   const tripTimeZone = getTripTimeZone(trip?.countryCode, trip?.tripCurrency)
@@ -580,6 +581,7 @@ export default function TripDetailPage() {
       {/* AI panel — แสดงทุกแท็บ สถานะแยกรายการ persist ต่อทริป */}
       {trip && trip.status === 'active' && (
         <TripAiPanel
+          ref={tripAiPanelRef}
           tripId={tripId}
           trip={trip}
           tripMembers={memberObjects}
@@ -1282,6 +1284,9 @@ export default function TripDetailPage() {
                     source: data.source || (ocrDraft ? 'ai' : 'manual'),
                   }
                 )
+              }
+              if (ocrDraft && !editingExpense) {
+                tripAiPanelRef.current?.completeActiveJob()
               }
               setIsAddExpenseOpen(false)
               setEditingExpense(null)

@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Check, FileText, Receipt } from 'lucide-react'
 import { ReceiptParseResult } from '@/lib/ai/receipt-schema'
+import { normalizeAiTime } from '@/lib/ai/receipt-mapper'
 
 const DOC_TYPE_LABELS: Record<ReceiptParseResult['documentType'], string> = {
   receipt: 'ใบเสร็จ',
@@ -68,6 +69,9 @@ export function AiReceiptReviewDialog({
             <Row label="รายละเอียด" value={result.description} />
             <Row label="หมวดหมู่" value={result.category} />
             <Row label="วันที่" value={result.date} />
+            {normalizeAiTime(result.time) && (
+              <Row label="เวลา" value={normalizeAiTime(result.time)!} />
+            )}
             <Row
               label="ยอดรวม"
               value={`${result.totalAmount.toLocaleString()} ${currency}`}
