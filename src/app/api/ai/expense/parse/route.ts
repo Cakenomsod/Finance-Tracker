@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { assertTripMember, getUserAiSettings, verifySession } from '@/lib/api-auth';
+import { assertTripMember, getUserAiSettings, resolveLocalAiBaseUrl, resolveRequestedAiProvider, verifySession } from '@/lib/api-auth';
 import { adminDb } from '@/lib/firebase-admin';
 import { parseExpenseTextWithProvider } from '@/lib/ai';
 import { getGoogleAiApiKey } from '@/lib/ai/env';
 import { AiTextProvider } from '@/lib/firestore-types';
-import { photoDb } from '@/lib/photo-firebase-admin'; // 👈 1. อิมพอร์ตตัวเชื่อมต่อข้ามค่ายเข้ามา
 
 export async function POST(request: NextRequest) {
   const session = await verifySession();
@@ -14,14 +13,14 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { text, tripId } = body;
+    const { text, tripId, provider: requestedProvider } = body;
 
     if (!text || typeof text !== 'string' || !text.trim()) {
       return NextResponse.json({ error: 'Text is required' }, { status: 400 });
     }
 
     const { provider: savedProvider } = await getUserAiSettings(session.uid);
-    const provider: AiTextProvider = savedProvider;
+    const provider: AiTextProvider = resolveRequestedAiProvider(requestedProvider, savedProvider);
 
     if (provider === 'gemma' && !getGoogleAiApiKey()) {
       return NextResponse.json(
@@ -32,15 +31,7 @@ export async function POST(request: NextRequest) {
 
     let sharedLocalAiUrl = '';
     if (provider === 'local') {
-      const configDoc = await photoDb().collection('system').doc('tunnel_config').get();
-      if (!configDoc.exists) {
-        return NextResponse.json(
-          { error: 'ไม่พบข้อมูลท่อเชื่อมต่อบนคลาวด์ยานแม่ (คอมบ้านอาจจะยังไม่ได้ส่งข้อมูล)' },
-          { status: 503 }
-        );
-      }
-
-      sharedLocalAiUrl = String(configDoc.data()?.ai_url || '').trim().replace(/\/$/, '');
+      sharedLocalAiUrl = (await resolveLocalAiBaseUrl()) || '';
       if (!sharedLocalAiUrl) {
         return NextResponse.json(
           { error: 'คอมบ้านเชื่อมต่อท่อสำเร็จ แต่ยังไม่ได้เปิดใช้งานโหมด Local AI บนเครื่องบ้าน' },

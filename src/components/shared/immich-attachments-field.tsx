@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/dialog'
 import { requestDeleteImmichAssets } from '@/lib/immich/delete-from-browser'
 import { cn } from '@/lib/utils'
+import { toast } from 'sonner'
 
 interface ImmichAttachmentsFieldProps {
   value: string[]
@@ -45,8 +46,9 @@ export function ImmichAttachmentsField({
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Upload failed')
       onChange([...new Set([...value, data.assetId as string])])
+      toast.success('เพิ่มรูปโน้ตแล้ว')
     } catch (e) {
-      console.error(e)
+      toast.error(e instanceof Error ? e.message : 'อัปโหลดรูปไม่สำเร็จ')
     } finally {
       setUploadingAttach(false)
     }
@@ -102,7 +104,7 @@ export function ImmichAttachmentsField({
                 />
                 <button
                   type="button"
-                  className="absolute top-0.5 right-0.5 size-6 rounded-full bg-background/90 border flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                  className="absolute top-0.5 right-0.5 size-6 rounded-full bg-background/90 border flex items-center justify-center opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
                   onClick={() => handleRemoveAttachment(id)}
                   aria-label="ลบรูป"
                 >
@@ -110,7 +112,7 @@ export function ImmichAttachmentsField({
                 </button>
                 <button
                   type="button"
-                  className="absolute bottom-0.5 right-0.5 size-6 rounded-full bg-background/90 border flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                  className="absolute bottom-0.5 right-0.5 size-6 rounded-full bg-background/90 border flex items-center justify-center opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
                   onClick={() => setLightboxAssetId(id)}
                   aria-label="ขยาย"
                 >

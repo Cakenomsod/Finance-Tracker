@@ -465,7 +465,7 @@ export default function TripDetailPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6 p-6">
+    <div className="flex flex-col gap-4 p-4 sm:gap-6 sm:p-6">
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex items-start gap-3 sm:gap-4">
@@ -548,7 +548,7 @@ export default function TripDetailPage() {
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <DollarSign className="size-4" /> Total Expenses
             </div>
-            <p className="mt-2 text-3xl font-bold">฿{totalExpenses.toLocaleString()}</p>
+            <p className="mt-2 text-2xl font-bold sm:text-3xl">฿{totalExpenses.toLocaleString()}</p>
           </CardContent>
         </Card>
         <Card>
@@ -556,7 +556,7 @@ export default function TripDetailPage() {
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Users className="size-4" /> Participants
             </div>
-            <p className="mt-2 text-3xl font-bold">{members.length}</p>
+            <p className="mt-2 text-2xl font-bold sm:text-3xl">{members.length}</p>
           </CardContent>
         </Card>
         <Card>
@@ -564,7 +564,7 @@ export default function TripDetailPage() {
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Receipt className="size-4" /> Transactions
             </div>
-            <p className="mt-2 text-3xl font-bold">{allExpensesCombined.length}</p>
+            <p className="mt-2 text-2xl font-bold sm:text-3xl">{allExpensesCombined.length}</p>
           </CardContent>
         </Card>
         <Card>
@@ -572,41 +572,43 @@ export default function TripDetailPage() {
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <BarChart3 className="size-4" /> Shared Splits
             </div>
-            <p className="mt-2 text-3xl font-bold">{allExpensesCombined.filter(ex => !ex.splitLabel.includes('Solo')).length}</p>
+            <p className="mt-2 text-2xl font-bold sm:text-3xl">{allExpensesCombined.filter(ex => !ex.splitLabel.includes('Solo')).length}</p>
           </CardContent>
         </Card>
       </div>
 
+      {/* AI panel — แสดงทุกแท็บ สถานะแยกรายการ persist ต่อทริป */}
+      {trip && trip.status === 'active' && (
+        <TripAiPanel
+          tripId={tripId}
+          trip={trip}
+          tripMembers={memberObjects}
+          onOpenExpenseForm={(draft, immichAssetIds) => {
+            setOcrDraft(draft)
+            setPendingImmichAssetIds(immichAssetIds?.length ? [...immichAssetIds] : [])
+            setEditingExpense(null)
+            setIsAddExpenseOpen(true)
+          }}
+        />
+      )}
+
       {/* Tabs */}
       <Tabs defaultValue="expenses" className="w-full">
-        <TabsList>
-          <TabsTrigger value="expenses" className="gap-2">
-            <Receipt className="size-4" /> Expenses
-            <Badge variant="secondary" className="ml-1 rounded-full">{allExpensesCombined.length}</Badge>
+        <TabsList className="grid h-auto w-full grid-cols-3">
+          <TabsTrigger value="expenses" className="gap-1 px-2 text-xs sm:gap-2 sm:px-3 sm:text-sm">
+            <Receipt className="size-3.5 sm:size-4" /> <span className="truncate">Expenses</span>
+            <Badge variant="secondary" className="ml-0.5 rounded-full px-1.5 text-[10px] sm:ml-1">{allExpensesCombined.length}</Badge>
           </TabsTrigger>
-          <TabsTrigger value="analytics" className="gap-2">
-            <BarChart3 className="size-4" /> Analytics
+          <TabsTrigger value="analytics" className="gap-1 px-2 text-xs sm:gap-2 sm:px-3 sm:text-sm">
+            <BarChart3 className="size-3.5 sm:size-4" /> <span className="truncate">Analytics</span>
           </TabsTrigger>
-          <TabsTrigger value="settlements" className="gap-2">
-            <Users className="size-4" /> Settlements
+          <TabsTrigger value="settlements" className="gap-1 px-2 text-xs sm:gap-2 sm:px-3 sm:text-sm">
+            <Users className="size-3.5 sm:size-4" /> <span className="truncate">Settle</span>
           </TabsTrigger>
         </TabsList>
 
         {/* Expenses Tab */}
         <TabsContent value="expenses" className="mt-4 space-y-4">
-          {trip && (
-            <TripAiPanel
-              tripId={tripId}
-              trip={trip}
-              tripMembers={memberObjects}
-              onOpenExpenseForm={(draft, immichAssetIds) => {
-                setOcrDraft(draft)
-                setPendingImmichAssetIds(immichAssetIds?.length ? [...immichAssetIds] : [])
-                setEditingExpense(null)
-                setIsAddExpenseOpen(true)
-              }}
-            />
-          )}
           <Card>
             <CardHeader>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -614,14 +616,14 @@ export default function TripDetailPage() {
                   <CardTitle>All Expenses</CardTitle>
                   <CardDescription>{filteredExpenses.length} / {allExpensesCombined.length} transactions</CardDescription>
                 </div>
-                <div className="flex gap-2">
-                  <div className="relative">
+                <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+                  <div className="relative w-full sm:w-auto">
                     <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                     <Input
                       placeholder="ค้นหา..."
                       value={expenseSearch}
                       onChange={(e) => setExpenseSearch(e.target.value)}
-                      className="pl-9 w-[180px]"
+                      className="w-full pl-9 sm:w-[180px]"
                     />
                   </div>
                   <div className="flex flex-wrap gap-1">
@@ -672,15 +674,15 @@ export default function TripDetailPage() {
                     const exSymbol = formatCurrencySymbol(exCurrency)
                     const exHomeHint = formatHomeConversion(ex.amount, exCurrency, trip)
                     return (
-                      <div key={ex.id} className="group flex flex-col justify-start rounded-lg border p-4 transition-all hover:shadow-sm">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            <div className="flex size-10 items-center justify-center rounded-lg bg-muted shrink-0">
+                      <div key={ex.id} className="group flex flex-col justify-start rounded-lg border p-3 transition-all hover:shadow-sm sm:p-4">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="flex min-w-0 items-start gap-3">
+                            <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted sm:size-10">
                               <Receipt className="size-4 text-muted-foreground" />
                             </div>
-                            <div>
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <p className="font-medium">{ex.description}</p>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <p className="font-medium break-words">{ex.description}</p>
                                 {ex.isLegacy && <Badge variant="outline" className="text-[10px] h-4 px-1">Legacy</Badge>}
                                 {ex.rawEx?.items && ex.rawEx.items.length > 0 && (
                                   <Button
@@ -695,8 +697,11 @@ export default function TripDetailPage() {
                                   </Button>
                                 )}
                               </div>
+                              <p className="text-xs text-muted-foreground break-words">
+                                จ่ายโดย {ex.paidBy || 'Me'} · {ex.category} · {ex.splitLabel}
+                              </p>
                               <p className="text-xs text-muted-foreground">
-                                จ่ายโดย {ex.paidBy || 'Me'} · {ex.category} · {ex.splitLabel} · {txDate.toLocaleDateString('th-TH', dateOptions)}
+                                {txDate.toLocaleDateString('th-TH', dateOptions)}
                                 <span className="mx-1">·</span>
                                 {txDate.toLocaleTimeString('en-GB', timeOptions)}
                               </p>
@@ -712,9 +717,9 @@ export default function TripDetailPage() {
                               )}
                             </div>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <div className="text-right">
-                              <span className="font-semibold tabular-nums block text-destructive">
+                          <div className="flex shrink-0 items-center justify-between gap-2 sm:justify-end">
+                            <div className="text-left sm:text-right">
+                              <span className="block font-semibold tabular-nums text-destructive">
                                 -{exSymbol}{ex.amount.toLocaleString()}
                               </span>
                               {exHomeHint && (
@@ -725,7 +730,7 @@ export default function TripDetailPage() {
                             </div>
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon" className="size-8 opacity-0 group-hover:opacity-100">
+                                <Button variant="ghost" size="icon" className="size-8 opacity-100 sm:opacity-0 sm:group-hover:opacity-100">
                                   <MoreHorizontal className="size-4" />
                                 </Button>
                               </DropdownMenuTrigger>
@@ -945,25 +950,25 @@ export default function TripDetailPage() {
                       const fromName = getDisplayName(s.from)
                       const toName = getDisplayName(s.to)
                       return (
-                        <div key={i} className="flex items-center justify-between rounded-lg bg-muted/50 p-4">
-                          <div className="flex items-center gap-3">
-                            <Avatar className="size-9">
+                        <div key={i} className="flex flex-col gap-3 rounded-lg bg-muted/50 p-3 sm:flex-row sm:items-center sm:justify-between sm:p-4">
+                          <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+                            <Avatar className="size-8 shrink-0 sm:size-9">
                               <AvatarFallback className="text-xs bg-destructive/20 text-destructive">
                                 {fromName.substring(0, 2).toUpperCase()}
                               </AvatarFallback>
                             </Avatar>
-                            <ArrowRight className="size-4 text-muted-foreground" />
-                            <Avatar className="size-9">
+                            <ArrowRight className="size-4 shrink-0 text-muted-foreground" />
+                            <Avatar className="size-8 shrink-0 sm:size-9">
                               <AvatarFallback className="text-xs bg-primary/20 text-primary">
                                 {toName.substring(0, 2).toUpperCase()}
                               </AvatarFallback>
                             </Avatar>
-                            <div className="ml-2">
-                              <p className="text-sm font-medium">{fromName} → {toName}</p>
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-medium">{fromName} → {toName}</p>
                             </div>
                           </div>
-                          <div className="flex items-center gap-4">
-                            <span className="text-lg font-bold tabular-nums">฿{s.amount.toLocaleString()}</span>
+                          <div className="flex items-center justify-between gap-3 sm:justify-end sm:gap-4">
+                            <span className="text-base font-bold tabular-nums sm:text-lg">฿{s.amount.toLocaleString()}</span>
                             {trip.status === 'active' && (
                               <Button
                                 size="sm"
@@ -1006,10 +1011,10 @@ export default function TripDetailPage() {
                     const exSymbol = formatCurrencySymbol(exCurrency)
                     const exHomeHint = formatHomeConversion(ex.amount, exCurrency, trip)
                       return (
-                        <div key={ex.id || `${ex.description}-${ex.date?.seconds}`} className="rounded-lg border p-4 space-y-3">
-                          <div className="flex items-center justify-between border-b pb-2">
-                            <div>
-                              <p className="font-semibold text-sm">{ex.description}</p>
+                        <div key={ex.id || `${ex.description}-${ex.date?.seconds}`} className="rounded-lg border p-3 space-y-3 sm:p-4">
+                          <div className="flex flex-col gap-2 border-b pb-2 sm:flex-row sm:items-center sm:justify-between">
+                            <div className="min-w-0">
+                              <p className="text-sm font-semibold break-words">{ex.description}</p>
                               <p className="text-xs text-muted-foreground">
                                 {ex.isLegacy ? 'Legacy Transaction' : ex.category || 'Expense'} • {ex.date?.seconds ? new Date(ex.date.seconds * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', ...(tripTimeZone ? { timeZone: tripTimeZone } : {}) }) : ''}
                               </p>
@@ -1032,13 +1037,13 @@ export default function TripDetailPage() {
                               const debtState = itemizedDebtStates[exId]?.[`${t.from}-${t.to}`] || { status: 'pending', paidAmount: 0, remainingAmount: t.amount }
 
                               return (
-                                <div key={index} className="flex items-center justify-between text-sm bg-muted/30 rounded px-3 py-2">
-                                  <div className="flex items-center gap-2">
+                                <div key={index} className="flex flex-col gap-2 rounded bg-muted/30 px-3 py-2 text-sm sm:flex-row sm:items-center sm:justify-between">
+                                  <div className="flex min-w-0 flex-wrap items-center gap-1.5 sm:gap-2">
                                     <span className="font-medium text-destructive">{fromName}</span>
                                     <span className="text-xs text-muted-foreground">owes</span>
                                     <span className="font-medium text-primary">{toName}</span>
                                   </div>
-                                  <div className="flex items-center gap-3">
+                                  <div className="flex items-center justify-between gap-2 sm:justify-end sm:gap-3">
                                     <div className="text-right">
                                       <span className="font-semibold tabular-nums block">{homeSymbol}{t.amount.toLocaleString()}</span>
                                       {trip?.tripCurrency === 'JPY' && homeCurrency === 'THB' && (trip.exchangeRate ?? 0) > 0 && (
@@ -1129,7 +1134,7 @@ export default function TripDetailPage() {
       </Tabs>
 
       <Dialog open={isEditTripOpen} onOpenChange={setIsEditTripOpen}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto overflow-x-hidden sm:max-w-[680px]">
+        <DialogContent className="max-h-[90vh] w-[calc(100vw-1rem)] overflow-y-auto overflow-x-hidden p-4 sm:max-w-[680px] sm:p-6">
           <DialogHeader>
             <DialogTitle>Edit Trip</DialogTitle>
             <DialogDescription>Update trip details and members</DialogDescription>
@@ -1228,7 +1233,7 @@ export default function TripDetailPage() {
           setPendingImmichAssetIds([])
         }
       }}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto overflow-x-hidden sm:max-w-[680px]">
+        <DialogContent className="max-h-[90vh] w-[calc(100vw-1rem)] overflow-y-auto overflow-x-hidden p-4 sm:max-w-[680px] sm:p-6">
           <DialogHeader>
             <DialogTitle>
               {editingExpense ? 'Edit Expense' : ocrDraft ? 'ตรวจสอบรายจ่ายจาก AI' : 'Add Trip Expense'}

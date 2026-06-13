@@ -47,7 +47,9 @@ export function AiReceiptReviewDialog({
             ตรวจสอบข้อมูลจาก AI
           </DialogTitle>
           <DialogDescription>
-            Gemini แยกข้อมูลจากรูปแล้ว — กรุณาตรวจสอบก่อนเปิดฟอร์มบันทึก
+            {result
+              ? 'AI แยกข้อมูลแล้ว — กรุณาตรวจสอบก่อนเปิดฟอร์มบันทึก'
+              : 'กรุณาตรวจสอบก่อนเปิดฟอร์มบันทึก'}
           </DialogDescription>
         </DialogHeader>
 

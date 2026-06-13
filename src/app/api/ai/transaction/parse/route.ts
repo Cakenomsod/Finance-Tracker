@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { verifySession, getUserAiSettings } from '@/lib/api-auth';
+import { verifySession, getUserAiSettings, resolveLocalAiBaseUrl, resolveRequestedAiProvider } from '@/lib/api-auth';
 import { parseReceiptImageWithProvider } from '@/lib/ai';
 import { getGoogleAiApiKey } from '@/lib/ai/env';
 import { AiTextProvider } from '@/lib/firestore-types';
@@ -32,9 +32,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unsupported image type' }, { status: 400 });
     }
 
-    const { provider: savedProvider, localAiBaseUrl } = await getUserAiSettings(session.uid);
-    const provider: AiTextProvider =
-      providerRaw === 'local' || providerRaw === 'gemma' ? providerRaw : savedProvider;
+    const { provider: savedProvider } = await getUserAiSettings(session.uid);
+    const provider: AiTextProvider = resolveRequestedAiProvider(providerRaw, savedProvider);
+
+    const localAiBaseUrl = provider === 'local' ? await resolveLocalAiBaseUrl() : undefined;
 
     if (provider === 'local' && !localAiBaseUrl?.trim()) {
       return NextResponse.json(

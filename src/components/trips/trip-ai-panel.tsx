@@ -31,29 +31,34 @@ export function TripAiPanel({
   const [reviewOpen, setReviewOpen] = React.useState(false)
   const [pendingResult, setPendingResult] = React.useState<ReceiptParseResult | null>(null)
   const [pendingImmichIds, setPendingImmichIds] = React.useState<string[]>([])
+  const [reviewImmichIds, setReviewImmichIds] = React.useState<string[]>([])
 
   const tripCurrency = (trip.tripCurrency as TripCurrency) || 'THB'
 
-  const handleParsed = (result: ReceiptParseResult) => {
+  const handleReview = (result: ReceiptParseResult, immichIds: string[]) => {
     setPendingResult(result)
+    setReviewImmichIds(immichIds.length ? immichIds : pendingImmichIds)
     setReviewOpen(true)
   }
 
   const openDraftForm = (draft: ReceiptParseResult) => {
     const expenseDraft = receiptParseToTripExpenseDraft(draft, tripMembers, tripCurrency)
-    onOpenExpenseForm(expenseDraft, pendingImmichIds.length ? pendingImmichIds : undefined)
+    const ids = reviewImmichIds.length ? reviewImmichIds : pendingImmichIds
+    onOpenExpenseForm(expenseDraft, ids.length ? ids : undefined)
     setPendingImmichIds([])
+    setReviewImmichIds([])
   }
 
   return (
     <>
       <AiExpenseQuickInput
         tripId={tripId}
+        storageScope={`trip:${tripId}`}
         aiTextProvider="gemma"
         showTextProviderSelect={true}
-        onParsed={handleParsed}
-        onImmichNoteReady={(id) => setPendingImmichIds((p) => [...p, id])}
-        pendingImmichCount={pendingImmichIds.length}
+        pendingImmichIds={pendingImmichIds}
+        onImmichNoteReady={(id) => setPendingImmichIds((p) => [...new Set([...p, id])])}
+        onReview={handleReview}
       />
 
       <AiReceiptReviewDialog

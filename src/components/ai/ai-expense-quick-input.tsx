@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { ImagePlus, Loader2, Paperclip, Send, Sparkles, Bookmark } from 'lucide-react'
+import { ImagePlus, Loader2, Paperclip, Send, Sparkles, Bookmark, CheckCircle2, AlertCircle, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -11,31 +11,52 @@ import {
 } from '@/components/ui/select'
 import { AiTextProvider } from '@/lib/firestore-types'
 import { ReceiptParseResult } from '@/lib/ai/receipt-schema'
+import {
+  AiParseJob,
+  createAiParseJob,
+  loadAiParseJobs,
+  saveAiParseJobs,
+} from '@/lib/ai/parse-jobs-storage'
+import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 
 export interface AiExpenseQuickInputProps {
   tripId?: string
+  /** localStorage scope for persisting parse jobs */
+  storageScope: string
   aiTextProvider?: AiTextProvider
   /** แสดงตัวเลือก Local / Gemini สำหรับทั้งข้อความและรูปใบเสร็จ */
   showTextProviderSelect?: boolean
-  onParsed: (result: ReceiptParseResult) => void
+  /** เรียกเมื่อผู้ใช้กดตรวจสอบ/แก้ไขจาก job ที่เสร็จแล้ว */
+  onReview?: (result: ReceiptParseResult, immichIds: string[]) => void
+  pendingImmichIds?: string[]
   onImmichNoteReady?: (assetId: string) => void
-  pendingImmichCount?: number
+}
+
+function providerLabel(p: AiTextProvider) {
+  return p === 'local' ? 'Local AI' : 'Gemini'
+}
+
+function statusLabel(job: AiParseJob) {
+  if (job.status === 'processing') return 'กำลังแยกรายการ...'
+  if (job.status === 'done') return 'แยกเสร็จแล้ว'
+  return job.error || 'แยกไม่สำเร็จ'
 }
 
 export function AiExpenseQuickInput({
   tripId,
+  storageScope,
   aiTextProvider = 'gemma',
   showTextProviderSelect = true,
-  onParsed,
+  onReview,
+  pendingImmichIds = [],
   onImmichNoteReady,
-  pendingImmichCount = 0,
 }: AiExpenseQuickInputProps) {
   const [input, setInput] = React.useState('')
   const [textProvider, setTextProvider] = React.useState<AiTextProvider>(aiTextProvider)
-  const [parsingText, setParsingText] = React.useState(false)
-  const [parsingImage, setParsingImage] = React.useState(false)
   const [uploadingNote, setUploadingNote] = React.useState(false)
+  const [jobs, setJobs] = React.useState<AiParseJob[]>(() => loadAiParseJobs(storageScope))
+  const skipSaveRef = React.useRef(true)
 
   const [pendingReceiptFile, setPendingReceiptFile] = React.useState<File | null>(null)
   const [receiptPreviewUrl, setReceiptPreviewUrl] = React.useState<string | null>(null)
@@ -43,13 +64,28 @@ export function AiExpenseQuickInput({
 
   const aiImageInputRef = React.useRef<HTMLInputElement>(null)
   const noteImageInputRef = React.useRef<HTMLInputElement>(null)
+  const pendingImmichRef = React.useRef(pendingImmichIds)
+  pendingImmichRef.current = pendingImmichIds
 
-  const busy = parsingText || parsingImage || uploadingNote
   const receiptMode = !!pendingReceiptFile
+  const activeJobCount = jobs.filter((j) => j.status === 'processing').length
 
   React.useEffect(() => {
     setTextProvider(aiTextProvider)
   }, [aiTextProvider])
+
+  React.useEffect(() => {
+    setJobs(loadAiParseJobs(storageScope))
+    skipSaveRef.current = true
+  }, [storageScope])
+
+  React.useEffect(() => {
+    if (skipSaveRef.current) {
+      skipSaveRef.current = false
+      return
+    }
+    saveAiParseJobs(storageScope, jobs)
+  }, [jobs, storageScope])
 
   React.useEffect(() => {
     if (!pendingReceiptFile) {
@@ -61,11 +97,15 @@ export function AiExpenseQuickInput({
     return () => URL.revokeObjectURL(url)
   }, [pendingReceiptFile])
 
-  const handleParseText = async () => {
-    const text = input.trim()
-    if (!text) return
+  const updateJob = React.useCallback((id: string, patch: Partial<AiParseJob>) => {
+    setJobs((prev) => prev.map((j) => (j.id === id ? { ...j, ...patch } : j)))
+  }, [])
 
-    setParsingText(true)
+  const removeJob = React.useCallback((id: string) => {
+    setJobs((prev) => prev.filter((j) => j.id !== id))
+  }, [])
+
+  const runTextJob = async (job: AiParseJob, text: string) => {
     try {
       const res = await fetch('/api/ai/expense/parse', {
         method: 'POST',
@@ -74,36 +114,34 @@ export function AiExpenseQuickInput({
         body: JSON.stringify({
           text,
           tripId,
-          provider: textProvider,
+          provider: job.provider,
         }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Parse failed')
 
-      setInput('')
-      onParsed(data.draft as ReceiptParseResult)
-      toast.success('แยกข้อมูลแล้ว — ตรวจสอบก่อนบันทึก')
+      updateJob(job.id, { status: 'done', result: data.draft as ReceiptParseResult })
+      toast.success('แยกรายการเสร็จแล้ว — กดตรวจสอบ/แก้ไข')
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'แยกข้อมูลไม่สำเร็จ')
-    } finally {
-      setParsingText(false)
+      updateJob(job.id, {
+        status: 'error',
+        error: err instanceof Error ? err.message : 'แยกข้อมูลไม่สำเร็จ',
+      })
     }
   }
 
-  const runReceiptAnalysis = async () => {
-    if (!pendingReceiptFile) {
-      toast.error('กรุณาเลือกรูปใบเสร็จก่อน')
-      return
-    }
-
-    setParsingImage(true)
+  const runReceiptJob = async (
+    job: AiParseJob,
+    file: File,
+    extraInstructions: string
+  ) => {
     try {
       const form = new FormData()
-      form.append('image', pendingReceiptFile)
+      form.append('image', file)
       if (tripId) form.append('tripId', tripId)
-      form.append('provider', textProvider)
-      if (receiptExtraInstructions.trim()) {
-        form.append('extraInstructions', receiptExtraInstructions.trim())
+      form.append('provider', job.provider)
+      if (extraInstructions.trim()) {
+        form.append('extraInstructions', extraInstructions.trim())
       }
 
       const endpoint = tripId ? '/api/ai/receipt/parse' : '/api/ai/transaction/parse'
@@ -112,27 +150,60 @@ export function AiExpenseQuickInput({
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Parse failed')
 
-      onParsed(data.draft as ReceiptParseResult)
-      setPendingReceiptFile(null)
-      setReceiptExtraInstructions('')
-      toast.success('แยกข้อมูลจากรูปแล้ว — ตรวจสอบก่อนบันทึก')
+      updateJob(job.id, { status: 'done', result: data.draft as ReceiptParseResult })
+      toast.success('แยกรายการจากรูปเสร็จแล้ว — กดตรวจสอบ/แก้ไข')
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'สแกนรูปไม่สำเร็จ')
-    } finally {
-      setParsingImage(false)
+      updateJob(job.id, {
+        status: 'error',
+        error: err instanceof Error ? err.message : 'สแกนรูปไม่สำเร็จ',
+      })
     }
+  }
+
+  const enqueueTextParse = (text: string) => {
+    const job = createAiParseJob({
+      provider: textProvider,
+      kind: 'text',
+      inputLabel: text.length > 80 ? `${text.slice(0, 80)}…` : text,
+      immichIds: [...pendingImmichRef.current],
+    })
+    setJobs((prev) => [job, ...prev])
+    setInput('')
+    void runTextJob(job, text)
+  }
+
+  const enqueueReceiptParse = (file: File, extraInstructions: string) => {
+    const job = createAiParseJob({
+      provider: textProvider,
+      kind: 'receipt',
+      inputLabel: file.name || 'รูปใบเสร็จ',
+      immichIds: [...pendingImmichRef.current],
+    })
+    setJobs((prev) => [job, ...prev])
+    setPendingReceiptFile(null)
+    setReceiptExtraInstructions('')
+    void runReceiptJob(job, file, extraInstructions)
   }
 
   const handlePrimarySend = () => {
     if (receiptMode) {
-      void runReceiptAnalysis()
+      if (!pendingReceiptFile) {
+        toast.error('กรุณาเลือกรูปใบเสร็จก่อน')
+        return
+      }
+      enqueueReceiptParse(pendingReceiptFile, receiptExtraInstructions)
     } else {
-      void handleParseText()
+      const text = input.trim()
+      if (!text) return
+      enqueueTextParse(text)
     }
   }
 
   const handleNoteImage = async (file: File) => {
-    if (!file.type.startsWith('image/') || !onImmichNoteReady) return
+    if (!file.type.startsWith('image/')) {
+      toast.error('กรุณาเลือกไฟล์รูปภาพ')
+      return
+    }
 
     setUploadingNote(true)
     try {
@@ -145,7 +216,9 @@ export function AiExpenseQuickInput({
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Upload failed')
 
-      onImmichNoteReady(data.assetId)
+      if (onImmichNoteReady) {
+        onImmichNoteReady(data.assetId)
+      }
       toast.success('เก็บรูปโน้ตแล้ว — จะแนบเมื่อบันทึก')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'อัปโหลดไม่สำเร็จ')
@@ -154,11 +227,9 @@ export function AiExpenseQuickInput({
     }
   }
 
-  const imageProviderLabel = textProvider === 'local' ? 'Local AI' : 'Gemini'
-
   const primaryDisabled = receiptMode
-    ? busy || !pendingReceiptFile || parsingImage
-    : busy || !input.trim() || parsingText
+    ? !pendingReceiptFile || uploadingNote
+    : !input.trim() || uploadingNote
 
   return (
     <div className="rounded-lg border bg-card p-4 space-y-3">
@@ -169,7 +240,7 @@ export function AiExpenseQuickInput({
           <p className="text-xs text-muted-foreground truncate">
             {receiptMode
               ? 'พิมพ์คำสั่งเพิ่มเติม (ไม่บังคับ) แล้วกดส่งเพื่อวิเคราะห์รูป'
-              : 'พิมพ์รายการหรือเลือกรูปใบเสร็จด้านล่าง → กดส่ง'}
+              : 'พิมพ์รายการหรือเลือกรูปใบเสร็จ → กดส่ง (ส่งพร้อมกันหลายครั้งได้)'}
           </p>
         </div>
         <div className="flex items-center gap-1.5 shrink-0 ml-auto">
@@ -177,7 +248,6 @@ export function AiExpenseQuickInput({
             <Select
               value={textProvider}
               onValueChange={(v) => setTextProvider(v as AiTextProvider)}
-              disabled={busy}
             >
               <SelectTrigger className="h-7 w-[118px] text-[10px] px-2">
                 <SelectValue />
@@ -189,7 +259,7 @@ export function AiExpenseQuickInput({
             </Select>
           )}
           <Badge variant="secondary" className="text-[10px]">
-            รูป: {imageProviderLabel}
+            {providerLabel(textProvider)}
           </Badge>
         </div>
       </div>
@@ -197,9 +267,8 @@ export function AiExpenseQuickInput({
       <div className="flex gap-2 items-start">
         {receiptMode ? (
           <Textarea
-            placeholder="คำสั่งเพิ่มเติม (ไม่บังคับ) เช่น แปลชื่อสินค้าเป็นภาษาไทย, ผู้จ่ายคือใคร..."
+            placeholder="คำสั่งเพิ่มเติม (ไม่บังคับ) เช่น แปลชื่อสินค้าเป็นภาษาไทย..."
             value={receiptExtraInstructions}
-            disabled={busy}
             onChange={(e) => setReceiptExtraInstructions(e.target.value)}
             className="min-h-[72px] text-sm resize-y flex-1"
             aria-label="คำสั่งเพิ่มเติมสำหรับวิเคราะห์ใบเสร็จ"
@@ -208,12 +277,11 @@ export function AiExpenseQuickInput({
           <Input
             placeholder='เช่น "ไก่ทอด 20" หรือ "ไก่ทอด 20 กาแฟ 45"'
             value={input}
-            disabled={busy}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
                 e.preventDefault()
-                handleParseText()
+                if (!primaryDisabled) handlePrimarySend()
               }
             }}
             className="h-9 flex-1"
@@ -227,11 +295,7 @@ export function AiExpenseQuickInput({
           onClick={handlePrimarySend}
           aria-label={receiptMode ? 'ส่งวิเคราะห์รูปใบเสร็จ' : 'แยกข้อมูลจากข้อความ'}
         >
-          {receiptMode ? (
-            parsingImage ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />
-          ) : (
-            parsingText ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />
-          )}
+          <Send className="size-4" />
         </Button>
       </div>
 
@@ -261,7 +325,6 @@ export function AiExpenseQuickInput({
             variant="outline"
             size="sm"
             className="gap-1 h-8"
-            disabled={busy}
             onClick={() => aiImageInputRef.current?.click()}
           >
             <ImagePlus className="size-3.5" />
@@ -273,7 +336,6 @@ export function AiExpenseQuickInput({
               variant="ghost"
               size="sm"
               className="h-8 text-xs"
-              disabled={busy}
               onClick={() => {
                 setPendingReceiptFile(null)
                 setReceiptExtraInstructions('')
@@ -294,46 +356,99 @@ export function AiExpenseQuickInput({
       </div>
 
       <div className="flex flex-wrap gap-2">
-        {onImmichNoteReady && (
-          <>
-            <input
-              ref={noteImageInputRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              aria-label="เก็บรูปโน้ต"
-              onChange={(e) => {
-                const f = e.target.files?.[0]
-                if (f) handleNoteImage(f)
-                e.target.value = ''
-              }}
-            />
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="gap-1 h-8"
-              disabled={busy}
-              onClick={() => noteImageInputRef.current?.click()}
-            >
-              {uploadingNote ? <Loader2 className="size-3.5 animate-spin" /> : <Paperclip className="size-3.5" />}
-              เก็บโน้ต (Immich)
-            </Button>
-          </>
-        )}
+        <input
+          ref={noteImageInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          aria-label="เก็บรูปโน้ต Immich"
+          onChange={(e) => {
+            const f = e.target.files?.[0]
+            if (f) void handleNoteImage(f)
+            e.target.value = ''
+          }}
+        />
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="gap-1 h-8"
+          disabled={uploadingNote}
+          onClick={() => noteImageInputRef.current?.click()}
+        >
+          {uploadingNote ? <Loader2 className="size-3.5 animate-spin" /> : <Paperclip className="size-3.5" />}
+          เก็บโน้ต (Immich)
+        </Button>
       </div>
 
-      {pendingImmichCount > 0 && (
+      {pendingImmichIds.length > 0 && (
         <Badge variant="outline" className="text-xs gap-1 w-fit">
           <Bookmark className="size-3" />
-          มีรูปโน้ตรอแนบ ({pendingImmichCount})
+          มีรูปโน้ตรอแนบ ({pendingImmichIds.length})
         </Badge>
       )}
 
+      {jobs.length > 0 && (
+        <div className="space-y-2 border-t pt-3">
+          <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
+            สถานะการแยกรายการ
+            {activeJobCount > 0 && ` (${activeJobCount} กำลังทำ)`}
+          </p>
+          <div className="space-y-2 max-h-64 overflow-y-auto">
+            {jobs.map((job) => (
+              <div
+                key={job.id}
+                className={cn(
+                  'rounded-md border px-3 py-2 text-xs space-y-2',
+                  job.status === 'error' && 'border-destructive/40 bg-destructive/5',
+                  job.status === 'done' && 'border-primary/30 bg-primary/5'
+                )}
+              >
+                <div className="flex items-start gap-2">
+                  {job.status === 'processing' && (
+                    <Loader2 className="size-3.5 shrink-0 animate-spin text-primary mt-0.5" />
+                  )}
+                  {job.status === 'done' && (
+                    <CheckCircle2 className="size-3.5 shrink-0 text-primary mt-0.5" />
+                  )}
+                  {job.status === 'error' && (
+                    <AlertCircle className="size-3.5 shrink-0 text-destructive mt-0.5" />
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium truncate">{job.inputLabel}</p>
+                    <p className="text-muted-foreground">
+                      {job.kind === 'receipt' ? 'รูปใบเสร็จ' : 'ข้อความ'} · {providerLabel(job.provider)} · {statusLabel(job)}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-foreground"
+                    onClick={() => removeJob(job.id)}
+                    aria-label="ลบรายการสถานะ"
+                  >
+                    <X className="size-3.5" />
+                  </button>
+                </div>
+
+                {job.status === 'done' && job.result && onReview && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    className="h-7 w-full text-xs"
+                    onClick={() => onReview(job.result!, job.immichIds)}
+                  >
+                    ตรวจสอบ / แก้ไข
+                  </Button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <p className="text-[10px] text-muted-foreground">
-        ข้อความสั้นแยกทันที · ข้อความ/รูปซับซ้อนใช้{' '}
-        {textProvider === 'local' ? 'Local AI' : 'Gemini'}
-        {textProvider === 'local' ? ' (ข้อความล้มแล้วลอง Gemini)' : ''}
+        ส่งได้หลายครั้งพร้อมกัน · สถานะเก็บไว้แม้รีเฟรชหน้า · ใช้ {providerLabel(textProvider)}
       </p>
     </div>
   )

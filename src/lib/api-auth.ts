@@ -57,25 +57,34 @@ export async function getUserImmichSettings(uid: string) {
   }
 }
 
+/** Tunnel URL for Local AI (independent of saved user default provider). */
+export async function resolveLocalAiBaseUrl(): Promise<string | undefined> {
+  try {
+    const tunnelDoc = await photoDb().collection('system').doc('tunnel_config').get();
+    const tunnel = tunnelDoc.exists ? (tunnelDoc.data() ?? {}) : {};
+    const rawAi = (tunnel.ai_url || tunnel.aiUrl || tunnel.localAiBaseUrl) as string | undefined;
+    return rawAi ? String(rawAi).replace(/\/$/, '') : undefined;
+  } catch (err) {
+    console.error('Error reading tunnel_config for AI from photoDb:', err);
+    return undefined;
+  }
+}
+
+export function resolveRequestedAiProvider(
+  requested: unknown,
+  saved: AiTextProvider
+): AiTextProvider {
+  return requested === 'local' || requested === 'gemma' ? requested : saved;
+}
+
 export async function getUserAiSettings(uid: string) {
   try {
     const userDoc = await adminDb().collection('users').doc(uid).get();
     const userData = userDoc.exists ? userDoc.data() : undefined;
 
     const provider = (userData?.aiTextProvider as AiTextProvider) || 'gemma';
-    let localAiBaseUrl: string | undefined;
-
-    // If the provider is 'local', use the shared tunnel config from the Photo project
-    if (provider === 'local') {
-      try {
-        const tunnelDoc = await photoDb().collection('system').doc('tunnel_config').get();
-        const tunnel = tunnelDoc.exists ? (tunnelDoc.data() ?? {}) : {};
-        const rawAi = (tunnel.ai_url || tunnel.aiUrl || tunnel.localAiBaseUrl) as string | undefined;
-        if (rawAi) localAiBaseUrl = String(rawAi).replace(/\/$/, '');
-      } catch (err) {
-        console.error('Error reading tunnel_config for AI from photoDb:', err);
-      }
-    }
+    const localAiBaseUrl =
+      provider === 'local' ? await resolveLocalAiBaseUrl() : undefined;
 
     return { provider, localAiBaseUrl };
   } catch (error) {

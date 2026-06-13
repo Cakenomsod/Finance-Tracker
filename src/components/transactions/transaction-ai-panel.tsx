@@ -22,26 +22,31 @@ export function TransactionAiPanel({
   const [reviewOpen, setReviewOpen] = React.useState(false)
   const [pendingResult, setPendingResult] = React.useState<ReceiptParseResult | null>(null)
   const [pendingImmichIds, setPendingImmichIds] = React.useState<string[]>([])
+  const [reviewImmichIds, setReviewImmichIds] = React.useState<string[]>([])
 
-  const handleParsed = (result: ReceiptParseResult) => {
+  const handleReview = (result: ReceiptParseResult, immichIds: string[]) => {
     setPendingResult(result)
+    setReviewImmichIds(immichIds.length ? immichIds : pendingImmichIds)
     setReviewOpen(true)
   }
 
   const openDraftForm = (result: ReceiptParseResult) => {
     const draft = receiptParseToTransactionDraft(result, currency)
-    onOpenDraftForm(draft, pendingImmichIds.length ? pendingImmichIds : undefined)
+    const ids = reviewImmichIds.length ? reviewImmichIds : pendingImmichIds
+    onOpenDraftForm(draft, ids.length ? ids : undefined)
     setPendingImmichIds([])
+    setReviewImmichIds([])
   }
 
   return (
     <>
       <AiExpenseQuickInput
+        storageScope="transactions"
         aiTextProvider="gemma"
         showTextProviderSelect={true}
-        onParsed={handleParsed}
-        onImmichNoteReady={(id) => setPendingImmichIds((p) => [...p, id])}
-        pendingImmichCount={pendingImmichIds.length}
+        pendingImmichIds={pendingImmichIds}
+        onImmichNoteReady={(id) => setPendingImmichIds((p) => [...new Set([...p, id])])}
+        onReview={handleReview}
       />
 
       <AiReceiptReviewDialog

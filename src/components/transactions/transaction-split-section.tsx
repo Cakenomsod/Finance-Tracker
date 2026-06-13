@@ -22,11 +22,24 @@ import {
   computeSplitTransfers,
 } from '@/lib/transaction-split'
 
+export interface SplitMember {
+  personId: string
+  displayName: string
+}
+
 export interface TransactionSplitSectionProps {
   total: number
   initialPayers?: TripExpensePayer[]
   initialShares?: TripExpenseShare[]
   initialSplitMode?: TransactionSplitMode
+  /** When set, use these members instead of friends contacts (e.g. trip members) */
+  members?: SplitMember[]
+  /** Currency symbol for amount labels (default ฿) */
+  currencySymbol?: string
+  /** Person id used for debt preview filter (default Me) */
+  previewPersonId?: string
+  /** Hide equal/custom/solo controls — payers only (e.g. trip itemised receipt split) */
+  hideSplitOptions?: boolean
   disabled?: boolean
   onChange: (data: {
     payers: TripExpensePayer[]
@@ -46,13 +59,17 @@ export function TransactionSplitSection({
   initialPayers,
   initialShares,
   initialSplitMode,
+  members: membersProp,
+  currencySymbol = '฿',
+  previewPersonId = ME_PERSON_ID,
+  hideSplitOptions = false,
   disabled,
   onChange,
 }: TransactionSplitSectionProps) {
-  const { contacts, loading } = useFriends()
+  const { contacts, loading: friendsLoading } = useFriends()
 
   const contactKey = contacts.map((c) => `${c.key}:${c.displayName}`).join('|')
-  const members = React.useMemo(
+  const membersFromFriends = React.useMemo(
     () =>
       contacts.map((c) => ({
         personId: contactPersonId(c),
@@ -60,6 +77,8 @@ export function TransactionSplitSection({
       })),
     [contactKey]
   )
+  const members = membersProp ?? membersFromFriends
+  const loading = membersProp ? false : friendsLoading
 
   const [splitMode, setSplitMode] = React.useState<TransactionSplitMode>(
     initialSplitMode || 'equal'
@@ -210,7 +229,7 @@ export function TransactionSplitSection({
 
     const paidTotal = finalPayers.reduce((s, p) => s + p.amount, 0)
     if (Math.abs(paidTotal - total) > 1) {
-      errs.push(`ยอดที่จ่าย (฿${paidTotal.toFixed(0)}) ไม่ตรงกับยอดรวม (฿${total.toFixed(0)})`)
+      errs.push(`ยอดที่จ่าย (${currencySymbol}${paidTotal.toFixed(0)}) ไม่ตรงกับยอดรวม (${currencySymbol}${total.toFixed(0)})`)
     }
 
     let finalShares: TripExpenseShare[] = []
@@ -236,7 +255,7 @@ export function TransactionSplitSection({
           amount: parseFloat(customShares[p.personId]),
         }))
       if (Math.abs(customTotal - total) > 1) {
-        errs.push(`ยอดแบ่ง (฿${customTotal.toFixed(0)}) ไม่ตรงกับยอดรวม (฿${total.toFixed(0)})`)
+        errs.push(`ยอดแบ่ง (${currencySymbol}${customTotal.toFixed(0)}) ไม่ตรงกับยอดรวม (${currencySymbol}${total.toFixed(0)})`)
       }
     }
 
@@ -251,6 +270,7 @@ export function TransactionSplitSection({
     payerParticipants,
     customShares,
     customTotal,
+    currencySymbol,
   ])
 
   const errors = buildResult?.errors ?? []
@@ -276,9 +296,9 @@ export function TransactionSplitSection({
     if (!buildResult || buildResult.errors.length > 0 || total <= 0) return null
     const net = computeSplitNetBalances(buildResult.payers, buildResult.shares)
     return computeSplitTransfers(net).filter(
-      (t) => t.from === ME_PERSON_ID || t.to === ME_PERSON_ID
+      (t) => t.from === previewPersonId || t.to === previewPersonId
     )
-  }, [buildResult, total])
+  }, [buildResult, total, previewPersonId])
 
   if (loading) {
     return <p className="text-sm text-muted-foreground">กำลังโหลดรายชื่อ...</p>
@@ -327,9 +347,9 @@ export function TransactionSplitSection({
                   ))}
                 </SelectContent>
               </Select>
-              <div className="relative w-28">
+              <div className="relative w-28 shrink-0">
                 <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
-                  ฿
+                  {currencySymbol}
                 </span>
                 <Input
                   type="number"
@@ -358,6 +378,7 @@ export function TransactionSplitSection({
         </div>
       </div>
 
+      {!hideSplitOptions && (
       <div className="space-y-3">
         <Label>แบ่งจ่ายแบบไหน?</Label>
         <div className="flex flex-wrap gap-2">
@@ -372,7 +393,7 @@ export function TransactionSplitSection({
               disabled={disabled}
               onClick={() => setSplitMode(opt.value)}
               className={cn(
-                'min-w-[80px] flex-1 whitespace-nowrap rounded-lg border px-2 py-2 text-xs font-medium transition-all',
+                'min-w-[80px] flex-1 rounded-lg border px-2 py-2 text-xs font-medium transition-all sm:whitespace-nowrap',
                 splitMode === opt.value
                   ? 'border-primary bg-primary text-primary-foreground'
                   : 'border-border hover:border-primary/50'
@@ -386,7 +407,7 @@ export function TransactionSplitSection({
         {splitMode === 'equal' && (
           <div className="space-y-1.5">
             <p className="text-xs text-muted-foreground">
-              เลือกคนที่หารด้วย ({equalIncluded.size} คน → คนละ ฿
+              เลือกคนที่หารด้วย ({equalIncluded.size} คน → คนละ {currencySymbol}
               {equalShareAmount.toFixed(0)})
             </p>
             <div className="flex flex-wrap gap-2">
@@ -421,14 +442,14 @@ export function TransactionSplitSection({
         {splitMode === 'custom' && (
           <div className="space-y-2">
             <p className="text-xs text-muted-foreground">
-              กรอกจำนวนของแต่ละคนที่จ่าย (รวม: ฿{customTotal.toFixed(0)} / ฿{total.toFixed(0)})
+              กรอกจำนวนของแต่ละคนที่จ่าย (รวม: {currencySymbol}{customTotal.toFixed(0)} / {currencySymbol}{total.toFixed(0)})
             </p>
             {payerParticipants.map((p) => (
               <div key={p.personId} className="flex items-center gap-2">
-                <span className="flex-1 text-sm">{p.displayName}</span>
-                <div className="relative w-28">
+                <span className="min-w-0 flex-1 truncate text-sm">{p.displayName}</span>
+                <div className="relative w-28 shrink-0">
                   <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
-                    ฿
+                    {currencySymbol}
                   </span>
                   <Input
                     type="number"
@@ -451,6 +472,7 @@ export function TransactionSplitSection({
           <p className="text-xs text-muted-foreground">คนที่จ่ายรับผิดชอบทั้งหมด ไม่หารกับใคร</p>
         )}
       </div>
+      )}
 
       {errors.length > 0 && (
         <div className="space-y-1 rounded-md bg-destructive/10 p-3 text-xs text-destructive">
@@ -464,11 +486,11 @@ export function TransactionSplitSection({
         <div className="space-y-1 rounded-lg bg-muted p-3 text-xs text-muted-foreground">
           <p className="font-medium text-foreground">สรุปหนี้ที่เกี่ยวกับคุณ</p>
           {preview.map((t, i) => {
-            const fromName = t.from === ME_PERSON_ID ? 'คุณ' : t.from
-            const toName = t.to === ME_PERSON_ID ? 'คุณ' : t.to
+            const fromName = t.from === previewPersonId ? 'คุณ' : members.find(m => m.personId === t.from)?.displayName || t.from
+            const toName = t.to === previewPersonId ? 'คุณ' : members.find(m => m.personId === t.to)?.displayName || t.to
             return (
               <p key={i}>
-                {fromName} คืน {toName} ฿{t.amount.toLocaleString()}
+                {fromName} คืน {toName} {currencySymbol}{t.amount.toLocaleString()}
               </p>
             )
           })}

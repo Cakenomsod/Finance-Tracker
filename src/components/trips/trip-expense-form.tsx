@@ -13,6 +13,11 @@ import { collectImmichAssetIds } from '@/lib/immich/asset-ids'
 import { OptionalNoteField } from '@/components/shared/optional-note-field'
 import { ImmichAttachmentsField } from '@/components/shared/immich-attachments-field'
 import { cn } from '@/lib/utils'
+import {
+  TransactionSplitSection,
+  validateTransactionSplit,
+} from '@/components/transactions/transaction-split-section'
+import { TransactionSplitMode } from '@/lib/transaction-split'
 import { TaxCategoryId, TripExpense, TripExpensePayer, TripExpenseShare, TripCurrency } from '@/lib/firestore-types'
 import { Timestamp } from 'firebase/firestore'
 import {
@@ -54,7 +59,7 @@ interface TripExpenseFormV2Props {
   onCancel: () => void
 }
 
-type SplitMode = 'equal' | 'custom' | 'solo' | 'item'
+type SplitMode = TransactionSplitMode | 'item'
 
 const categories = [
   'Food & Dining', 'Transport', 'Shopping', 'Entertainment',
@@ -130,8 +135,29 @@ export function TripExpenseFormV2({
       : formatTripTime(new Date(), getTripTimeZone(countryCode, defaultCurrency))
   )
   const [note, setNote] = React.useState(initialData?.note || '')
-  const [splitMode, setSplitMode] = React.useState<SplitMode>(
-    (initialData?.splitMode as SplitMode) || 'equal'
+
+  const [splitEnabled, setSplitEnabled] = React.useState(() => {
+    if (!initialData) return false
+    if (initialData.splitMode === 'item') return true
+    if (initialData.splitMode && initialData.splitMode !== 'solo') return true
+    if ((initialData.payers?.length ?? 0) > 1) return true
+    if ((initialData.shares?.length ?? 0) > 1) return true
+    return false
+  })
+  const [splitData, setSplitData] = React.useState<{
+    payers: TripExpensePayer[]
+    shares: TripExpenseShare[]
+    splitMode: TransactionSplitMode
+  } | null>(() => {
+    if (!initialData?.payers?.length) return null
+    return {
+      payers: initialData.payers,
+      shares: initialData.shares || [],
+      splitMode: (initialData.splitMode === 'item' ? 'equal' : initialData.splitMode as TransactionSplitMode) || 'equal',
+    }
+  })
+  const [useItemSplit, setUseItemSplit] = React.useState(
+    () => initialData?.splitMode === 'item'
   )
 
   const [inputMode, setInputMode] = React.useState<'standard' | 'receipt'>(
@@ -151,24 +177,6 @@ export function TripExpenseFormV2({
       taxCategoryId: inferTaxCategory(countryCode, item.category, item.taxCategoryId),
       splitWith: item.splitWith || tripMembers.map(m => m.key),
     })) || [emptyReceiptItem(tripMembers, countryCode)]
-  )
-
-  // Payers state: [{key, displayName, amount}]
-  const [payers, setPayers] = React.useState<{ key: string; displayName: string; amount: string }[]>(
-    initialData?.payers.map(p => ({ key: p.userId, displayName: p.displayName, amount: String(p.amount) }))
-    || [{ key: myUserId, displayName: tripMembers.find(m => m.key === myUserId)?.displayName || 'Me', amount: '' }]
-  )
-
-  // Equal split: which members are included
-  const [equalIncluded, setEqualIncluded] = React.useState<Set<string>>(
-    new Set(initialData?.shares.map(s => s.userId) || tripMembers.map(m => m.key))
-  )
-
-  // Custom shares: {key -> amount string}
-  const [customShares, setCustomShares] = React.useState<Record<string, string>>(
-    initialData?.splitMode === 'custom'
-      ? Object.fromEntries(initialData.shares.map(s => [s.userId, String(s.amount)]))
-      : {}
   )
 
   const [submitting, setSubmitting] = React.useState(false)
@@ -306,88 +314,72 @@ export function TripExpenseFormV2({
   const manualTotal = parseFloat(totalAmount) || 0
   const total = isReceiptActive ? totalReceiptAmount : manualTotal
 
-  // --- Payers helpers ---
-  const addPayer = () => {
-    const used = new Set(payers.map(p => p.key))
-    const next = tripMembers.find(m => !used.has(m.key))
-    if (!next) return
-    setPayers([...payers, { key: next.key, displayName: next.displayName, amount: '' }])
-  }
+  const splitMembers = React.useMemo(
+    () => tripMembers.map((m) => ({ personId: m.key, displayName: m.displayName })),
+    [tripMembers]
+  )
 
-  const removePayer = (idx: number) => {
-    if (payers.length <= 1) return
-    setPayers(payers.filter((_, i) => i !== idx))
-  }
-
-  const updatePayerMember = (idx: number, key: string) => {
-    const member = tripMembers.find(m => m.key === key)!
-    setPayers(payers.map((p, i) => i === idx ? { ...p, key, displayName: member.displayName } : p))
-  }
-
-  const updatePayerAmount = (idx: number, val: string) => {
-    setPayers(payers.map((p, i) => i === idx ? { ...p, amount: val } : p))
-  }
-
-  // Auto-fill last payer to make total
-  const totalPaid = payers.slice(0, -1).reduce((s, p) => s + (parseFloat(p.amount) || 0), 0)
-  const lastPayerSuggestion = Math.max(0, total - totalPaid)
-
-  // Equal shares
-  const equalShareAmount = equalIncluded.size > 0 ? total / equalIncluded.size : 0
-
-  // Custom shares total
-  const customTotal = Object.values(customShares).reduce((s, v) => s + (parseFloat(v) || 0), 0)
+  const handleSplitChange = React.useCallback(
+    (data: { payers: TripExpensePayer[]; shares: TripExpenseShare[]; splitMode: TransactionSplitMode }) => {
+      setSplitData(data)
+    },
+    []
+  )
 
   // --- Build final payers/shares for submission ---
-  const buildPayersShares = (): { payers: TripExpensePayer[]; shares: TripExpenseShare[] } | null => {
+  const buildPayersShares = (): {
+    payers: TripExpensePayer[]
+    shares: TripExpenseShare[]
+    splitMode: SplitMode
+  } | null => {
     const errs: string[] = []
 
     if (!description.trim()) errs.push('กรุณากรอกรายละเอียด')
     if (!total || total <= 0) errs.push('กรุณากรอกจำนวนเงิน')
     if (!category) errs.push('กรุณาเลือกหมวดหมู่')
 
-    const finalPayers: TripExpensePayer[] = payers.map((p, i) => ({
-      userId: p.key,
-      displayName: p.displayName,
-      amount: i === payers.length - 1 && !p.amount
-        ? parseFloat(lastPayerSuggestion.toFixed(2))
-        : parseFloat(p.amount) || 0,
-    }))
+    let finalPayers: TripExpensePayer[]
+    let finalShares: TripExpenseShare[]
+    let finalSplitMode: SplitMode = 'solo'
 
-    const paidTotal = finalPayers.reduce((s, p) => s + p.amount, 0)
-    if (Math.abs(paidTotal - total) > 1) errs.push(`ยอดที่จ่าย (${curSymbol}${paidTotal.toFixed(0)}) ไม่ตรงกับยอดรวม (${curSymbol}${total.toFixed(0)})`)
-
-    let finalShares: TripExpenseShare[] = []
-
-    if (splitMode === 'solo') {
-      finalShares = finalPayers.map(p => ({ userId: p.userId, displayName: p.displayName, amount: p.amount }))
-    } else if (splitMode === 'item') {
+    if (!splitEnabled) {
+      const me = tripMembers.find((m) => m.key === myUserId)
+      finalPayers = [{
+        userId: myUserId,
+        displayName: me?.displayName || 'Me',
+        amount: total,
+      }]
+      finalShares = [...finalPayers]
+      finalSplitMode = 'solo'
+    } else if (useItemSplit && inputMode === 'receipt') {
+      if (!splitData?.payers?.length) {
+        errs.push('กรุณาระบุผู้จ่าย')
+      }
       if (!isReceiptActive) {
         errs.push('กรุณากรอกรายการสินค้าเพื่อใช้โหมดแบ่งจ่ายรายชิ้น')
-      } else {
-        finalShares = tripMembers.map(m => ({
-          userId: m.key,
-          displayName: m.displayName,
-          amount: parseFloat((itemShares[m.key] || 0).toFixed(2))
-        }))
       }
-    } else if (splitMode === 'equal') {
-      if (equalIncluded.size === 0) errs.push('กรุณาเลือกอย่างน้อย 1 คน')
-      const share = parseFloat((total / equalIncluded.size).toFixed(2))
-      finalShares = tripMembers
-        .filter(m => equalIncluded.has(m.key))
-        .map(m => ({ userId: m.key, displayName: m.displayName, amount: share }))
+      finalPayers = splitData?.payers || []
+      finalShares = tripMembers.map((m) => ({
+        userId: m.key,
+        displayName: m.displayName,
+        amount: parseFloat((itemShares[m.key] || 0).toFixed(2)),
+      }))
+      finalSplitMode = 'item'
+    } else if (splitData) {
+      const splitErrs = validateTransactionSplit(total, splitData.payers, splitData.shares)
+      errs.push(...splitErrs)
+      finalPayers = splitData.payers
+      finalShares = splitData.shares
+      finalSplitMode = splitData.splitMode
     } else {
-      // custom
-      finalShares = tripMembers
-        .filter(m => customShares[m.key] && parseFloat(customShares[m.key]) > 0)
-        .map(m => ({ userId: m.key, displayName: m.displayName, amount: parseFloat(customShares[m.key]) }))
-      if (Math.abs(customTotal - total) > 1) errs.push(`ยอดแบ่ง (${curSymbol}${customTotal.toFixed(0)}) ไม่ตรงกับยอดรวม (${curSymbol}${total.toFixed(0)})`)
+      errs.push('กรุณาตั้งค่าการแบ่งจ่าย')
+      finalPayers = []
+      finalShares = []
     }
 
     setErrors(errs)
     if (errs.length > 0) return null
-    return { payers: finalPayers, shares: finalShares }
+    return { payers: finalPayers, shares: finalShares, splitMode: finalSplitMode }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -402,7 +394,7 @@ export function TripExpenseFormV2({
         category: category,
         date: Timestamp.fromDate(parseTripLocalDateTime(date, time, tripTimeZone)),
         note: note.trim() || undefined,
-        splitMode,
+        splitMode: result.splitMode,
         payers: result.payers,
         shares: result.shares,
         currency,
@@ -458,7 +450,7 @@ export function TripExpenseFormV2({
           type="button"
           onClick={() => {
             setInputMode('standard')
-            if (splitMode === 'item') setSplitMode('equal')
+            setUseItemSplit(false)
           }}
           className={cn(
             "flex-1 py-1.5 text-xs font-medium rounded-md transition-all",
@@ -471,7 +463,7 @@ export function TripExpenseFormV2({
           type="button"
           onClick={() => {
             setInputMode('receipt')
-            setSplitMode('item')
+            setUseItemSplit(true)
           }}
           className={cn(
             "flex-1 py-1.5 text-xs font-medium rounded-md transition-all",
@@ -519,7 +511,7 @@ export function TripExpenseFormV2({
 
       {/* Amount + Category + Date */}
       {inputMode === 'standard' && (
-        <div className="grid grid-cols-3 gap-3 border p-3 rounded-lg bg-muted/20">
+        <div className="grid grid-cols-1 gap-3 border p-3 rounded-lg bg-muted/20 sm:grid-cols-3">
           <div className="space-y-1.5">
             <Label className="text-xs">ราคาสินค้า ({curSymbol})</Label>
             <Input 
@@ -610,34 +602,33 @@ export function TripExpenseFormV2({
       {/* Receipt Items (Only in Receipt Mode) */}
       {inputMode === 'receipt' && (
         <div className="space-y-4 border rounded-lg p-3 bg-muted/20 overflow-hidden">
-          <div className="flex items-center justify-between flex-wrap gap-2 pb-1">
-            <div className="flex items-center gap-3">
+          <div className="flex flex-col gap-2 pb-1 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
               <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Receipt Items</h4>
-              {/* Premium Tax Mode Switch Toggle */}
-              <div className="inline-flex rounded-lg border p-0.5 bg-muted/60 text-[10px] shrink-0 select-none">
+              <div className="inline-flex w-full rounded-lg border p-0.5 bg-muted/60 text-[10px] select-none sm:w-auto">
                 <button
                   type="button"
                   onClick={() => setReceiptTaxMode('exclusive')}
                   className={cn(
-                    "px-2 py-0.5 rounded-md font-medium transition-all",
+                    "flex-1 px-2 py-0.5 rounded-md font-medium transition-all sm:flex-none",
                     receiptTaxMode === 'exclusive'
                       ? "bg-background text-foreground shadow-sm font-semibold"
                       : "text-muted-foreground hover:text-foreground"
                   )}
                 >
-                  ยังไม่รวมภาษี (Exclusive)
+                  ไม่รวมภาษี
                 </button>
                 <button
                   type="button"
                   onClick={() => setReceiptTaxMode('inclusive')}
                   className={cn(
-                    "px-2 py-0.5 rounded-md font-medium transition-all",
+                    "flex-1 px-2 py-0.5 rounded-md font-medium transition-all sm:flex-none",
                     receiptTaxMode === 'inclusive'
                       ? "bg-background text-foreground shadow-sm font-semibold"
                       : "text-muted-foreground hover:text-foreground"
                   )}
                 >
-                  รวมภาษีแล้ว (Inclusive)
+                  รวมภาษีแล้ว
                 </button>
               </div>
             </div>
@@ -659,12 +650,11 @@ export function TripExpenseFormV2({
               const taxRules = countryConfig?.taxRules ?? []
 
               return (
-                <div key={idx} className="border-b pb-3 last:border-b-0 last:pb-0 pt-2">
-                  <div className="flex items-center gap-2 w-full overflow-hidden">
-                    {/* Name Input - Premium Sizing */}
+                <div key={idx} className="border-b pb-3 last:border-b-0 last:pb-0 pt-2 space-y-2">
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto_auto] sm:items-center">
                     <Input
                       placeholder="Product Name"
-                      className="flex-grow min-w-[120px] h-9 text-xs shrink"
+                      className="h-9 text-xs"
                       value={item.name}
                       onChange={e => {
                         const next = [...receiptItems]
@@ -673,7 +663,6 @@ export function TripExpenseFormV2({
                       }}
                     />
 
-                    {/* Category Selector */}
                     <Select
                       value={item.category}
                       onValueChange={val => {
@@ -685,7 +674,7 @@ export function TripExpenseFormV2({
                         setReceiptItems(next)
                       }}
                     >
-                      <SelectTrigger className="w-24 sm:w-28 h-9 text-xs shrink-0">
+                      <SelectTrigger className="h-9 w-full text-xs sm:w-28">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -693,6 +682,25 @@ export function TripExpenseFormV2({
                       </SelectContent>
                     </Select>
 
+                    <div className="relative">
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-[10px]">
+                        {curSymbol}
+                      </span>
+                      <Input
+                        type="number"
+                        placeholder={receiptTaxMode === 'exclusive' ? "Excl. Tax" : "Incl. Tax"}
+                        className="h-9 pl-6 pr-1 text-xs font-medium"
+                        value={item.price}
+                        onChange={e => {
+                          const next = [...receiptItems]
+                          next[idx].price = e.target.value
+                          setReceiptItems(next)
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
                     {hasAutoTax && taxRules.length > 0 && (
                       <Select
                         value={item.taxCategoryId}
@@ -702,7 +710,7 @@ export function TripExpenseFormV2({
                           setReceiptItems(next)
                         }}
                       >
-                        <SelectTrigger className="w-[88px] sm:w-24 h-9 text-[10px] shrink-0">
+                        <SelectTrigger className="h-8 w-full text-[10px] sm:w-24">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -715,36 +723,17 @@ export function TripExpenseFormV2({
                       </Select>
                     )}
 
-                    {/* Price Input */}
-                    <div className="relative w-24 shrink-0">
-                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-[10px]">
-                        {curSymbol}
-                      </span>
-                      <Input
-                        type="number"
-                        placeholder={receiptTaxMode === 'exclusive' ? "Excl. Tax" : "Incl. Tax"}
-                        className="pl-6 pr-1 h-9 text-xs font-medium"
-                        value={item.price}
-                        onChange={e => {
-                          const next = [...receiptItems]
-                          next[idx].price = e.target.value
-                          setReceiptItems(next)
-                        }}
-                      />
-                    </div>
-
-                    {/* Calculated Total */}
-                    <span className="text-xs font-semibold text-muted-foreground tabular-nums shrink-0 min-w-[72px] text-right">
+                    <span className="text-xs font-semibold text-muted-foreground tabular-nums">
                       ={curSymbol}{itemTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       {hasAutoTax && t > 0 && (
-                        <span className="block text-[9px] font-normal text-muted-foreground/80">
-                          ภาษี {curSymbol}{t.toFixed(0)}
+                        <span className="ml-1 text-[10px] font-normal text-muted-foreground/80">
+                          (ภาษี {curSymbol}{t.toFixed(0)})
                         </span>
                       )}
                     </span>
 
-                    {/* Split buttons */}
-                    <div className="flex items-center gap-0.5 shrink-0 flex-wrap">
+                    <div className="flex flex-1 flex-wrap items-center gap-1 sm:justify-end">
+                      <span className="text-[10px] text-muted-foreground">หาร:</span>
                       {tripMembers.map(m => {
                         const included = item.splitWith.includes(m.key)
                         const initials = m.displayName.split(' ').map((w) => w[0]).join('').toUpperCase().substring(0, 2)
@@ -776,7 +765,6 @@ export function TripExpenseFormV2({
                       })}
                     </div>
 
-                    {/* Delete Product Button */}
                     {receiptItems.length > 1 && (
                       <Button
                         type="button"
@@ -805,7 +793,7 @@ export function TripExpenseFormV2({
           </Button>
 
           {/* Receipt Level Summary & Tax Breakdown */}
-          <div className="grid grid-cols-3 gap-3 border-t pt-4 mt-2">
+          <div className="grid grid-cols-1 gap-3 border-t pt-4 mt-2 sm:grid-cols-3">
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">ราคาสินค้ารวม (Subtotal)</Label>
               <div className="relative">
@@ -860,140 +848,87 @@ export function TripExpenseFormV2({
         </div>
       )}
 
-      {/* Payers */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <Label>ใครจ่าย?</Label>
-          {payers.length < tripMembers.length && (
-            <Button type="button" variant="ghost" size="sm" onClick={addPayer} className="h-7 text-xs gap-1">
-              <Plus className="size-3" /> เพิ่มคนจ่าย
-            </Button>
-          )}
-        </div>
-        <div className="space-y-2">
-          {payers.map((payer, idx) => (
-            <div key={idx} className="flex items-center gap-2">
-              <Select value={payer.key} onValueChange={k => updatePayerMember(idx, k)}>
-                <SelectTrigger className="flex-1">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {tripMembers.map(m => (
-                    <SelectItem key={m.key} value={m.key}
-                      disabled={payers.some((p, i) => i !== idx && p.key === m.key)}>
-                      {m.displayName}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <div className="relative w-28">
-                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">{curSymbol}</span>
-                <Input
-                  type="number" step="0.01" className="pl-6"
-                  placeholder={idx === payers.length - 1 ? String(lastPayerSuggestion.toFixed(0)) : '0'}
-                  value={payer.amount}
-                  onChange={e => updatePayerAmount(idx, e.target.value)}
-                />
-              </div>
-              {payers.length > 1 && (
-                <Button type="button" variant="ghost" size="icon" className="size-8 shrink-0"
-                  onClick={() => removePayer(idx)}>
-                  <Minus className="size-4" />
-                </Button>
-              )}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Split Mode */}
+      {/* Split payment — same UX as Transactions */}
       <div className="space-y-3">
-        <Label>แบ่งจ่ายแบบไหน?</Label>
-        <div className="flex flex-wrap gap-2">
-          {[
-            ...(inputMode === 'receipt' ? [{ value: 'item', label: '🧾 หารแยกสินค้า' }] : []),
-            { value: 'equal', label: '⚖️ เฉลี่ยเท่ากัน' },
-            { value: 'custom', label: '✏️ กำหนดเอง' },
-            { value: 'solo', label: '🙋 คนเดียว' },
-          ].map(opt => (
-            <button key={opt.value} type="button"
-              onClick={() => setSplitMode(opt.value as SplitMode)}
-              className={cn(
-                'flex-1 rounded-lg border px-2 py-2 text-xs font-medium transition-all min-w-[80px] whitespace-nowrap',
-                splitMode === opt.value
-                  ? 'bg-primary text-primary-foreground border-primary'
-                  : 'border-border hover:border-primary/50'
-              )}>
-              {opt.label}
-            </button>
-          ))}
+        <div className="flex items-center justify-between gap-2">
+          <Label>แบ่งค่าใช้จ่ายกับเพื่อน</Label>
+          <button
+            type="button"
+            onClick={() => {
+              const next = !splitEnabled
+              setSplitEnabled(next)
+              if (!next) setSplitData(null)
+            }}
+            className={cn(
+              'rounded-lg border px-3 py-1.5 text-xs font-medium transition-all',
+              splitEnabled
+                ? 'border-primary bg-primary text-primary-foreground'
+                : 'border-border hover:border-primary/50'
+            )}
+          >
+            {splitEnabled ? 'เปิดอยู่' : 'ปิด'}
+          </button>
         </div>
 
-        {/* Itemised Split Summary */}
-        {splitMode === 'item' && (
-          <div className="space-y-1.5">
-            <p className="text-xs text-muted-foreground font-medium">สรุปการหารรายชิ้น:</p>
-            <div className="space-y-1 bg-muted/30 p-2.5 rounded-lg text-xs text-muted-foreground">
-              {tripMembers.map(m => (
-                <div key={m.key} className="flex justify-between">
-                  <span>{m.displayName}</span>
-                  <span className="font-semibold tabular-nums text-foreground">{curSymbol}{(itemShares[m.key] || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                </div>
-              ))}
-            </div>
+        {splitEnabled && inputMode === 'receipt' && (
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setUseItemSplit(true)}
+              className={cn(
+                'flex-1 rounded-lg border px-2 py-2 text-xs font-medium transition-all sm:min-w-[80px]',
+                useItemSplit
+                  ? 'border-primary bg-primary text-primary-foreground'
+                  : 'border-border hover:border-primary/50'
+              )}
+            >
+              🧾 หารแยกสินค้า
+            </button>
+            <button
+              type="button"
+              onClick={() => setUseItemSplit(false)}
+              className={cn(
+                'flex-1 rounded-lg border px-2 py-2 text-xs font-medium transition-all sm:min-w-[80px]',
+                !useItemSplit
+                  ? 'border-primary bg-primary text-primary-foreground'
+                  : 'border-border hover:border-primary/50'
+              )}
+            >
+              ⚖️ หารแบบทั่วไป
+            </button>
           </div>
         )}
 
-        {/* Equal — member toggles */}
-        {splitMode === 'equal' && (
-          <div className="space-y-1.5">
-            <p className="text-xs text-muted-foreground">เลือกคนที่หารด้วย ({equalIncluded.size} คน → คนละ {curSymbol}{equalShareAmount.toFixed(0)})</p>
-            <div className="flex flex-wrap gap-2">
-              {tripMembers.map(m => {
-                const on = equalIncluded.has(m.key)
-                return (
-                  <button key={m.key} type="button"
-                    onClick={() => {
-                      const next = new Set(equalIncluded)
-                      on ? next.delete(m.key) : next.add(m.key)
-                      setEqualIncluded(next)
-                    }}
-                    className={cn(
-                      'rounded-full border px-3 py-1 text-xs font-medium transition-all',
-                      on ? 'bg-primary text-primary-foreground border-primary' : 'border-border hover:border-primary/50'
-                    )}>
-                    {m.displayName}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* Custom shares */}
-        {splitMode === 'custom' && (
-          <div className="space-y-2">
-            <p className="text-xs text-muted-foreground">
-              กรอกจำนวนของแต่ละคน (รวม: {curSymbol}{customTotal.toFixed(0)} / {curSymbol}{total.toFixed(0)})
-            </p>
-            {tripMembers.map(m => (
-              <div key={m.key} className="flex items-center gap-2">
-                <span className="flex-1 text-sm">{m.displayName}</span>
-                <div className="relative w-28">
-                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">{curSymbol}</span>
-                  <Input type="number" step="0.01" className="pl-6"
-                    placeholder="0"
-                    value={customShares[m.key] || ''}
-                    onChange={e => setCustomShares({ ...customShares, [m.key]: e.target.value })}
-                  />
+        {splitEnabled && total > 0 && (
+          <>
+            <TransactionSplitSection
+              total={total}
+              members={splitMembers}
+              currencySymbol={curSymbol}
+              previewPersonId={myUserId}
+              hideSplitOptions={useItemSplit && inputMode === 'receipt'}
+              initialPayers={splitData?.payers ?? initialData?.payers}
+              initialShares={useItemSplit ? undefined : (splitData?.shares ?? initialData?.shares)}
+              initialSplitMode={useItemSplit ? 'equal' : (splitData?.splitMode ?? (initialData?.splitMode === 'item' ? 'equal' : initialData?.splitMode as TransactionSplitMode))}
+              onChange={handleSplitChange}
+            />
+            {useItemSplit && inputMode === 'receipt' && (
+              <div className="space-y-1.5">
+                <p className="text-xs text-muted-foreground font-medium">สรุปการหารรายชิ้น:</p>
+                <div className="space-y-1 bg-muted/30 p-2.5 rounded-lg text-xs text-muted-foreground">
+                  {tripMembers.map(m => (
+                    <div key={m.key} className="flex justify-between gap-2">
+                      <span className="min-w-0 truncate">{m.displayName}</span>
+                      <span className="font-semibold tabular-nums text-foreground shrink-0">{curSymbol}{(itemShares[m.key] || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
-            ))}
-          </div>
+            )}
+          </>
         )}
-
-        {splitMode === 'solo' && (
-          <p className="text-xs text-muted-foreground">คนที่จ่ายรับผิดชอบทั้งหมด ไม่หารกับใคร</p>
+        {splitEnabled && total <= 0 && (
+          <p className="text-xs text-muted-foreground">กรอกจำนวนเงินก่อนเพื่อตั้งค่าการแบ่งจ่าย</p>
         )}
       </div>
 
@@ -1007,23 +942,7 @@ export function TripExpenseFormV2({
         </div>
       )}
 
-      {/* Summary */}
-      {total > 0 && (
-        <div className="rounded-lg bg-muted p-3 text-xs space-y-1 text-muted-foreground">
-          <p className="font-medium text-foreground">สรุป</p>
-          {payers.map((p, i) => (
-            <p key={i}>💳 {p.displayName} จ่าย {curSymbol}{parseFloat(p.amount || (i === payers.length - 1 ? String(lastPayerSuggestion) : '0')).toFixed(0)}</p>
-          ))}
-          {splitMode === 'item' && (
-            <p>🧾 หารแยกรายชิ้นตามรายการใบเสร็จ</p>
-          )}
-          {splitMode === 'equal' && equalIncluded.size > 0 && (
-            <p>⚖️ หาร {equalIncluded.size} คน → คนละ {curSymbol}{equalShareAmount.toFixed(0)}</p>
-          )}
-        </div>
-      )}
-
-      <div className="flex justify-end gap-2 pt-2">
+      <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end">
         <Button type="button" variant="outline" onClick={onCancel}>ยกเลิก</Button>
         <Button type="submit" disabled={submitting}>{submitting ? 'กำลังบันทึก...' : 'บันทึก'}</Button>
       </div>
