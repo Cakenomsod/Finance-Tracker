@@ -524,8 +524,8 @@ export function TransactionForm({
         />
 
         {inputMode === 'receipt' && (
-          <div className="space-y-4 border rounded-lg p-3 bg-muted/20 overflow-hidden">
-            <div className="flex items-center justify-between flex-wrap gap-2 pb-1">
+          <div className="space-y-4 border rounded-lg p-3 bg-muted/20">
+            <div className="flex flex-col gap-2 pb-1 sm:flex-row sm:items-center sm:justify-between">
               <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Receipt Items</h4>
               <Button
                 type="button"
@@ -545,11 +545,11 @@ export function TransactionForm({
 
             <div className="space-y-3">
               {receiptItems.map((item, idx) => (
-                <div key={idx} className="border-b pb-3 last:border-b-0 last:pb-0 pt-2">
-                  <div className="flex items-center gap-2 w-full overflow-hidden">
+                <div key={idx} className="border-b pb-3 last:border-b-0 last:pb-0 pt-2 space-y-2">
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto_auto] sm:items-center">
                     <Input
                       placeholder="Product Name"
-                      className="flex-grow min-w-[120px] h-9 text-xs shrink"
+                      className="h-9 text-xs"
                       value={item.name}
                       onChange={e => {
                         const next = [...receiptItems]
@@ -566,7 +566,7 @@ export function TransactionForm({
                         setReceiptItems(next)
                       }}
                     >
-                      <SelectTrigger className="w-24 sm:w-28 h-9 text-xs shrink-0">
+                      <SelectTrigger className="h-9 w-full text-xs sm:w-28">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -586,7 +586,7 @@ export function TransactionForm({
                       </SelectContent>
                     </Select>
 
-                    <div className="relative w-24 shrink-0">
+                    <div className="relative">
                       <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">
                         ฿
                       </span>
@@ -604,19 +604,21 @@ export function TransactionForm({
                         }}
                       />
                     </div>
+                  </div>
 
-                    {receiptItems.length > 1 && (
+                  {receiptItems.length > 1 && (
+                    <div className="flex justify-end">
                       <Button
                         type="button"
                         variant="ghost"
                         size="icon"
-                        className="size-8 shrink-0 hover:bg-destructive/10 hover:text-destructive"
+                        className="size-8 hover:bg-destructive/10 hover:text-destructive"
                         onClick={() => setReceiptItems(receiptItems.filter((_, i) => i !== idx))}
                       >
                         <Minus className="size-4" />
                       </Button>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
