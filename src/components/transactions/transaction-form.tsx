@@ -487,7 +487,7 @@ export function TransactionForm({
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4 py-4">
+      <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-3 py-2 sm:space-y-4 sm:py-4">
         <ImmichAttachmentsField
           value={attachmentIds}
           onChange={setAttachmentIds}
@@ -517,256 +517,50 @@ export function TransactionForm({
           </button>
         </div>
 
-        <FormField
-          control={form.control}
-          name="type"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Type</FormLabel>
-              <Select
-                onValueChange={(val) => {
-                  field.onChange(val)
-                  if (val === 'expense' && incomeNameSet.has(form.getValues('category'))) {
-                    const fallback = expenseCategoryNames[0]
-                    if (fallback) form.setValue('category', fallback)
-                  }
-                }}
-                value={field.value}
-              >
-                <FormControl>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select type" />
-                  </SelectTrigger>
-                </FormControl>
-                <SelectContent>
-                  <SelectItem value="expense">Expense</SelectItem>
-                  <SelectItem value="income">Income</SelectItem>
-                </SelectContent>
-              </Select>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="description"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Description</FormLabel>
-              <FormControl>
-                <Textarea
-                  placeholder="Enter details about this transaction"
-                  className="resize-none"
-                  {...field}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        {inputMode === 'receipt' && (
-          <div className="space-y-4 border rounded-lg p-3 bg-muted/20">
-            <div className="flex flex-col gap-2 pb-1 sm:flex-row sm:items-center sm:justify-between">
-              <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Receipt Items</h4>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() =>
-                  setReceiptItems([
-                    ...receiptItems,
-                    { name: '', category: expenseCategoryNames[0] || '', price: '' },
-                  ])
-                }
-                className="h-7 text-xs gap-1"
-              >
-                <Plus className="size-3" /> Add Product
-              </Button>
-            </div>
-
-            <div className="space-y-3">
-              {receiptItems.map((item, idx) => (
-                <div key={idx} className="border-b pb-3 last:border-b-0 last:pb-0 pt-2 space-y-2">
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto_auto] sm:items-center">
-                    <Input
-                      placeholder="Product Name"
-                      className="h-9 text-xs"
-                      value={item.name}
-                      onChange={e => {
-                        const next = [...receiptItems]
-                        next[idx] = { ...next[idx], name: e.target.value }
-                        setReceiptItems(next)
-                      }}
-                    />
-
-                    <Select
-                      value={item.category || undefined}
-                      onValueChange={val => {
-                        const next = [...receiptItems]
-                        next[idx] = { ...next[idx], category: val }
-                        setReceiptItems(next)
-                      }}
-                    >
-                      <SelectTrigger className="h-9 w-full text-xs sm:w-28">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {(expenseCategoryNames.includes(item.category)
-                          ? expenseCategoryNames
-                          : item.category
-                            ? [...expenseCategoryNames, item.category]
-                            : expenseCategoryNames
-                        ).map((c) => {
-                          const cat = categoryByName.get(c)
-                          return (
-                            <SelectItem key={c} value={c} className="text-xs">
-                              {cat ? `${cat.icon} ${c}` : c}
-                            </SelectItem>
-                          )
-                        })}
-                      </SelectContent>
-                    </Select>
-
-                    <div className="relative">
-                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">
-                        ฿
-                      </span>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        placeholder="0.00"
-                        className="pl-6 pr-1 h-9 text-xs font-medium"
-                        value={item.price}
-                        onChange={e => {
-                          const next = [...receiptItems]
-                          next[idx] = { ...next[idx], price: e.target.value }
-                          setReceiptItems(next)
-                        }}
-                      />
-                    </div>
-                  </div>
-
-                  {receiptItems.length > 1 && (
-                    <div className="flex justify-end">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="size-8 hover:bg-destructive/10 hover:text-destructive"
-                        onClick={() => setReceiptItems(receiptItems.filter((_, i) => i !== idx))}
-                      >
-                        <Minus className="size-4" />
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() =>
-                setReceiptItems([
-                  ...receiptItems,
-                  { name: '', category: expenseCategoryNames[0] || '', price: '' },
-                ])
-              }
-              className="h-8 w-full gap-1 border-dashed text-xs"
-            >
-              <Plus className="size-3" /> เพิ่มรายการ
-            </Button>
-
-            <div className="border-t pt-4 mt-2">
-              <div className="flex items-center justify-between">
-                <Label className="text-sm font-medium">ยอดรวมสุทธิ</Label>
-                <span className="text-lg font-bold tabular-nums">
-                  ฿{receiptTotal.toLocaleString(undefined, {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })}
-                </span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {inputMode === 'standard' && (
+        <div className="grid grid-cols-2 gap-3">
           <FormField
             control={form.control}
-            name="amount"
+            name="type"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>
-                  {paymentMethod === 'paotang' && !isIncome ? 'ยอดเต็ม (฿)' : 'จำนวนเงิน (฿)'}
-                </FormLabel>
-                <FormControl>
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">
-                      ฿
-                    </span>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      placeholder="0.00"
-                      className="pl-8 h-10"
-                      {...field}
-                    />
-                  </div>
-                </FormControl>
+                <FormLabel className="text-xs sm:text-sm">Type</FormLabel>
+                <Select
+                  onValueChange={(val) => {
+                    field.onChange(val)
+                    if (val === 'expense' && incomeNameSet.has(form.getValues('category'))) {
+                      const fallback = expenseCategoryNames[0]
+                      if (fallback) form.setValue('category', fallback)
+                    }
+                  }}
+                  value={field.value}
+                >
+                  <FormControl>
+                    <SelectTrigger className="h-9">
+                      <SelectValue placeholder="Select type" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    <SelectItem value="expense">Expense</SelectItem>
+                    <SelectItem value="income">Income</SelectItem>
+                  </SelectContent>
+                </Select>
                 <FormMessage />
               </FormItem>
             )}
           />
-        )}
-
-        <div className="grid grid-cols-2 gap-4">
-          {inputMode === 'receipt' && (
-            <FormField
-              control={form.control}
-              name="amount"
-              render={() => (
-                <FormItem>
-                  <FormLabel>ยอดรวม (฿)</FormLabel>
-                  <FormControl>
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">
-                        ฿
-                      </span>
-                      <Input
-                        type="text"
-                        readOnly
-                        tabIndex={-1}
-                        className="pl-8 h-10 font-semibold bg-muted/50"
-                        value={receiptTotal.toLocaleString(undefined, {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}
-                      />
-                    </div>
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          )}
 
           <FormField
             control={form.control}
             name="category"
             render={({ field }) => (
-              <FormItem className={cn(inputMode === 'standard' && "col-span-2")}>
-                <FormLabel>Category</FormLabel>
+              <FormItem>
+                <FormLabel className="text-xs sm:text-sm">Category</FormLabel>
                 <Select
                   onValueChange={field.onChange}
                   value={field.value || undefined}
                 >
                   <FormControl>
-                    <SelectTrigger>
+                    <SelectTrigger className="h-9">
                       <SelectValue placeholder="Select category" />
                     </SelectTrigger>
                   </FormControl>
@@ -788,40 +582,218 @@ export function TransactionForm({
           />
         </div>
 
+        <FormField
+          control={form.control}
+          name="description"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel className="text-xs sm:text-sm">Description</FormLabel>
+              <FormControl>
+                <Textarea
+                  placeholder="Enter details about this transaction"
+                  className="min-h-[4.5rem] resize-none text-sm"
+                  {...field}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        {inputMode === 'receipt' && (
+          <div className="space-y-3 rounded-lg border bg-muted/20 p-3">
+            <div className="flex items-center justify-between gap-2">
+              <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Receipt Items</h4>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  setReceiptItems([
+                    ...receiptItems,
+                    { name: '', category: expenseCategoryNames[0] || '', price: '' },
+                  ])
+                }
+                className="h-7 shrink-0 gap-1 px-2 text-xs"
+              >
+                <Plus className="size-3" /> เพิ่ม
+              </Button>
+            </div>
+
+            <div className="space-y-2.5">
+              {receiptItems.map((item, idx) => (
+                <div key={idx} className="space-y-1.5 border-b pb-2.5 last:border-b-0 last:pb-0">
+                  <div className="flex items-center gap-1.5">
+                    <Input
+                      placeholder="Product Name"
+                      className="h-8 min-w-0 flex-1 text-xs"
+                      value={item.name}
+                      onChange={e => {
+                        const next = [...receiptItems]
+                        next[idx] = { ...next[idx], name: e.target.value }
+                        setReceiptItems(next)
+                      }}
+                    />
+                    {receiptItems.length > 1 && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="size-8 shrink-0 hover:bg-destructive/10 hover:text-destructive"
+                        onClick={() => setReceiptItems(receiptItems.filter((_, i) => i !== idx))}
+                      >
+                        <Minus className="size-3.5" />
+                      </Button>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-[1fr_5.5rem] gap-1.5">
+                    <Select
+                      value={item.category || undefined}
+                      onValueChange={val => {
+                        const next = [...receiptItems]
+                        next[idx] = { ...next[idx], category: val }
+                        setReceiptItems(next)
+                      }}
+                    >
+                      <SelectTrigger className="h-8 w-full text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(expenseCategoryNames.includes(item.category)
+                          ? expenseCategoryNames
+                          : item.category
+                            ? [...expenseCategoryNames, item.category]
+                            : expenseCategoryNames
+                        ).map((c) => {
+                          const cat = categoryByName.get(c)
+                          return (
+                            <SelectItem key={c} value={c} className="text-xs">
+                              {cat ? `${cat.icon} ${c}` : c}
+                            </SelectItem>
+                          )
+                        })}
+                      </SelectContent>
+                    </Select>
+
+                    <div className="relative">
+                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                        ฿
+                      </span>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        placeholder="0.00"
+                        className="h-8 pl-5 pr-1 text-xs font-medium"
+                        value={item.price}
+                        onChange={e => {
+                          const next = [...receiptItems]
+                          next[idx] = { ...next[idx], price: e.target.value }
+                          setReceiptItems(next)
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                setReceiptItems([
+                  ...receiptItems,
+                  { name: '', category: expenseCategoryNames[0] || '', price: '' },
+                ])
+              }
+              className="h-8 w-full gap-1 border-dashed text-xs"
+            >
+              <Plus className="size-3" /> เพิ่มรายการ
+            </Button>
+
+            <div className="border-t pt-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-medium sm:text-sm">ยอดรวมสุทธิ</Label>
+                <span className="text-base font-bold tabular-nums sm:text-lg">
+                  ฿{receiptTotal.toLocaleString(undefined, {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {inputMode === 'standard' && (
+          <FormField
+            control={form.control}
+            name="amount"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel className="text-xs sm:text-sm">
+                  {paymentMethod === 'paotang' && !isIncome ? 'ยอดเต็ม (฿)' : 'จำนวนเงิน (฿)'}
+                </FormLabel>
+                <FormControl>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                      ฿
+                    </span>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      placeholder="0.00"
+                      className="h-9 pl-8"
+                      {...field}
+                    />
+                  </div>
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        )}
+
         {!isIncome && (
-          <div className="space-y-3 rounded-lg border bg-muted/20 p-4">
-            <p className="text-sm font-medium">วิธีชำระเงิน</p>
-            <div className="flex gap-1 p-1 bg-muted rounded-lg">
-              <button
-                type="button"
-                onClick={() => setPaymentMethod('normal')}
-                className={cn(
-                  'flex-1 py-1.5 text-xs font-medium rounded-md transition-all',
-                  paymentMethod === 'normal'
-                    ? 'bg-background text-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground'
-                )}
-              >
-                จ่ายปกติ
-              </button>
-              <button
-                type="button"
-                onClick={() => setPaymentMethod('paotang')}
-                className={cn(
-                  'flex-1 py-1.5 text-xs font-medium rounded-md transition-all',
-                  paymentMethod === 'paotang'
-                    ? 'bg-background text-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground'
-                )}
-              >
-                เป๋าตัง
-              </button>
+          <div className="space-y-2.5 rounded-lg border bg-muted/20 p-3">
+            <div className="flex items-center gap-2">
+              <p className="shrink-0 text-xs font-medium sm:text-sm">วิธีชำระเงิน</p>
+              <div className="flex min-w-0 flex-1 gap-1 rounded-lg bg-muted p-1">
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod('normal')}
+                  className={cn(
+                    'flex-1 rounded-md py-1.5 text-xs font-medium transition-all',
+                    paymentMethod === 'normal'
+                      ? 'bg-background text-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
+                  )}
+                >
+                  จ่ายปกติ
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod('paotang')}
+                  className={cn(
+                    'flex-1 rounded-md py-1.5 text-xs font-medium transition-all',
+                    paymentMethod === 'paotang'
+                      ? 'bg-background text-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
+                  )}
+                >
+                  เป๋าตัง
+                </button>
+              </div>
             </div>
 
             {paymentMethod === 'paotang' && !splitEnabled && (
-              <div className="space-y-2">
-                <Label className="text-xs">ใครสแกนเป๋าตัง?</Label>
-                <div className="flex gap-1 p-1 bg-muted rounded-lg">
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <Label className="shrink-0 text-xs">สแกนโดย</Label>
+                  <div className="flex min-w-0 flex-1 gap-1 rounded-lg bg-muted p-1">
                   <button
                     type="button"
                     onClick={() => {
@@ -850,6 +822,7 @@ export function TransactionForm({
                     เพื่อนจ่ายให้
                   </button>
                 </div>
+                </div>
                 {paotangPayerMode === 'other' && (
                   <FormField
                     control={form.control}
@@ -873,29 +846,29 @@ export function TransactionForm({
             )}
 
             {paymentMethod === 'paotang' && splitEnabled && (
-              <p className="text-[11px] text-muted-foreground">
-                เปิดแบ่งจ่ายแล้ว — ใส่ยอดสแกนเต็มของแต่ละคน ระบบคำนวณหนี้จากยอดจ่ายจริง (40%)
+              <p className="text-[10px] text-muted-foreground">
+                แบ่งจ่ายเปิดอยู่ — ใส่ยอดสแกนเต็ม หนี้คิดจาก 40%
               </p>
             )}
 
             {paymentMethod === 'paotang' && (
-              <div className="space-y-3">
-                <div className="rounded-md border bg-background/80 p-3 text-xs space-y-2">
-                  <p className="font-medium text-sm">
+              <div className="space-y-2">
+                <div className="rounded-md border bg-background/80 p-2.5 text-xs space-y-1.5">
+                  <p className="text-xs font-medium sm:text-sm">
                     {isOtherPayerPaotang
-                      ? `โควต้าเป๋าตังของ ${watchedPaidBy}`
-                      : 'โควต้าเป๋าตังของคุณ'}
+                      ? `โควต้า ${watchedPaidBy}`
+                      : 'โควต้าเป๋าตัง'}
                   </p>
-                  <p className="text-[11px] text-muted-foreground">
+                  <p className="hidden text-[10px] text-muted-foreground sm:block">
                     {isOtherPayerPaotang
-                      ? `ตรวจเฉพาะรัฐจ่ายสูงสุด ฿${PAOTANG_DAILY_GOV_MAX.toLocaleString()}/วัน (ไม่นับโควต้ารวม/รายเดือนของคุณ)`
-                      : `รวม ฿${PAOTANG_TOTAL_QUOTA.toLocaleString()} · เดือนละ ฿${PAOTANG_MONTHLY_QUOTA.toLocaleString()} (ไม่ยกยอด) · วันละรัฐจ่ายสูงสุด ฿${PAOTANG_DAILY_GOV_MAX.toLocaleString()}`}
+                      ? `รัฐจ่ายสูงสุด ฿${PAOTANG_DAILY_GOV_MAX.toLocaleString()}/วัน`
+                      : `รวม ฿${PAOTANG_TOTAL_QUOTA.toLocaleString()} · เดือน ฿${PAOTANG_MONTHLY_QUOTA.toLocaleString()} · วัน ฿${PAOTANG_DAILY_GOV_MAX.toLocaleString()}`}
                   </p>
-                  <div className={cn('grid gap-2', isOtherPayerPaotang ? 'grid-cols-1' : 'sm:grid-cols-3')}>
+                  <div className="grid grid-cols-3 gap-1.5">
                     {(isOtherPayerPaotang
                       ? [
                           {
-                            label: `วันนี้ — ${watchedPaidBy} (รัฐจ่าย)`,
+                            label: 'วันนี้',
                             used: paotangUsage.dayUsed,
                             max: PAOTANG_DAILY_GOV_MAX,
                             remaining:
@@ -905,7 +878,7 @@ export function TransactionForm({
                         ]
                       : [
                           {
-                            label: 'โควต้ารวม',
+                            label: 'รวม',
                             used: paotangUsage.totalUsed,
                             max: PAOTANG_TOTAL_QUOTA,
                             remaining:
@@ -913,7 +886,7 @@ export function TransactionForm({
                               PAOTANG_TOTAL_QUOTA - paotangUsage.totalUsed,
                           },
                           {
-                            label: 'เดือนนี้',
+                            label: 'เดือน',
                             used: paotangUsage.monthUsed,
                             max: PAOTANG_MONTHLY_QUOTA,
                             remaining:
@@ -921,7 +894,7 @@ export function TransactionForm({
                               PAOTANG_MONTHLY_QUOTA - paotangUsage.monthUsed,
                           },
                           {
-                            label: 'วันนี้ (รัฐจ่าย)',
+                            label: 'วันนี้',
                             used: paotangUsage.dayUsed,
                             max: PAOTANG_DAILY_GOV_MAX,
                             remaining:
@@ -930,13 +903,13 @@ export function TransactionForm({
                           },
                         ]
                     ).map((q) => (
-                      <div key={q.label} className="rounded border bg-muted/30 p-2">
+                      <div key={q.label} className="rounded border bg-muted/30 px-1.5 py-1.5">
                         <p className="text-[10px] text-muted-foreground">{q.label}</p>
                         <p className="font-semibold tabular-nums text-[11px]">
-                          เหลือ ฿{Math.max(0, q.remaining).toLocaleString()}
+                          ฿{Math.max(0, q.remaining).toLocaleString()}
                         </p>
-                        <p className="text-[10px] text-muted-foreground tabular-nums">
-                          ใช้ ฿{q.used.toLocaleString()} / ฿{q.max.toLocaleString()}
+                        <p className="text-[9px] text-muted-foreground tabular-nums">
+                          {q.used.toLocaleString()}/{q.max.toLocaleString()}
                         </p>
                       </div>
                     ))}
@@ -944,106 +917,86 @@ export function TransactionForm({
                 </div>
 
                 {totalForPayment > 0 && paotangSplit && (
-                  <div className="rounded-md border bg-background p-3 text-sm space-y-2">
+                  <div className="rounded-md border bg-background p-2.5 text-xs space-y-1.5">
                     {isOtherPayerPaotang ? (
                       <>
-                        <p className="text-muted-foreground">
-                          {watchedPaidBy} จ่ายให้ด้วยเป๋าตัง — คุณคืนเขา {PAOTANG_USER_PERCENT}%
+                        <p className="text-[11px] text-muted-foreground">
+                          {watchedPaidBy} จ่ายให้ — คุณคืน {PAOTANG_USER_PERCENT}%
                         </p>
-                        <div className="grid gap-2 sm:grid-cols-3">
+                        <div className="grid grid-cols-3 gap-1.5">
                           <div>
-                            <p className="text-[11px] text-muted-foreground">ยอดเต็ม</p>
-                            <p className="font-semibold tabular-nums">
+                            <p className="text-[10px] text-muted-foreground">เต็ม</p>
+                            <p className="font-semibold tabular-nums text-xs">
                               ฿{totalForPayment.toLocaleString(undefined, {
-                                minimumFractionDigits: 2,
-                                maximumFractionDigits: 2,
+                                minimumFractionDigits: 0,
+                                maximumFractionDigits: 0,
                               })}
                             </p>
                           </div>
                           <div>
-                            <p className="text-[11px] text-muted-foreground">
-                              รัฐจ่ายให้ {watchedPaidBy}
-                            </p>
-                            <p className="font-semibold tabular-nums text-chart-2">
+                            <p className="text-[10px] text-muted-foreground">รัฐจ่าย</p>
+                            <p className="font-semibold tabular-nums text-xs text-chart-2">
                               ฿{paotangSplit.subsidy.toLocaleString(undefined, {
-                                minimumFractionDigits: 2,
-                                maximumFractionDigits: 2,
+                                minimumFractionDigits: 0,
+                                maximumFractionDigits: 0,
                               })}
-                              {paotangSplit.capped && (
-                                <span className="text-[10px] font-normal text-muted-foreground block">
-                                  (ปกติ ฿{paotangSplit.idealSubsidy.toLocaleString()})
-                                </span>
-                              )}
                             </p>
                           </div>
                           <div>
-                            <p className="text-[11px] text-muted-foreground">
-                              คุณคืน {watchedPaidBy} ({PAOTANG_USER_PERCENT}%)
-                            </p>
-                            <p className="font-semibold tabular-nums text-destructive">
+                            <p className="text-[10px] text-muted-foreground">คุณคืน</p>
+                            <p className="font-semibold tabular-nums text-xs text-destructive">
                               ฿{paotangSplit.oweToPayer?.toLocaleString(undefined, {
-                                minimumFractionDigits: 2,
-                                maximumFractionDigits: 2,
+                                minimumFractionDigits: 0,
+                                maximumFractionDigits: 0,
                               })}
                             </p>
                           </div>
                         </div>
                         {paotangSplit.capped && (
-                          <p className="text-[11px] text-warning">
-                            {watchedPaidBy} ใช้โควต้ารายวันครบแล้ว — {getPaotangCapReasonLabel(paotangSplit.capReason)}
+                          <p className="text-[10px] text-warning">
+                            โควต้าวันนี้เต็ม — {getPaotangCapReasonLabel(paotangSplit.capReason)}
                           </p>
                         )}
-                        <p className="text-[11px] text-muted-foreground">
-                          หนี้ที่ติด = {PAOTANG_USER_PERCENT}% ของยอดเต็ม (ไม่รวมส่วนรัฐจ่าย)
-                        </p>
                       </>
                     ) : (
                       <>
-                        <p className="text-muted-foreground">
-                          เป๋าตัง: รัฐจ่าย {PAOTANG_GOV_PERCENT}% · เราจ่ายส่วนที่เหลือ
+                        <p className="text-[11px] text-muted-foreground">
+                          รัฐ {PAOTANG_GOV_PERCENT}% · เรา {PAOTANG_USER_PERCENT}%
                         </p>
-                        <div className="grid gap-2 sm:grid-cols-3">
+                        <div className="grid grid-cols-3 gap-1.5">
                           <div>
-                            <p className="text-[11px] text-muted-foreground">ยอดเต็ม</p>
-                            <p className="font-semibold tabular-nums">
+                            <p className="text-[10px] text-muted-foreground">เต็ม</p>
+                            <p className="font-semibold tabular-nums text-xs">
                               ฿{totalForPayment.toLocaleString(undefined, {
-                                minimumFractionDigits: 2,
-                                maximumFractionDigits: 2,
+                                minimumFractionDigits: 0,
+                                maximumFractionDigits: 0,
                               })}
                             </p>
                           </div>
                           <div>
-                            <p className="text-[11px] text-muted-foreground">รัฐจ่ายจริง</p>
-                            <p className="font-semibold tabular-nums text-chart-2">
+                            <p className="text-[10px] text-muted-foreground">รัฐจ่าย</p>
+                            <p className="font-semibold tabular-nums text-xs text-chart-2">
                               ฿{paotangSplit.subsidy.toLocaleString(undefined, {
-                                minimumFractionDigits: 2,
-                                maximumFractionDigits: 2,
+                                minimumFractionDigits: 0,
+                                maximumFractionDigits: 0,
                               })}
-                              {paotangSplit.capped && (
-                                <span className="text-[10px] font-normal text-muted-foreground block">
-                                  (ปกติ ฿{paotangSplit.idealSubsidy.toLocaleString()})
-                                </span>
-                              )}
                             </p>
                           </div>
                           <div>
-                            <p className="text-[11px] text-muted-foreground">เราจ่ายจริง</p>
-                            <p className="font-semibold tabular-nums text-destructive">
+                            <p className="text-[10px] text-muted-foreground">เราจ่าย</p>
+                            <p className="font-semibold tabular-nums text-xs text-destructive">
                               ฿{paotangSplit.userPaid.toLocaleString(undefined, {
-                                minimumFractionDigits: 2,
-                                maximumFractionDigits: 2,
+                                minimumFractionDigits: 0,
+                                maximumFractionDigits: 0,
                               })}
                             </p>
                           </div>
                         </div>
                         {paotangSplit.capped && (
-                          <p className="text-[11px] text-warning">
-                            โควต้าไม่พอ — ถูกจำกัดโดย{getPaotangCapReasonLabel(paotangSplit.capReason)}
+                          <p className="text-[10px] text-warning">
+                            โควต้าไม่พอ — {getPaotangCapReasonLabel(paotangSplit.capReason)}
                           </p>
                         )}
-                        <p className="text-[11px] text-muted-foreground">
-                          ใช้ยอด &quot;เราจ่ายจริง&quot; คำนวณหนี้/แบ่งจ่าย
-                        </p>
                       </>
                     )}
                   </div>
@@ -1059,7 +1012,7 @@ export function TransactionForm({
             name="paidBy"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Received From</FormLabel>
+                <FormLabel className="text-xs sm:text-sm">Received From</FormLabel>
                 <FormControl>
                   <ContactSelect
                     value={field.value || ''}
@@ -1075,9 +1028,9 @@ export function TransactionForm({
             )}
           />
         ) : (
-          <div className="space-y-3 rounded-lg border bg-muted/20 p-4">
+          <div className="space-y-2.5 rounded-lg border bg-muted/20 p-3">
             <div className="flex items-center justify-between gap-2">
-              <Label>แบ่งค่าใช้จ่ายกับเพื่อน</Label>
+              <Label className="text-xs sm:text-sm">แบ่งค่าใช้จ่าย</Label>
               <button
                 type="button"
                 onClick={() => {
@@ -1086,13 +1039,13 @@ export function TransactionForm({
                   if (!next) setSplitData(null)
                 }}
                 className={cn(
-                  'rounded-lg border px-3 py-1.5 text-xs font-medium transition-all',
+                  'shrink-0 rounded-lg border px-2.5 py-1 text-xs font-medium transition-all',
                   splitEnabled
                     ? 'border-primary bg-primary text-primary-foreground'
                     : 'border-border hover:border-primary/50'
                 )}
               >
-                {splitEnabled ? 'เปิดอยู่' : 'ปิด'}
+                {splitEnabled ? 'เปิด' : 'ปิด'}
               </button>
             </div>
 
@@ -1103,37 +1056,33 @@ export function TransactionForm({
                 initialShares={resolvedInitialSplit?.shares}
                 initialSplitMode={resolvedInitialSplit?.splitMode}
                 useEffectivePayerAmounts={paymentMethod === 'paotang'}
+                embedded
                 onChange={handleSplitChange}
               />
             )}
             {splitEnabled && splitTotal <= 0 && (
-              <p className="text-xs text-muted-foreground">กรอกจำนวนเงินก่อนเพื่อตั้งค่าการแบ่งจ่าย</p>
+              <p className="text-xs text-muted-foreground">กรอกจำนวนเงินก่อน</p>
             )}
 
-            <div className="flex items-center justify-between gap-2 border-t pt-3">
-              <div>
-                <Label>คิดหนี้กับเพื่อน</Label>
-                <p className="text-[11px] text-muted-foreground">
-                  ปิด = แค่บันทึกรายการ ไม่สร้างหนี้
-                </p>
-              </div>
+            <div className="flex items-center justify-between gap-2 border-t pt-2">
+              <Label className="text-xs sm:text-sm">คิดหนี้กับเพื่อน</Label>
               <button
                 type="button"
                 onClick={() => setDebtTracking((v) => !v)}
                 className={cn(
-                  'rounded-lg border px-3 py-1.5 text-xs font-medium transition-all',
+                  'shrink-0 rounded-lg border px-2.5 py-1 text-xs font-medium transition-all',
                   debtTracking
                     ? 'border-primary bg-primary text-primary-foreground'
                     : 'border-border hover:border-primary/50'
                 )}
               >
-                {debtTracking ? 'เปิดอยู่' : 'ปิด'}
+                {debtTracking ? 'เปิด' : 'ปิด'}
               </button>
             </div>
 
             {!debtTracking && (
-              <p className="text-[11px] text-muted-foreground rounded-md bg-muted/40 p-2">
-                โหมดบันทึกอย่างเดียว — เปิดแบ่งจ่ายเพื่อระบุว่าใครกิน/ใช้ร่วมกัน โดยไม่สร้างหนี้
+              <p className="text-[10px] text-muted-foreground">
+                แค่บันทึกรายการ ไม่สร้างหนี้
               </p>
             )}
           </div>
@@ -1167,17 +1116,16 @@ export function TransactionForm({
           />
         )}
 
-        <div className="rounded-lg border bg-muted/20 p-4">
-          <p className="mb-3 text-sm font-medium text-muted-foreground">วันที่และเวลา</p>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="rounded-lg border bg-muted/20 p-3">
+          <div className="grid grid-cols-2 gap-3">
             <FormField
               control={form.control}
               name="date"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Date</FormLabel>
+                  <FormLabel className="text-xs sm:text-sm">Date</FormLabel>
                   <FormControl>
-                    <Input type="date" className="h-10 w-full" {...field} />
+                    <Input type="date" className="h-9 w-full text-sm" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -1188,9 +1136,9 @@ export function TransactionForm({
               name="time"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Time</FormLabel>
+                  <FormLabel className="text-xs sm:text-sm">Time</FormLabel>
                   <FormControl>
-                    <Input type="time" className="h-10 w-full" {...field} />
+                    <Input type="time" className="h-9 w-full text-sm" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -1201,11 +1149,11 @@ export function TransactionForm({
 
         <OptionalNoteField value={note} onChange={setNote} />
 
-        <div className="flex justify-end gap-2 pt-4">
-          <Button type="button" variant="outline" onClick={onCancel}>
+        <div className="flex gap-2 pt-2 sm:justify-end">
+          <Button type="button" variant="outline" className="flex-1 sm:flex-none" onClick={onCancel}>
             Cancel
           </Button>
-          <Button type="submit" disabled={isSubmitting || categoriesLoading}>
+          <Button type="submit" className="flex-1 sm:flex-none" disabled={isSubmitting || categoriesLoading}>
             {isSubmitting ? 'Saving...' : 'Save Transaction'}
           </Button>
         </div>

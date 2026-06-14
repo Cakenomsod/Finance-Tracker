@@ -43,6 +43,8 @@ export interface TransactionSplitSectionProps {
   hideSplitOptions?: boolean
   /** Use Paotang cash-out (40%) for payer rows in debt preview */
   useEffectivePayerAmounts?: boolean
+  /** Strip outer card chrome when nested inside another section */
+  embedded?: boolean
   disabled?: boolean
   onChange: (data: {
     payers: TripExpensePayer[]
@@ -67,6 +69,7 @@ export function TransactionSplitSection({
   previewPersonId = ME_PERSON_ID,
   hideSplitOptions = false,
   useEffectivePayerAmounts = false,
+  embedded = false,
   disabled,
   onChange,
 }: TransactionSplitSectionProps) {
@@ -315,12 +318,16 @@ export function TransactionSplitSection({
   }
 
   return (
-    <div className="space-y-4 rounded-lg border bg-muted/20 p-4">
-      <p className="text-sm font-medium">แบ่งจ่าย / หนี้</p>
+    <div
+      className={cn(
+        embedded ? 'space-y-3' : 'space-y-3 rounded-lg border bg-muted/20 p-3 sm:p-4'
+      )}
+    >
+      {!embedded && <p className="text-sm font-medium">แบ่งจ่าย / หนี้</p>}
 
       <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <Label>ใครจ่าย?</Label>
+        <div className="flex items-center justify-between gap-2">
+          <Label className="text-xs sm:text-sm">ใครจ่าย?</Label>
           {payers.length < members.length && (
             <Button
               type="button"
@@ -328,69 +335,73 @@ export function TransactionSplitSection({
               size="sm"
               onClick={addPayer}
               disabled={disabled}
-              className="h-7 gap-1 text-xs"
+              className="h-7 shrink-0 gap-1 px-2 text-xs"
             >
-              <Plus className="size-3" /> เพิ่มคนจ่าย
+              <Plus className="size-3" /> เพิ่ม
             </Button>
           )}
         </div>
         <div className="space-y-2">
           {payers.map((payer, idx) => (
-            <div key={idx} className="flex items-center gap-2">
-              <Select
-                value={payer.personId}
-                onValueChange={(v) => updatePayerPerson(idx, v)}
-                disabled={disabled}
-              >
-                <SelectTrigger className="flex-1">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {members.map((m) => (
-                    <SelectItem
-                      key={m.personId}
-                      value={m.personId}
-                      disabled={payers.some((p, i) => i !== idx && p.personId === m.personId)}
-                    >
-                      {m.displayName}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <div className="relative w-28 shrink-0">
-                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
-                  {currencySymbol}
-                </span>
-                <Input
-                  type="number"
-                  step="0.01"
-                  className="pl-6"
+            <div key={idx} className="space-y-0.5">
+              <div className="grid grid-cols-[1fr_5.25rem_2rem] items-center gap-1.5 sm:grid-cols-[1fr_6rem_2rem] sm:gap-2">
+                <Select
+                  value={payer.personId}
+                  onValueChange={(v) => updatePayerPerson(idx, v)}
                   disabled={disabled}
-                  placeholder={idx === payers.length - 1 ? String(lastPayerSuggestion.toFixed(0)) : '0'}
-                  value={payer.amount}
-                  onChange={(e) => updatePayerAmount(idx, e.target.value)}
-                />
-                {useEffectivePayerAmounts && parseFloat(payer.amount) > 0 && (
-                  <p className="mt-0.5 text-[10px] text-muted-foreground tabular-nums">
-                    จ่ายจริง {currencySymbol}
-                    {toPaotangEffectivePayerAmount(parseFloat(payer.amount) || 0).toLocaleString(undefined, {
-                      minimumFractionDigits: 0,
-                      maximumFractionDigits: 2,
-                    })}
-                  </p>
+                >
+                  <SelectTrigger className="h-8 min-w-0 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {members.map((m) => (
+                      <SelectItem
+                        key={m.personId}
+                        value={m.personId}
+                        disabled={payers.some((p, i) => i !== idx && p.personId === m.personId)}
+                      >
+                        {m.displayName}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <div className="relative">
+                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                    {currencySymbol}
+                  </span>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    className="h-8 pl-5 text-xs"
+                    disabled={disabled}
+                    placeholder={idx === payers.length - 1 ? String(lastPayerSuggestion.toFixed(0)) : '0'}
+                    value={payer.amount}
+                    onChange={(e) => updatePayerAmount(idx, e.target.value)}
+                  />
+                </div>
+                {payers.length > 1 ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="size-8 shrink-0"
+                    disabled={disabled}
+                    onClick={() => removePayer(idx)}
+                  >
+                    <Minus className="size-3.5" />
+                  </Button>
+                ) : (
+                  <div className="size-8 shrink-0" />
                 )}
               </div>
-              {payers.length > 1 && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="size-8 shrink-0"
-                  disabled={disabled}
-                  onClick={() => removePayer(idx)}
-                >
-                  <Minus className="size-4" />
-                </Button>
+              {useEffectivePayerAmounts && parseFloat(payer.amount) > 0 && (
+                <p className="text-[10px] text-muted-foreground tabular-nums pl-0.5">
+                  จ่ายจริง {currencySymbol}
+                  {toPaotangEffectivePayerAmount(parseFloat(payer.amount) || 0).toLocaleString(undefined, {
+                    minimumFractionDigits: 0,
+                    maximumFractionDigits: 2,
+                  })}
+                </p>
               )}
             </div>
           ))}
@@ -398,13 +409,13 @@ export function TransactionSplitSection({
       </div>
 
       {!hideSplitOptions && (
-      <div className="space-y-3">
-        <Label>แบ่งจ่ายแบบไหน?</Label>
-        <div className="flex flex-wrap gap-2">
+      <div className="space-y-2">
+        <Label className="text-xs sm:text-sm">แบ่งจ่ายแบบไหน?</Label>
+        <div className="grid grid-cols-3 gap-1.5">
           {[
-            { value: 'equal' as const, label: '⚖️ เฉลี่ยเท่ากัน' },
-            { value: 'custom' as const, label: '✏️ กำหนดเอง' },
-            { value: 'solo' as const, label: '🙋 คนเดียว' },
+            { value: 'equal' as const, label: '⚖️ เฉลี่ย' },
+            { value: 'custom' as const, label: '✏️ กำหนด' },
+            { value: 'solo' as const, label: '🙋 เดียว' },
           ].map((opt) => (
             <button
               key={opt.value}
@@ -412,7 +423,7 @@ export function TransactionSplitSection({
               disabled={disabled}
               onClick={() => setSplitMode(opt.value)}
               className={cn(
-                'min-w-[80px] flex-1 rounded-lg border px-2 py-2 text-xs font-medium transition-all sm:whitespace-nowrap',
+                'rounded-lg border px-1.5 py-1.5 text-[11px] font-medium transition-all sm:px-2 sm:py-2 sm:text-xs',
                 splitMode === opt.value
                   ? 'border-primary bg-primary text-primary-foreground'
                   : 'border-border hover:border-primary/50'
@@ -464,16 +475,16 @@ export function TransactionSplitSection({
               กรอกจำนวนของแต่ละคนที่จ่าย (รวม: {currencySymbol}{customTotal.toFixed(0)} / {currencySymbol}{total.toFixed(0)})
             </p>
             {payerParticipants.map((p) => (
-              <div key={p.personId} className="flex items-center gap-2">
-                <span className="min-w-0 flex-1 truncate text-sm">{p.displayName}</span>
-                <div className="relative w-28 shrink-0">
-                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+              <div key={p.personId} className="grid grid-cols-[1fr_5.25rem] items-center gap-1.5 sm:gap-2">
+                <span className="min-w-0 truncate text-xs sm:text-sm">{p.displayName}</span>
+                <div className="relative">
+                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
                     {currencySymbol}
                   </span>
                   <Input
                     type="number"
                     step="0.01"
-                    className="pl-6"
+                    className="h-8 pl-5 text-xs"
                     disabled={disabled}
                     placeholder="0"
                     value={customShares[p.personId] || ''}
