@@ -3,8 +3,8 @@ import { debtsRef, createDebt, deleteDebt } from './firestore';
 import { Transaction } from './firestore-types';
 import {
   computePaotangOweToPayer,
-  getTransactionEffectiveAmount,
   isPaotangPaidByOther,
+  toEffectivePayersForDebt,
 } from './transaction-payment';
 import {
   computeTransactionSplitDebts,
@@ -35,6 +35,7 @@ type DebtSyncData = Pick<
   | 'splitMode'
   | 'description'
   | 'paymentMethod'
+  | 'debtTracking'
   | 'paotangSubsidy'
   | 'paotangUserPaid'
 >;
@@ -42,6 +43,7 @@ type DebtSyncData = Pick<
 export function shouldSyncTransactionDebt(data: DebtSyncData): boolean {
   if (data.type !== 'expense') return false;
   if (data.category === 'Income') return false;
+  if (data.debtTracking === false) return false;
   return true;
 }
 
@@ -59,6 +61,26 @@ export async function syncTransactionDebts(
     description: data.description,
   };
 
+  const split = resolveTransactionSplit(data);
+  const hasSplit = split && hasTransactionSplit(data);
+
+  if (hasSplit && split) {
+    const payersForDebt = toEffectivePayersForDebt(split.payers, data.paymentMethod);
+    const debts = computeTransactionSplitDebts(userId, payersForDebt, split.shares);
+    for (const d of debts) {
+      if (d.amount <= 0) continue;
+      await createDebt({
+        ...debtBase,
+        amount: d.amount,
+        fromUserId: d.fromUserId,
+        toUserId: d.toUserId,
+        fromDisplayName: d.fromDisplayName,
+        toDisplayName: d.toDisplayName,
+      });
+    }
+    return;
+  }
+
   if (data.paymentMethod === 'paotang' && isPaotangPaidByOther(data.paidBy)) {
     const share = computePaotangOweToPayer(data.amount);
     if (share <= 0) return;
@@ -69,23 +91,6 @@ export async function syncTransactionDebts(
       toUserId: data.paidBy!,
       fromDisplayName: 'Me',
       toDisplayName: data.paidBy!,
-    });
-    return;
-  }
-
-  const split = resolveTransactionSplit(data);
-  if (!split || !hasTransactionSplit(data)) return;
-
-  const debts = computeTransactionSplitDebts(userId, split.payers, split.shares);
-  for (const d of debts) {
-    if (d.amount <= 0) continue;
-    await createDebt({
-      ...debtBase,
-      amount: d.amount,
-      fromUserId: d.fromUserId,
-      toUserId: d.toUserId,
-      fromDisplayName: d.fromDisplayName,
-      toDisplayName: d.toDisplayName,
     });
   }
 }

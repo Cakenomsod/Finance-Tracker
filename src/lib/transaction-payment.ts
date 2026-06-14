@@ -1,4 +1,4 @@
-import { PaymentMethod, Transaction } from './firestore-types';
+import { PaymentMethod, Transaction, TripExpensePayer } from './firestore-types';
 
 /** Fixed Paotang co-payment split (government wallet subsidy programs) */
 export const PAOTANG_GOV_PERCENT = 60;
@@ -16,8 +16,18 @@ export type PaotangQuotaMode = 'self' | 'payer-other';
 
 type PaymentFields = Pick<
   Transaction,
-  'amount' | 'type' | 'paymentMethod' | 'paidBy' | 'paotangSubsidy' | 'paotangUserPaid'
+  | 'amount'
+  | 'type'
+  | 'paymentMethod'
+  | 'paidBy'
+  | 'payers'
+  | 'shares'
+  | 'debtTracking'
+  | 'paotangSubsidy'
+  | 'paotangUserPaid'
 >;
+
+const ME_PERSON_ID = 'Me';
 
 export interface PaotangQuotaUsage {
   totalUsed: number;
@@ -217,11 +227,49 @@ export function computePaotangSplitWithQuota(
   };
 }
 
+/** 40% user share of a Paotang swipe amount */
+export function toPaotangEffectivePayerAmount(amount: number): number {
+  return computePaotangIdealSplit(amount).userPaid;
+}
+
+/** Convert payer rows to cash-out amounts when payment used Paotang */
+export function toEffectivePayersForDebt(
+  payers: TripExpensePayer[],
+  paymentMethod?: PaymentMethod | null
+): TripExpensePayer[] {
+  if (paymentMethod !== 'paotang') return payers;
+  return payers.map((p) => ({
+    ...p,
+    amount: toPaotangEffectivePayerAmount(p.amount),
+  }));
+}
+
 /** Cash-flow amount used for display, debt split, and expense totals */
 export function getTransactionEffectiveAmount(tx: PaymentFields): number {
+  const sign = tx.amount >= 0 ? 1 : -1;
+
+  if (tx.payers?.length && tx.shares?.length) {
+    const mePayer = tx.payers.find((p) => p.userId === ME_PERSON_ID);
+    const meShare = tx.shares.find((s) => s.userId === ME_PERSON_ID);
+
+    if (tx.paymentMethod === 'paotang') {
+      if (mePayer) {
+        return sign * toPaotangEffectivePayerAmount(mePayer.amount);
+      }
+      if (meShare && tx.debtTracking === false) {
+        return sign * meShare.amount;
+      }
+      return 0;
+    }
+
+    if (mePayer) return sign * mePayer.amount;
+    if (meShare && tx.debtTracking === false) return sign * meShare.amount;
+    return 0;
+  }
+
   if (tx.paymentMethod === 'paotang') {
-    const sign = tx.amount >= 0 ? 1 : -1;
     if (isPaotangPaidByOther(tx.paidBy)) {
+      if (tx.debtTracking === false) return 0;
       const userShare =
         tx.paotangUserPaid != null && tx.paotangUserPaid >= 0
           ? tx.paotangUserPaid

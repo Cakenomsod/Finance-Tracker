@@ -21,6 +21,7 @@ import {
   computeSplitNetBalances,
   computeSplitTransfers,
 } from '@/lib/transaction-split'
+import { toPaotangEffectivePayerAmount } from '@/lib/transaction-payment'
 
 export interface SplitMember {
   personId: string
@@ -40,6 +41,8 @@ export interface TransactionSplitSectionProps {
   previewPersonId?: string
   /** Hide equal/custom/solo controls — payers only (e.g. trip itemised receipt split) */
   hideSplitOptions?: boolean
+  /** Use Paotang cash-out (40%) for payer rows in debt preview */
+  useEffectivePayerAmounts?: boolean
   disabled?: boolean
   onChange: (data: {
     payers: TripExpensePayer[]
@@ -63,6 +66,7 @@ export function TransactionSplitSection({
   currencySymbol = '฿',
   previewPersonId = ME_PERSON_ID,
   hideSplitOptions = false,
+  useEffectivePayerAmounts = false,
   disabled,
   onChange,
 }: TransactionSplitSectionProps) {
@@ -294,11 +298,17 @@ export function TransactionSplitSection({
 
   const preview = React.useMemo(() => {
     if (!buildResult || buildResult.errors.length > 0 || total <= 0) return null
-    const net = computeSplitNetBalances(buildResult.payers, buildResult.shares)
+    const payersForPreview = useEffectivePayerAmounts
+      ? buildResult.payers.map((p) => ({
+          ...p,
+          amount: toPaotangEffectivePayerAmount(p.amount),
+        }))
+      : buildResult.payers
+    const net = computeSplitNetBalances(payersForPreview, buildResult.shares)
     return computeSplitTransfers(net).filter(
       (t) => t.from === previewPersonId || t.to === previewPersonId
     )
-  }, [buildResult, total, previewPersonId])
+  }, [buildResult, total, previewPersonId, useEffectivePayerAmounts])
 
   if (loading) {
     return <p className="text-sm text-muted-foreground">กำลังโหลดรายชื่อ...</p>
@@ -360,6 +370,15 @@ export function TransactionSplitSection({
                   value={payer.amount}
                   onChange={(e) => updatePayerAmount(idx, e.target.value)}
                 />
+                {useEffectivePayerAmounts && parseFloat(payer.amount) > 0 && (
+                  <p className="mt-0.5 text-[10px] text-muted-foreground tabular-nums">
+                    จ่ายจริง {currencySymbol}
+                    {toPaotangEffectivePayerAmount(parseFloat(payer.amount) || 0).toLocaleString(undefined, {
+                      minimumFractionDigits: 0,
+                      maximumFractionDigits: 2,
+                    })}
+                  </p>
+                )}
               </div>
               {payers.length > 1 && (
                 <Button

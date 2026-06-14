@@ -116,6 +116,15 @@ export function TransactionForm({
   const [paymentMethod, setPaymentMethod] = React.useState<PaymentMethod>(
     initialData?.paymentMethod || 'normal'
   )
+  const [debtTracking, setDebtTracking] = React.useState(
+    initialData?.debtTracking !== false
+  )
+  const [paotangPayerMode, setPaotangPayerMode] = React.useState<'self' | 'other'>(() => {
+    if (initialData?.paymentMethod === 'paotang' && isPaotangPaidByOther(initialData.paidBy)) {
+      return 'other'
+    }
+    return 'self'
+  })
   const [note, setNote] = React.useState(initialData?.note || '')
   const [attachmentIds, setAttachmentIds] = React.useState<string[]>(() =>
     collectImmichAssetIds({
@@ -222,9 +231,14 @@ export function TransactionForm({
     [initialData, isIncome]
   )
 
-  const [splitEnabled, setSplitEnabled] = React.useState(
-    () => !!(resolvedInitialSplit && (initialData?.splitWith || initialData?.payers?.length))
-  )
+  const [splitEnabled, setSplitEnabled] = React.useState(() => {
+    if (!initialData) return false
+    if (initialData.splitWith) return true
+    if (initialData.splitMode && initialData.splitMode !== 'solo') return true
+    if ((initialData.payers?.length ?? 0) > 1) return true
+    if ((initialData.shares?.length ?? 0) > 1) return true
+    return false
+  })
   const [splitData, setSplitData] = React.useState<{
     payers: TripExpensePayer[]
     shares: TripExpenseShare[]
@@ -281,9 +295,21 @@ export function TransactionForm({
   }, [watchedDate, watchedTime])
 
   const isOtherPayerPaotang =
-    paymentMethod === 'paotang' && isPaotangPaidByOther(watchedPaidBy)
-  const paotangQuotaMode = getPaotangQuotaMode(watchedPaidBy)
+    paymentMethod === 'paotang' &&
+    !splitEnabled &&
+    paotangPayerMode === 'other' &&
+    isPaotangPaidByOther(watchedPaidBy)
+  const paotangQuotaMode = getPaotangQuotaMode(
+    splitEnabled ? 'Me' : paotangPayerMode === 'other' ? watchedPaidBy : 'Me'
+  )
   const paotangQuotaOwner = isOtherPayerPaotang ? watchedPaidBy! : 'Me'
+
+  React.useEffect(() => {
+    if (paymentMethod !== 'paotang' || splitEnabled) return
+    if (paotangPayerMode === 'self') {
+      form.setValue('paidBy', 'Me')
+    }
+  }, [paymentMethod, paotangPayerMode, splitEnabled, form])
 
   const paotangUsage = React.useMemo(
     () =>
@@ -300,11 +326,7 @@ export function TransactionForm({
       ? computePaotangSplitWithQuota(totalForPayment, paotangUsage, paotangQuotaMode)
       : null
 
-  const splitTotal = React.useMemo(() => {
-    if (isOtherPayerPaotang) return totalForPayment
-    if (paymentMethod === 'paotang' && !isIncome) return totalForPayment
-    return totalForPayment
-  }, [isOtherPayerPaotang, paymentMethod, isIncome, totalForPayment])
+  const splitTotal = totalForPayment
 
   const handleSubmit = async (values: TransactionFormValues) => {
     setIsSubmitting(true)
@@ -325,7 +347,6 @@ export function TransactionForm({
       if (
         !isIncome &&
         splitEnabled &&
-        !isOtherPayerPaotang &&
         splitData &&
         splitTotal > 0
       ) {
@@ -336,6 +357,17 @@ export function TransactionForm({
         }
       }
 
+      if (
+        !isIncome &&
+        paymentMethod === 'paotang' &&
+        !splitEnabled &&
+        paotangPayerMode === 'other' &&
+        !values.paidBy
+      ) {
+        form.setError('paidBy', { message: 'กรุณาเลือกผู้จ่าย' })
+        return
+      }
+
       const finalAmount = values.type === 'expense' ? -Math.abs(rawAmount) : Math.abs(rawAmount)
 
       let paidBy = isIncome ? (values.paidBy || '') : (values.paidBy || 'Me')
@@ -344,7 +376,7 @@ export function TransactionForm({
       let shares: TripExpenseShare[] | undefined
       let splitMode: TransactionSplitMode | undefined
 
-      if (!isIncome && splitEnabled && splitData && !isOtherPayerPaotang) {
+      if (!isIncome && splitEnabled && splitData) {
         payers = splitData.payers
         shares = splitData.shares
         splitMode = splitData.splitMode
@@ -354,7 +386,7 @@ export function TransactionForm({
         payers = []
         shares = []
         splitMode = undefined
-        if (isOtherPayerPaotang) {
+        if (paymentMethod === 'paotang' && paotangPayerMode === 'other') {
           paidBy = values.paidBy || 'Me'
         } else {
           paidBy = 'Me'
@@ -380,6 +412,7 @@ export function TransactionForm({
         source: initialData?.source || 'manual',
         currency: 'THB',
         note: note.trim() || undefined,
+        debtTracking: !isIncome ? debtTracking : undefined,
       }
 
       if (uniqueAttachmentIds.length) {
@@ -408,13 +441,23 @@ export function TransactionForm({
       }
 
       if (usePaotang) {
-        const paidBy = isIncome ? values.paidBy : (values.paidBy || 'Me')
+        const mePayer = splitEnabled ? splitData?.payers.find((p) => p.userId === 'Me') : null
+        const paotangBase = mePayer?.amount ?? rawAmount
+        const quotaOwner =
+          splitEnabled && mePayer
+            ? 'Me'
+            : paotangPayerMode === 'other' && values.paidBy
+              ? values.paidBy
+              : 'Me'
         const usage = getPaotangUsageFromTransactions(existingTransactions, {
           excludeTxId: initialData?.id,
           forDate: parseLocalDateTime(values.date, values.time),
-          quotaOwner: isPaotangPaidByOther(paidBy) ? paidBy : 'Me',
+          quotaOwner: isPaotangPaidByOther(quotaOwner) ? quotaOwner : 'Me',
         })
-        Object.assign(transactionData, buildPaotangPaymentFields(rawAmount, usage, paidBy))
+        Object.assign(
+          transactionData,
+          buildPaotangPaymentFields(paotangBase, usage, quotaOwner)
+        )
       } else {
         transactionData.paymentMethod = 'normal'
         transactionData.paotangSubsidy = null
@@ -775,6 +818,66 @@ export function TransactionForm({
               </button>
             </div>
 
+            {paymentMethod === 'paotang' && !splitEnabled && (
+              <div className="space-y-2">
+                <Label className="text-xs">ใครสแกนเป๋าตัง?</Label>
+                <div className="flex gap-1 p-1 bg-muted rounded-lg">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPaotangPayerMode('self')
+                      form.setValue('paidBy', 'Me')
+                    }}
+                    className={cn(
+                      'flex-1 py-1.5 text-xs font-medium rounded-md transition-all',
+                      paotangPayerMode === 'self'
+                        ? 'bg-background text-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground'
+                    )}
+                  >
+                    ฉันจ่าย
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPaotangPayerMode('other')}
+                    className={cn(
+                      'flex-1 py-1.5 text-xs font-medium rounded-md transition-all',
+                      paotangPayerMode === 'other'
+                        ? 'bg-background text-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground'
+                    )}
+                  >
+                    เพื่อนจ่ายให้
+                  </button>
+                </div>
+                {paotangPayerMode === 'other' && (
+                  <FormField
+                    control={form.control}
+                    name="paidBy"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormControl>
+                          <ContactSelect
+                            value={field.value || ''}
+                            onChange={field.onChange}
+                            placeholder="เลือกผู้จ่าย"
+                            includeMe={false}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
+              </div>
+            )}
+
+            {paymentMethod === 'paotang' && splitEnabled && (
+              <p className="text-[11px] text-muted-foreground">
+                เปิดแบ่งจ่ายแล้ว — ใส่ยอดสแกนเต็มของแต่ละคน ระบบคำนวณหนี้จากยอดจ่ายจริง (40%)
+              </p>
+            )}
+
             {paymentMethod === 'paotang' && (
               <div className="space-y-3">
                 <div className="rounded-md border bg-background/80 p-3 text-xs space-y-2">
@@ -971,27 +1074,8 @@ export function TransactionForm({
               </FormItem>
             )}
           />
-        ) : isOtherPayerPaotang ? (
-          <FormField
-            control={form.control}
-            name="paidBy"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Paid By</FormLabel>
-                <FormControl>
-                  <ContactSelect
-                    value={field.value || ''}
-                    onChange={field.onChange}
-                    placeholder="เลือกผู้จ่าย"
-                    includeMe={false}
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-3 rounded-lg border bg-muted/20 p-4">
             <div className="flex items-center justify-between gap-2">
               <Label>แบ่งค่าใช้จ่ายกับเพื่อน</Label>
               <button
@@ -1011,17 +1095,46 @@ export function TransactionForm({
                 {splitEnabled ? 'เปิดอยู่' : 'ปิด'}
               </button>
             </div>
+
             {splitEnabled && splitTotal > 0 && (
               <TransactionSplitSection
                 total={splitTotal}
                 initialPayers={resolvedInitialSplit?.payers}
                 initialShares={resolvedInitialSplit?.shares}
                 initialSplitMode={resolvedInitialSplit?.splitMode}
+                useEffectivePayerAmounts={paymentMethod === 'paotang'}
                 onChange={handleSplitChange}
               />
             )}
             {splitEnabled && splitTotal <= 0 && (
               <p className="text-xs text-muted-foreground">กรอกจำนวนเงินก่อนเพื่อตั้งค่าการแบ่งจ่าย</p>
+            )}
+
+            <div className="flex items-center justify-between gap-2 border-t pt-3">
+              <div>
+                <Label>คิดหนี้กับเพื่อน</Label>
+                <p className="text-[11px] text-muted-foreground">
+                  ปิด = แค่บันทึกรายการ ไม่สร้างหนี้
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDebtTracking((v) => !v)}
+                className={cn(
+                  'rounded-lg border px-3 py-1.5 text-xs font-medium transition-all',
+                  debtTracking
+                    ? 'border-primary bg-primary text-primary-foreground'
+                    : 'border-border hover:border-primary/50'
+                )}
+              >
+                {debtTracking ? 'เปิดอยู่' : 'ปิด'}
+              </button>
+            </div>
+
+            {!debtTracking && (
+              <p className="text-[11px] text-muted-foreground rounded-md bg-muted/40 p-2">
+                โหมดบันทึกอย่างเดียว — เปิดแบ่งจ่ายเพื่อระบุว่าใครกิน/ใช้ร่วมกัน โดยไม่สร้างหนี้
+              </p>
             )}
           </div>
         )}

@@ -85,6 +85,8 @@ export interface Transaction {
   /** True when gov subsidy was reduced due to quota limits */
   paotangQuotaCapped?: boolean;
   paotangCapReason?: 'daily' | 'monthly' | 'total' | null;
+  /** When false, transaction is recorded but no friend debts are created */
+  debtTracking?: boolean;
   note?: string;
 }
 
