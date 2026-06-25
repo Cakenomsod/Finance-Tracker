@@ -46,7 +46,8 @@ import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/
 import { cn } from '@/lib/utils'
 import { useTransactions } from '@/hooks/use-transactions'
 import { useAllTripExpenses } from '@/hooks/use-all-trip-expenses'
-import { Transaction } from '@/lib/firestore-types'
+import { useAuth } from '@/hooks/use-auth'
+import { mergeTransactions } from '@/lib/aggregate-transactions'
 
 const chartConfig = {
   income: { label: 'Income', color: 'var(--chart-1)' },
@@ -69,14 +70,20 @@ const categoryColors = [
 
 // --- Helper functions to aggregate transaction data ---
 
-function getDateFromTx(tx: Transaction): Date {
+type AnalyticsRow = {
+  amount: number
+  date: { seconds: number } | null
+  category?: string
+}
+
+function getDateFromTx(tx: AnalyticsRow): Date {
   if (tx.date?.seconds) {
     return new Date(tx.date.seconds * 1000)
   }
   return new Date()
 }
 
-function filterByTimeRange(transactions: Transaction[], range: string): Transaction[] {
+function filterByTimeRange(transactions: AnalyticsRow[], range: string): AnalyticsRow[] {
   const now = new Date()
   let cutoff: Date
 
@@ -100,7 +107,7 @@ function filterByTimeRange(transactions: Transaction[], range: string): Transact
   return transactions.filter((tx) => getDateFromTx(tx) >= cutoff)
 }
 
-function buildMonthlyOverview(transactions: Transaction[]) {
+function buildMonthlyOverview(transactions: AnalyticsRow[]) {
   const monthMap = new Map<string, { income: number; expenses: number }>()
 
   transactions.forEach((tx) => {
@@ -133,7 +140,7 @@ function buildMonthlyOverview(transactions: Transaction[]) {
     })
 }
 
-function buildCategoryBreakdown(transactions: Transaction[]) {
+function buildCategoryBreakdown(transactions: AnalyticsRow[]) {
   const catMap = new Map<string, number>()
 
   transactions
@@ -154,7 +161,7 @@ function buildCategoryBreakdown(transactions: Transaction[]) {
     .sort((a, b) => b.value - a.value)
 }
 
-function buildDailySpending(transactions: Transaction[]) {
+function buildDailySpending(transactions: AnalyticsRow[]) {
   // Current month only
   const now = new Date()
   const currentMonth = now.getMonth()
@@ -180,7 +187,7 @@ function buildDailySpending(transactions: Transaction[]) {
     }))
 }
 
-function buildWeekdayPattern(transactions: Transaction[]) {
+function buildWeekdayPattern(transactions: AnalyticsRow[]) {
   const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
   const daySums = new Array(7).fill(0)
   const dayCounts = new Array(7).fill(0)
@@ -215,7 +222,7 @@ function buildWeekdayPattern(transactions: Transaction[]) {
   }))
 }
 
-function getFinancialHabits(transactions: Transaction[]) {
+function getFinancialHabits(transactions: AnalyticsRow[]) {
   const expenseTxs = transactions.filter((tx) => tx.amount < 0)
   const totalExpenses = expenseTxs.reduce((s, tx) => s + Math.abs(tx.amount), 0)
 
@@ -257,43 +264,24 @@ function getFinancialHabits(transactions: Transaction[]) {
 }
 
 export default function AnalyticsPage() {
+  const { user } = useAuth()
   const { transactions, loading: txLoading } = useTransactions()
   const { allTripExpenses, loading: tripLoading } = useAllTripExpenses()
   const [timeRange, setTimeRange] = React.useState('6months')
   
   const loading = txLoading || tripLoading
 
-  // Merge legacy transactions and trip expenses
   const allCombined = React.useMemo(() => {
-    const legacy = transactions.map(tx => ({
+    return mergeTransactions(transactions, allTripExpenses, user?.uid).map((tx) => ({
       id: tx.id,
       description: tx.description,
-      amount: tx.amount,
+      amount: tx.amountThb,
       category: tx.category,
       date: tx.date,
-      paidBy: tx.paidBy || 'Me',
-      isLegacy: true,
-    } as any))
-
-    const newExps = allTripExpenses.map(ex => {
-      const payersStr = ex.payers.map(p => p.displayName).join(', ')
-      return {
-        id: ex.id,
-        description: ex.description,
-        amount: -ex.totalAmount, // Expenses are negative
-        category: ex.category || 'Other',
-        date: ex.date,
-        paidBy: payersStr,
-        isLegacy: false,
-      } as any
-    })
-
-    return [...legacy, ...newExps].sort((a, b) => {
-      const dateA = a.date?.seconds || 0
-      const dateB = b.date?.seconds || 0
-      return dateB - dateA
-    })
-  }, [transactions, allTripExpenses])
+      paidBy: tx.paidBy,
+      isLegacy: tx.isLegacy,
+    }))
+  }, [transactions, allTripExpenses, user?.uid])
 
   // Filter transactions by time range
   const filtered = React.useMemo(

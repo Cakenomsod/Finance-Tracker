@@ -21,6 +21,7 @@ import {
   groupItemsByDate,
   toDateFromFirestore,
 } from '@/lib/datetime'
+import { shouldIgnoreRowClick } from '@/lib/row-click'
 
 type CombinedTransaction = {
   id: string | undefined
@@ -45,6 +46,7 @@ interface TransactionMobileListProps {
   categoryByName: Map<string, Category>
   selectedRows: string[]
   onRowSelect: (id: string) => void
+  onView: (transaction: CombinedTransaction) => void
   onEdit: (tx: Transaction) => void
   onDelete: (id: string, tx: Transaction | null) => void
 }
@@ -55,6 +57,7 @@ export function TransactionMobileList({
   categoryByName,
   selectedRows,
   onRowSelect,
+  onView,
   onEdit,
   onDelete,
 }: TransactionMobileListProps) {
@@ -107,9 +110,13 @@ export function TransactionMobileList({
                   <div
                     key={txId}
                     className={cn(
-                      'flex gap-3 p-4',
+                      'flex cursor-pointer gap-3 p-4 transition-colors hover:bg-muted/30',
                       selectedRows.includes(txId) && 'bg-muted/50'
                     )}
+                    onClick={(e) => {
+                      if (shouldIgnoreRowClick(e.target)) return
+                      onView(transaction)
+                    }}
                   >
                     <Checkbox
                       checked={selectedRows.includes(txId)}

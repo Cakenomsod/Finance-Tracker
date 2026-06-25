@@ -68,12 +68,14 @@ import { TransactionForm } from '@/components/transactions/transaction-form'
 import { TransactionAiPanel, type TransactionAiPanelHandle } from '@/components/transactions/transaction-ai-panel'
 import { DateGroupDividerRow } from '@/components/transactions/date-group-divider'
 import { TransactionMobileList } from '@/components/transactions/transaction-mobile-list'
-import { Transaction } from '@/lib/firestore-types'
+import { TransactionDetailDialog } from '@/components/transactions/transaction-detail-dialog'
+import { Transaction, TripExpense } from '@/lib/firestore-types'
 import {
   formatTransactionDisplayTime,
   groupItemsByDate,
   toDateFromFirestore,
 } from '@/lib/datetime'
+import { shouldIgnoreRowClick } from '@/lib/row-click'
 
 export default function TransactionsPage() {
   const { user } = useAuth()
@@ -98,6 +100,9 @@ export default function TransactionsPage() {
   const [selectedRows, setSelectedRows] = React.useState<string[]>([])
   const [isAddDialogOpen, setIsAddDialogOpen] = React.useState(false)
   const [editingTransaction, setEditingTransaction] = React.useState<Transaction | null>(null)
+  const [isDetailOpen, setIsDetailOpen] = React.useState(false)
+  const [detailTransaction, setDetailTransaction] = React.useState<Transaction | null>(null)
+  const [detailTripExpense, setDetailTripExpense] = React.useState<TripExpense | null>(null)
   const [ocrDraft, setOcrDraft] = React.useState<Omit<Transaction, 'id' | 'createdAt' | 'userId'> | null>(null)
   const [pendingImmichAssetIds, setPendingImmichAssetIds] = React.useState<string[]>([])
   const transactionAiPanelRef = React.useRef<TransactionAiPanelHandle>(null)
@@ -195,6 +200,20 @@ export default function TransactionsPage() {
       setSelectedRows([])
     } else {
       setSelectedRows(filteredTransactions.map((t) => t.id as string))
+    }
+  }
+
+  const handleViewTransaction = (transaction: (typeof filteredTransactions)[number]) => {
+    if (transaction.isLegacy && transaction.rawTx) {
+      setDetailTransaction(transaction.rawTx)
+      setDetailTripExpense(null)
+      setIsDetailOpen(true)
+      return
+    }
+    if (transaction.rawEx) {
+      setDetailTransaction(null)
+      setDetailTripExpense(transaction.rawEx)
+      setIsDetailOpen(true)
     }
   }
 
@@ -356,6 +375,7 @@ export default function TransactionsPage() {
         categoryByName={categoryByName}
         selectedRows={selectedRows}
         onRowSelect={handleRowSelect}
+        onView={handleViewTransaction}
         onEdit={(tx) => {
           setEditingTransaction(tx)
           setIsAddDialogOpen(true)
@@ -412,6 +432,10 @@ export default function TransactionsPage() {
                     'group cursor-pointer',
                     selectedRows.includes(transaction.id!) && 'bg-muted/50'
                   )}
+                  onClick={(e) => {
+                    if (shouldIgnoreRowClick(e.target)) return
+                    handleViewTransaction(transaction)
+                  }}
                 >
                   <TableCell>
                     <Checkbox
@@ -591,6 +615,25 @@ export default function TransactionsPage() {
           </CardContent>
         </Card>
       </div>
+
+      <TransactionDetailDialog
+        open={isDetailOpen}
+        onOpenChange={(open) => {
+          setIsDetailOpen(open)
+          if (!open) {
+            setDetailTransaction(null)
+            setDetailTripExpense(null)
+          }
+        }}
+        transaction={detailTransaction}
+        tripExpense={detailTripExpense}
+        existingTransactions={transactions}
+        onSaveTransaction={async (id, data) => {
+          await editTransaction(id, data)
+          setDetailTransaction(null)
+          setDetailTripExpense(null)
+        }}
+      />
 
       {/* Floating Add Button (Mobile) — above bottom nav */}
       <Button

@@ -36,6 +36,7 @@ type DebtSyncData = Pick<
   | 'description'
   | 'paymentMethod'
   | 'debtTracking'
+  | 'debtPaymentDebtId'
   | 'paotangSubsidy'
   | 'paotangUserPaid'
 >;
@@ -44,6 +45,7 @@ export function shouldSyncTransactionDebt(data: DebtSyncData): boolean {
   if (data.type !== 'expense') return false;
   if (data.category === 'Income') return false;
   if (data.debtTracking === false) return false;
+  if ('debtPaymentDebtId' in data && data.debtPaymentDebtId) return false;
   return true;
 }
 

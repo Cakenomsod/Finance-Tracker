@@ -123,6 +123,7 @@ export function receiptParseToTransactionDraft(
     items,
     baseAmount: parsed.baseAmount,
     taxAmount: parsed.taxAmount,
+    discount: parsed.discount,
     receiptUrl: null,
     source: 'ai',
     currency,

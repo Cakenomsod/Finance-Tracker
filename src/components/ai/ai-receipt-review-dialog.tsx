@@ -83,6 +83,9 @@ export function AiReceiptReviewDialog({
             {result.taxAmount != null && (
               <Row label="ภาษี" value={result.taxAmount.toLocaleString()} />
             )}
+            {result.discount != null && result.discount > 0 && (
+              <Row label="ส่วนลด" value={result.discount.toLocaleString()} />
+            )}
           </div>
 
           {hasItems && (

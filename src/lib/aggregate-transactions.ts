@@ -1,4 +1,6 @@
 import { Transaction, TripExpense } from '@/lib/firestore-types'
+import { getTransactionEffectiveAmount } from '@/lib/transaction-payment'
+import { getTripExpenseUserShare } from '@/lib/trip-balance'
 
 export interface CombinedTransaction {
   id?: string
@@ -9,6 +11,9 @@ export interface CombinedTransaction {
   date: { seconds: number } | null
   paidBy: string
   isLegacy: boolean
+  rawTx?: Transaction | null
+  rawEx?: TripExpense | null
+  note?: string
 }
 
 const JPY_TO_THB = 0.22
@@ -53,37 +58,49 @@ export function getDateFromTx(tx: { date: { seconds: number } | null }): Date {
 
 export function mergeTransactions(
   transactions: Transaction[],
-  allTripExpenses: TripExpense[]
+  allTripExpenses: TripExpense[],
+  userId?: string
 ): CombinedTransaction[] {
   const legacy = transactions
     .filter((tx) => !tx.tripExpenseId)
     .map((tx) => {
     const factor = tx.currency === 'JPY' ? JPY_TO_THB : 1
+    const effectiveAmount = getTransactionEffectiveAmount(tx)
     return {
       id: tx.id,
       description: tx.description,
-      amount: tx.amount,
-      amountThb: tx.amount * factor,
+      amount: effectiveAmount,
+      amountThb: effectiveAmount * factor,
       category: tx.category,
       date: tx.date,
       paidBy: tx.paidBy || 'Me',
       isLegacy: true,
+      rawTx: tx,
+      rawEx: null,
+      note: tx.note,
     }
   })
 
-  const tripExps = allTripExpenses.map((ex) => {
+  const tripExps = allTripExpenses.flatMap((ex) => {
+    const myShare = userId ? getTripExpenseUserShare(ex, userId) : ex.totalAmount
+    if (userId && myShare <= 0) return []
+
     const factor = ex.currency === 'JPY' ? JPY_TO_THB : 1
     const payersStr = ex.payers.map((p) => p.displayName).join(', ')
-    return {
+    const personalAmount = -myShare
+    return [{
       id: ex.id,
       description: ex.description,
-      amount: -ex.totalAmount,
-      amountThb: -ex.totalAmount * factor,
+      amount: personalAmount,
+      amountThb: personalAmount * factor,
       category: ex.category || 'Other',
       date: ex.date,
       paidBy: payersStr,
       isLegacy: false,
-    }
+      rawTx: null,
+      rawEx: ex,
+      note: ex.note,
+    }]
   })
 
   return [...legacy, ...tripExps].sort((a, b) => {

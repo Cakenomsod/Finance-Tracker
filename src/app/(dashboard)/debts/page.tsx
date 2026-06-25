@@ -63,6 +63,7 @@ import { Debt, Transaction, TripSettlement } from '@/lib/firestore-types'
 import { TransactionForm } from '@/components/transactions/transaction-form'
 import { DateGroupDividerRow } from '@/components/transactions/date-group-divider'
 import { createTripSettlement } from '@/lib/firestore'
+import { createDebtSettlementTransaction } from '@/lib/debt-payment'
 import { Timestamp } from 'firebase/firestore'
 import {
   formatTransactionDisplayTime,
@@ -651,6 +652,19 @@ export default function DebtsPage() {
             date: Timestamp.now(),
           })
         }
+
+        const counterpartyName =
+          settleDebtData.fromUserId === user!.uid
+            ? settleDebtData.toDisplayName || settleDebtData.toUserId
+            : settleDebtData.fromDisplayName || settleDebtData.fromUserId
+
+        await createDebtSettlementTransaction(user!.uid, {
+          amount: payAmount,
+          isPayer: settleDebtData.fromUserId === user!.uid,
+          counterpartyName,
+          note: 'trip-debt',
+          date: Timestamp.now(),
+        })
       } else {
         await settleDebt(settleDebtData.id!, payAmount)
       }
@@ -1058,6 +1072,11 @@ export default function DebtsPage() {
                 </div>
                 <p className="text-xs text-muted-foreground">
                   ยอดคงเหลือ ฿{settleDebtData.amount.toLocaleString()} — สามารถจ่ายบางส่วนได้
+                  {settleDebtData.fromUserId === user?.uid && (
+                    <span className="block mt-1">
+                      จะสร้างธุรกรรม &quot;จ่ายหนี้ให้...&quot; ในรายการของคุณโดยอัตโนมัติ
+                    </span>
+                  )}
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">

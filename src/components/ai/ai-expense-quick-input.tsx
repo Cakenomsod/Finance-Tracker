@@ -17,6 +17,7 @@ import {
   loadAiParseJobs,
   saveAiParseJobs,
 } from '@/lib/ai/parse-jobs-storage'
+import { readApiJson } from '@/lib/api-json'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 
@@ -135,7 +136,7 @@ export const AiExpenseQuickInput = React.forwardRef<
           provider: job.provider,
         }),
       })
-      const data = await res.json()
+      const data = await readApiJson<{ error?: string; draft?: ReceiptParseResult }>(res)
       if (!res.ok) throw new Error(data.error || 'Parse failed')
 
       updateJob(job.id, { status: 'done', result: data.draft as ReceiptParseResult })
@@ -165,7 +166,7 @@ export const AiExpenseQuickInput = React.forwardRef<
       const endpoint = tripId ? '/api/ai/receipt/parse' : '/api/ai/transaction/parse'
 
       const res = await fetch(endpoint, { method: 'POST', body: form, credentials: 'same-origin' })
-      const data = await res.json()
+      const data = await readApiJson<{ error?: string; draft?: ReceiptParseResult }>(res)
       if (!res.ok) throw new Error(data.error || 'Parse failed')
 
       updateJob(job.id, { status: 'done', result: data.draft as ReceiptParseResult })
@@ -231,8 +232,9 @@ export const AiExpenseQuickInput = React.forwardRef<
       if (tripId) form.append('tripId', tripId)
 
       const res = await fetch('/api/immich/upload', { method: 'POST', body: form, credentials: 'same-origin' })
-      const data = await res.json()
+      const data = await readApiJson<{ error?: string; assetId?: string }>(res)
       if (!res.ok) throw new Error(data.error || 'Upload failed')
+      if (!data.assetId) throw new Error('Upload succeeded but no asset ID returned')
 
       if (onImmichNoteReady) {
         onImmichNoteReady(data.assetId)

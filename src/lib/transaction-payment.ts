@@ -1,4 +1,5 @@
 import { PaymentMethod, Transaction, TripExpensePayer } from './firestore-types';
+import { isDebtPaymentTransaction } from './debt-payment';
 
 /** Fixed Paotang co-payment split (government wallet subsidy programs) */
 export const PAOTANG_GOV_PERCENT = 60;
@@ -23,8 +24,10 @@ type PaymentFields = Pick<
   | 'payers'
   | 'shares'
   | 'debtTracking'
+  | 'debtPaymentDebtId'
   | 'paotangSubsidy'
   | 'paotangUserPaid'
+  | 'splitWith'
 >;
 
 const ME_PERSON_ID = 'Me';
@@ -246,6 +249,10 @@ export function toEffectivePayersForDebt(
 
 /** Cash-flow amount used for display, debt split, and expense totals */
 export function getTransactionEffectiveAmount(tx: PaymentFields): number {
+  if (isDebtPaymentTransaction(tx)) {
+    return tx.amount;
+  }
+
   const sign = tx.amount >= 0 ? 1 : -1;
 
   if (tx.payers?.length && tx.shares?.length) {
@@ -270,11 +277,7 @@ export function getTransactionEffectiveAmount(tx: PaymentFields): number {
   if (tx.paymentMethod === 'paotang') {
     if (isPaotangPaidByOther(tx.paidBy)) {
       if (tx.debtTracking === false) return 0;
-      const userShare =
-        tx.paotangUserPaid != null && tx.paotangUserPaid >= 0
-          ? tx.paotangUserPaid
-          : computePaotangOweToPayer(tx.amount);
-      return sign * userShare;
+      return 0;
     }
     if (tx.paotangUserPaid != null && tx.paotangUserPaid >= 0) {
       return sign * tx.paotangUserPaid;
@@ -282,6 +285,16 @@ export function getTransactionEffectiveAmount(tx: PaymentFields): number {
     const { userPaid } = computePaotangIdealSplit(tx.amount);
     return sign * userPaid;
   }
+
+  if (
+    tx.paidBy &&
+    tx.paidBy !== ME_PERSON_ID &&
+    tx.debtTracking !== false &&
+    tx.splitWith
+  ) {
+    return 0;
+  }
+
   return tx.amount;
 }
 

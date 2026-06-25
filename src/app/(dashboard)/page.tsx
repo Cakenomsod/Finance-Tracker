@@ -50,6 +50,7 @@ import { useTrips } from '@/hooks/use-trips'
 import { useAuth } from '@/hooks/use-auth'
 import { useUserSettings } from '@/hooks/use-user-settings'
 import { TransactionForm } from '@/components/transactions/transaction-form'
+import { TransactionDetailDialog } from '@/components/transactions/transaction-detail-dialog'
 import { RecurringDueCard } from '@/components/dashboard/recurring-due-card'
 import {
   mergeTransactions,
@@ -68,6 +69,8 @@ import {
   getDateFromTx,
   getCategoryIcon,
 } from '@/lib/aggregate-transactions'
+import { shouldIgnoreRowClick } from '@/lib/row-click'
+import { Transaction, TripExpense } from '@/lib/firestore-types'
 
 const chartConfig = {
   income: { label: 'Income', color: 'var(--chart-1)' },
@@ -137,20 +140,23 @@ function formatRelativeDate(date: Date): string {
 export default function DashboardPage() {
   const { user } = useAuth()
   const { profile } = useUserSettings()
-  const { transactions, loading: txLoading, addTransaction } = useTransactions()
+  const { transactions, loading: txLoading, addTransaction, editTransaction } = useTransactions()
   const { allTripExpenses, loading: tripLoading } = useAllTripExpenses()
   const { debts, loading: debtLoading } = useDebts()
   const { tripDebts, loading: tripDebtLoading } = useTripDebts()
   const { trips, loading: tripsLoading } = useTrips()
 
   const [isAddDialogOpen, setIsAddDialogOpen] = React.useState(false)
+  const [isDetailOpen, setIsDetailOpen] = React.useState(false)
+  const [detailTransaction, setDetailTransaction] = React.useState<Transaction | null>(null)
+  const [detailTripExpense, setDetailTripExpense] = React.useState<TripExpense | null>(null)
 
   const loading = txLoading || tripLoading || debtLoading || tripDebtLoading || tripsLoading
   const currency = profile?.currency || 'THB'
 
   const allCombined = React.useMemo(
-    () => mergeTransactions(transactions, allTripExpenses),
-    [transactions, allTripExpenses]
+    () => mergeTransactions(transactions, allTripExpenses, user?.uid),
+    [transactions, allTripExpenses, user?.uid]
   )
 
   const last6Months = React.useMemo(
@@ -192,6 +198,20 @@ export default function DashboardPage() {
   )
 
   const recentTransactions = React.useMemo(() => allCombined.slice(0, 5), [allCombined])
+
+  const handleViewTransaction = (transaction: (typeof allCombined)[number]) => {
+    if (transaction.isLegacy && transaction.rawTx) {
+      setDetailTransaction(transaction.rawTx)
+      setDetailTripExpense(null)
+      setIsDetailOpen(true)
+      return
+    }
+    if (transaction.rawEx) {
+      setDetailTransaction(null)
+      setDetailTripExpense(transaction.rawEx)
+      setIsDetailOpen(true)
+    }
+  }
 
   const debtSummary = React.useMemo(() => {
     const manualPending = debts.filter((d) => d.status === 'pending')
@@ -537,7 +557,11 @@ export default function DashboardPage() {
                 {recentTransactions.map((transaction) => (
                   <div
                     key={transaction.id}
-                    className="flex items-center justify-between rounded-lg p-2 transition-colors hover:bg-muted/50"
+                    className="flex cursor-pointer items-center justify-between rounded-lg p-2 transition-colors hover:bg-muted/50"
+                    onClick={(e) => {
+                      if (shouldIgnoreRowClick(e.target)) return
+                      handleViewTransaction(transaction)
+                    }}
                   >
                     <div className="flex items-center gap-3">
                       <div className="flex size-10 items-center justify-center rounded-lg bg-muted text-lg">
@@ -655,6 +679,25 @@ export default function DashboardPage() {
           />
         </DialogContent>
       </Dialog>
+
+      <TransactionDetailDialog
+        open={isDetailOpen}
+        onOpenChange={(open) => {
+          setIsDetailOpen(open)
+          if (!open) {
+            setDetailTransaction(null)
+            setDetailTripExpense(null)
+          }
+        }}
+        transaction={detailTransaction}
+        tripExpense={detailTripExpense}
+        existingTransactions={transactions}
+        onSaveTransaction={async (id, data) => {
+          await editTransaction(id, data)
+          setDetailTransaction(null)
+          setDetailTripExpense(null)
+        }}
+      />
     </div>
   )
 }

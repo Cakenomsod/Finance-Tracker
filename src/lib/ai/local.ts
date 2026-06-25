@@ -103,8 +103,9 @@ export async function parseReceiptImageLocal(
             ],
           },
         ],
-        temperature: 0.7,
-        max_tokens: 1024,
+        temperature: 0.1,
+        max_tokens: 4096,
+        stream: false,
       }),
       signal: AbortSignal.timeout(getLocalAiTimeoutMs()),
     });
@@ -120,7 +121,7 @@ export async function parseReceiptImageLocal(
       throw new Error(`Local AI error: ${response.status} - ${error}`);
     }
 
-    const data = await response.json();
+    const data = await parseLocalAiResponseJson(response);
     const content = extractLocalAiMessageContent(
       data as Parameters<typeof extractLocalAiMessageContent>[0]
     );
@@ -193,7 +194,7 @@ export async function parseExpenseTextLocal(
       throw new Error(`Local AI error: ${response.status} - ${error}`);
     }
 
-    const data = await response.json();
+    const data = await parseLocalAiResponseJson(response);
     const content = extractLocalAiMessageContent(
       data as Parameters<typeof extractLocalAiMessageContent>[0]
     );
@@ -270,7 +271,7 @@ export async function sendChatMessageLocal(
       throw new Error(`Local AI error: ${response.status} - ${error}`);
     }
 
-    const data = await response.json();
+    const data = await parseLocalAiResponseJson(response);
     const content = extractLocalAiMessageContent(
       data as Parameters<typeof extractLocalAiMessageContent>[0]
     );
@@ -285,9 +286,23 @@ export async function sendChatMessageLocal(
   }
 }
 
-/**
- * Normalize local AI base URL
- */
+async function parseLocalAiResponseJson(response: Response): Promise<unknown> {
+  const text = await response.text();
+  if (!text.trim()) {
+    throw new Error('Local AI returned an empty response body');
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    const trimmed = text.trimStart();
+    if (trimmed.startsWith('data:')) {
+      throw new Error('Local AI returned a streaming response — ensure stream: false');
+    }
+    throw new Error(`Local AI returned non-JSON: ${text.slice(0, 200)}`);
+  }
+}
+
 function normalizeUrl(url: string): string {
   let normalized = url.trim();
   // Remove trailing slash

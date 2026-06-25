@@ -3,7 +3,6 @@ import {
   TripExpensePayer,
   TripExpenseShare,
 } from './firestore-types';
-import { getTransactionEffectiveAmount } from './transaction-payment';
 
 export const ME_PERSON_ID = 'Me';
 
@@ -134,7 +133,7 @@ export function legacyTransactionToSplit(
     'amount' | 'type' | 'paidBy' | 'splitWith' | 'paymentMethod' | 'paotangSubsidy' | 'paotangUserPaid'
   >
 ): TransactionSplitData | null {
-  const total = Math.abs(getTransactionEffectiveAmount(tx));
+  const total = Math.abs(tx.amount);
   if (!total || total <= 0) return null;
 
   const paidBy = tx.paidBy || ME_PERSON_ID;

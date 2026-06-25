@@ -21,6 +21,7 @@ export const receiptParseSchema = z.object({
   items: z.array(receiptItemSchema).optional(),
   baseAmount: z.number().optional(),
   taxAmount: z.number().optional(),
+  discount: z.number().nonnegative().optional(),
 });
 
 export type ReceiptParseResult = z.infer<typeof receiptParseSchema>;
@@ -49,6 +50,7 @@ Required JSON shape:
   "taxMode": "exclusive" | "inclusive" (optional),
   "baseAmount": number (optional),
   "taxAmount": number (optional),
+  "discount": number (optional, non-negative),
   "items": [{ "name": string, "category": string, "price": number, "tax": number (optional) }] (optional)
 }
 
@@ -62,6 +64,7 @@ Extraction rules:
 - currency: THB for ฿/baht, JPY for ¥/yen; omit if unknown
 - taxMode: "exclusive" if tax is added on top, "inclusive" if tax is included in prices
 - baseAmount / taxAmount: fill when subtotal and tax are visible on the receipt
+- discount: fill when a discount, promotion, or coupon reduction is visible (non-negative number)
 - items: each visible line item with name, best-matching category, and line price as number
 - transfer_slip: category usually "Others"; items may be omitted; description = payee or transfer note
 

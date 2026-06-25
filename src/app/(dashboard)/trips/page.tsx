@@ -59,6 +59,8 @@ import {
 import { cn } from '@/lib/utils'
 import { useTrips } from '@/hooks/use-trips'
 import { useTransactions } from '@/hooks/use-transactions'
+import { TransactionDetailDialog } from '@/components/transactions/transaction-detail-dialog'
+import { shouldIgnoreRowClick } from '@/lib/row-click'
 import { useAuth } from '@/hooks/use-auth'
 import { Trip, Transaction, TripExpense, TripSettlement } from '@/lib/firestore-types'
 import { MemberPicker, PickedMember } from '@/components/trips/member-picker'
@@ -169,6 +171,7 @@ function TripCard({
   onCloseRequest,
   onReopen,
   onAddExpense,
+  onViewTransaction,
 }: {
   trip: Trip
   tripTransactions: Transaction[]
@@ -178,6 +181,7 @@ function TripCard({
   onCloseRequest: (id: string) => void
   onReopen: (id: string) => void
   onAddExpense: (tripId: string) => void
+  onViewTransaction: (tx: Transaction) => void
 }) {
   const router = useRouter()
   const { user } = useAuth()
@@ -443,7 +447,11 @@ function TripCard({
               {tripTransactions.slice(0, 5).map((tx) => (
                 <div
                   key={tx.id}
-                  className="flex items-center justify-between rounded-lg border p-3"
+                  className="flex cursor-pointer items-center justify-between rounded-lg border p-3 transition-colors hover:bg-muted/30"
+                  onClick={(e) => {
+                    if (shouldIgnoreRowClick(e.target)) return
+                    onViewTransaction(tx)
+                  }}
                 >
                   <div className="flex items-center gap-3">
                     <div className="flex size-8 items-center justify-center rounded-lg bg-muted">
@@ -509,7 +517,7 @@ export default function TripsPage() {
     endTrip,
     resumeTrip,
   } = useTrips()
-  const { transactions, loading: txLoading, addTransaction } = useTransactions()
+  const { transactions, loading: txLoading, addTransaction, editTransaction } = useTransactions()
 
   // Create Trip Dialog state
   const [isCreateOpen, setIsCreateOpen] = React.useState(false)
@@ -525,6 +533,8 @@ export default function TripsPage() {
   const [expenseTripId, setExpenseTripId] = React.useState<string | null>(null)
   const [tripToClose, setTripToClose] = React.useState<string | null>(null)
   const [tripToDelete, setTripToDelete] = React.useState<Trip | null>(null)
+  const [isTxDetailOpen, setIsTxDetailOpen] = React.useState(false)
+  const [detailTransaction, setDetailTransaction] = React.useState<Transaction | null>(null)
   const expenseTrip = [...activeTrips, ...closedTrips].find(t => t.id === expenseTripId)
   const expenseMemberObjects = (expenseTrip?.members || []).map(k => ({
     key: k,
@@ -623,6 +633,11 @@ export default function TripsPage() {
   const handleAddExpense = (tripId: string) => {
     setExpenseTripId(tripId)
     setIsAddExpenseOpen(true)
+  }
+
+  const handleViewTransaction = (tx: Transaction) => {
+    setDetailTransaction(tx)
+    setIsTxDetailOpen(true)
   }
 
   const tripById = React.useMemo(
@@ -812,6 +827,7 @@ export default function TripsPage() {
                   onCloseRequest={setTripToClose}
                   onReopen={resumeTrip}
                   onAddExpense={handleAddExpense}
+                  onViewTransaction={handleViewTransaction}
                 />
               ))}
             </div>
@@ -849,6 +865,7 @@ export default function TripsPage() {
                   onCloseRequest={setTripToClose}
                   onReopen={resumeTrip}
                   onAddExpense={handleAddExpense}
+                  onViewTransaction={handleViewTransaction}
                 />
               ))}
             </div>
@@ -961,6 +978,20 @@ export default function TripsPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <TransactionDetailDialog
+        open={isTxDetailOpen}
+        onOpenChange={(open) => {
+          setIsTxDetailOpen(open)
+          if (!open) setDetailTransaction(null)
+        }}
+        transaction={detailTransaction}
+        existingTransactions={transactions}
+        onSaveTransaction={async (id, data) => {
+          await editTransaction(id, data)
+          setDetailTransaction(null)
+        }}
+      />
     </div>
   )
 }

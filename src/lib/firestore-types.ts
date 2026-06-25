@@ -73,6 +73,8 @@ export interface Transaction {
   items?: ReceiptItem[];
   baseAmount?: number;
   taxAmount?: number;
+  /** Discount applied before final amount (positive number) */
+  discount?: number;
   currency?: TripCurrency;
   /** How the expense was paid — transactions only (not trip expenses) */
   paymentMethod?: PaymentMethod;
@@ -87,6 +89,8 @@ export interface Transaction {
   paotangCapReason?: 'daily' | 'monthly' | 'total' | null;
   /** When false, transaction is recorded but no friend debts are created */
   debtTracking?: boolean;
+  /** Set when this row is a debt repayment (counts in cash flow) */
+  debtPaymentDebtId?: string | null;
   note?: string;
 }
 

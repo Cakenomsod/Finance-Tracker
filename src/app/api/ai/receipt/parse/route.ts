@@ -5,6 +5,9 @@ import { parseReceiptImageWithProvider } from '@/lib/ai';
 import { getGoogleAiApiKey } from '@/lib/ai/env';
 import { AiTextProvider } from '@/lib/firestore-types';
 
+/** Receipt vision can take several minutes with Local AI. */
+export const maxDuration = 180;
+
 
 const MAX_SIZE = 8 * 1024 * 1024;
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];

@@ -45,6 +45,7 @@ import { useAuth } from '@/hooks/use-auth'
 import { useTripExpenses } from '@/hooks/use-trip-expenses'
 import { useTripSettlements } from '@/hooks/use-trip-settlements'
 import { TripExpenseFormV2 } from '@/components/trips/trip-expense-form'
+import { TransactionDetailDialog } from '@/components/transactions/transaction-detail-dialog'
 import { TripAiPanel, type TripAiPanelHandle } from '@/components/trips/trip-ai-panel'
 import {
   saveTripExpenseWithTransaction,
@@ -69,6 +70,7 @@ import {
 } from '@/lib/trip-currency'
 import { collectImmichAssetIds } from '@/lib/immich/asset-ids'
 import { requestDeleteImmichAssets } from '@/lib/immich/delete-from-browser'
+import { shouldIgnoreRowClick } from '@/lib/row-click'
 import { Timestamp } from 'firebase/firestore'
 import { Search } from 'lucide-react'
 
@@ -99,6 +101,8 @@ export default function TripDetailPage() {
   const [expenseSearch, setExpenseSearch] = React.useState('')
   const [expenseFilterPaidBy, setExpenseFilterPaidBy] = React.useState('all')
   const [expandedReceipts, setExpandedReceipts] = React.useState<Record<string, boolean>>({})
+  const [isTxDetailOpen, setIsTxDetailOpen] = React.useState(false)
+  const [detailTransaction, setDetailTransaction] = React.useState<Transaction | null>(null)
   const [showCloseConfirm, setShowCloseConfirm] = React.useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false)
   const tripAiPanelRef = React.useRef<TripAiPanelHandle>(null)
@@ -401,6 +405,18 @@ export default function TripDetailPage() {
     return matchSearch && matchPaidBy
   })
 
+  const handleViewExpense = (ex: (typeof filteredExpenses)[number]) => {
+    if (ex.isLegacy && ex.rawTx) {
+      setDetailTransaction(ex.rawTx)
+      setIsTxDetailOpen(true)
+      return
+    }
+    if (ex.rawEx) {
+      setEditingExpense(ex.rawEx)
+      setIsAddExpenseOpen(true)
+    }
+  }
+
   // Settlements — greedy min-transfer algorithm
   const settlements = React.useMemo(() => {
     const result: { from: string; to: string; amount: number }[] = []
@@ -676,7 +692,14 @@ export default function TripDetailPage() {
                     const exSymbol = formatCurrencySymbol(exCurrency)
                     const exHomeHint = formatHomeConversion(ex.amount, exCurrency, trip)
                     return (
-                      <div key={ex.id} className="group flex flex-col justify-start rounded-lg border p-3 transition-all hover:shadow-sm sm:p-4">
+                      <div
+                        key={ex.id}
+                        className="group flex cursor-pointer flex-col justify-start rounded-lg border p-3 transition-all hover:bg-muted/20 hover:shadow-sm sm:p-4"
+                        onClick={(e) => {
+                          if (shouldIgnoreRowClick(e.target)) return
+                          handleViewExpense(ex)
+                        }}
+                      >
                         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                           <div className="flex min-w-0 items-start gap-3">
                             <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted sm:size-10">
@@ -1302,6 +1325,20 @@ export default function TripDetailPage() {
           />
         </DialogContent>
       </Dialog>
+
+      <TransactionDetailDialog
+        open={isTxDetailOpen}
+        onOpenChange={(open) => {
+          setIsTxDetailOpen(open)
+          if (!open) setDetailTransaction(null)
+        }}
+        transaction={detailTransaction}
+        existingTransactions={transactions}
+        onSaveTransaction={async (id, data) => {
+          await editTransaction(id, data)
+          setDetailTransaction(null)
+        }}
+      />
 
       {/* Record Payment Dialog */}
       <Dialog open={isRecordPaymentOpen} onOpenChange={setIsRecordPaymentOpen}>

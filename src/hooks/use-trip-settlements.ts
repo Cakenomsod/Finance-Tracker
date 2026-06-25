@@ -3,6 +3,7 @@ import { collection, query, where, onSnapshot, orderBy, or } from 'firebase/fire
 import { db } from '@/lib/firebase';
 import { TripSettlement } from '@/lib/firestore-types';
 import { createTripSettlement, deleteTripSettlement } from '@/lib/firestore';
+import { createDebtSettlementTransaction } from '@/lib/debt-payment';
 import { useAuth } from './use-auth';
 
 export function useTripSettlements(tripId?: string) {
@@ -50,7 +51,25 @@ export function useTripSettlements(tripId?: string) {
 
   const recordSettlement = async (data: Omit<TripSettlement, 'id' | 'createdAt' | 'userId'>) => {
     if (!user) throw new Error('Not logged in');
-    return createTripSettlement({ ...data, userId: user.uid });
+    const settlementRef = await createTripSettlement({ ...data, userId: user.uid });
+
+    const isPayer = data.fromUserId === user.uid;
+    const isReceiver = data.toUserId === user.uid;
+    if (isPayer || isReceiver) {
+      const counterpartyName = isPayer
+        ? data.toDisplayName || data.toUserId
+        : data.fromDisplayName || data.fromUserId;
+
+      await createDebtSettlementTransaction(user.uid, {
+        amount: data.amount,
+        isPayer,
+        counterpartyName,
+        note: data.tripId ? `trip:${data.tripId}` : undefined,
+        date: data.date,
+      });
+    }
+
+    return settlementRef;
   };
 
   const removeSettlement = async (id: string) => {

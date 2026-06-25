@@ -4,6 +4,7 @@ import { db } from '@/lib/firebase';
 import { Debt } from '@/lib/firestore-types';
 import { Timestamp } from 'firebase/firestore';
 import { createDebt, updateDebt, deleteDebt, createTripSettlement } from '@/lib/firestore';
+import { recordDebtSettlementCashFlow } from '@/lib/debt-payment';
 import { useAuth } from './use-auth';
 
 export function useDebts() {
@@ -139,6 +140,10 @@ export function useDebts() {
       amount,
       isPartial: !isFullPayment,
       date: Timestamp.now(),
+      note: debt.id ? `debt:${debt.id}` : undefined,
+    });
+
+    await recordDebtSettlementCashFlow(user.uid, debt, amount, {
       note: debt.id ? `debt:${debt.id}` : undefined,
     });
   };
