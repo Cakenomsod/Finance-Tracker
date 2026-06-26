@@ -29,4 +29,6 @@ dist-ssr
 .continue/agents/new-config.yaml
 API.txt
 
-financetracker-pk-firebase-adminsdk-fbsvc-eae3bd8b7e.json
+# Service account keys — never commit
+*-firebase-adminsdk-*.json
+docs/*-firebase-adminsdk-*.json
