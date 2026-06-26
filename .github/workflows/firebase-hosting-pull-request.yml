@@ -46,32 +46,15 @@ jobs:
           echo "AI_RECEIPT_MODEL=${{ secrets.AI_RECEIPT_MODEL }}" >> .env
           echo "AI_CHAT_MODEL=${{ secrets.AI_CHAT_MODEL }}" >> .env
 
-      - name: Authenticate to Google Cloud
-        id: auth
-        uses: google-github-actions/auth@v2
-        with:
-          credentials_json: '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}'
-          create_credentials_file: true
-
-      - name: Validate service account credentials
-        shell: bash
-        run: |
-          CREDS="${{ steps.auth.outputs.credentials_file_path }}"
-          if [ ! -s "$CREDS" ]; then
-            echo "::error::FIREBASE_SERVICE_ACCOUNT is empty or could not be written"
-            exit 1
-          fi
-          if ! jq -e '.type == "service_account" and (.client_email | length) > 0' "$CREDS" > /dev/null; then
-            echo "::error::FIREBASE_SERVICE_ACCOUNT is not valid service account JSON"
-            echo "::error::Re-paste the full JSON key file from Google Cloud Console"
-            exit 1
-          fi
-
       - name: Deploy Preview
-        shell: bash
-        run: npx --yes firebase-tools@15.18.0 deploy --only hosting --project "${{ secrets.NEXT_PUBLIC_FIREBASE_PROJECT_ID }}" --force --non-interactive
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          projectId: financetracker-pk
+          firebaseToolsVersion: 15.18.0
+          force: true
         env:
-          GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.auth.outputs.credentials_file_path }}
           NEXT_PUBLIC_FIREBASE_API_KEY: ${{ secrets.NEXT_PUBLIC_FIREBASE_API_KEY }}
           NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ${{ secrets.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN }}
           NEXT_PUBLIC_FIREBASE_PROJECT_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_PROJECT_ID }}
