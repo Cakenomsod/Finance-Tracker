@@ -257,11 +257,7 @@ export const AiExpenseQuickInput = React.forwardRef<
         <Sparkles className="size-4 text-primary shrink-0" />
         <div className="min-w-0">
           <p className="text-sm font-medium">เพิ่มรายจ่ายด้วย AI</p>
-          <p className="text-xs text-muted-foreground truncate">
-            {receiptMode
-              ? 'พิมพ์คำสั่งเพิ่มเติม (ไม่บังคับ) แล้วกดส่งเพื่อวิเคราะห์รูป'
-              : 'พิมพ์รายการหรือเลือกรูปใบเสร็จ → กดส่ง (ส่งพร้อมกันหลายครั้งได้)'}
-          </p>
+
         </div>
         <div className="flex items-center gap-1.5 shrink-0 ml-auto">
           {showTextProviderSelect && (
@@ -467,9 +463,6 @@ export const AiExpenseQuickInput = React.forwardRef<
         </div>
       )}
 
-      <p className="text-[10px] text-muted-foreground">
-        ส่งได้หลายครั้งพร้อมกัน · สถานะเก็บไว้แม้รีเฟรชหน้า · ใช้ {providerLabel(textProvider)}
-      </p>
     </div>
   )
 })

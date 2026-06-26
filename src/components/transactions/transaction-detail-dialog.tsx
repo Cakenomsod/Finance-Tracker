@@ -22,7 +22,6 @@ interface TransactionDetailDialogProps {
   onOpenChange: (open: boolean) => void
   transaction?: Transaction | null
   tripExpense?: TripExpense | null
-  existingTransactions?: Transaction[]
   onSaveTransaction?: (
     id: string,
     data: Omit<Transaction, 'id' | 'createdAt' | 'userId'>
@@ -165,7 +164,6 @@ export function TransactionDetailDialog({
   onOpenChange,
   transaction,
   tripExpense,
-  existingTransactions = [],
   onSaveTransaction,
 }: TransactionDetailDialogProps) {
   const isLegacy = !!transaction
@@ -194,7 +192,6 @@ export function TransactionDetailDialog({
           <TransactionForm
             key={transaction.id}
             initialData={transaction}
-            existingTransactions={existingTransactions}
             onSubmit={async (data) => {
               await onSaveTransaction(transaction.id!, data)
               onOpenChange(false)

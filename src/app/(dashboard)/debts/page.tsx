@@ -1016,7 +1016,6 @@ export default function DebtsPage() {
             <TransactionForm
               key={editingTransaction.id}
               initialData={editingTransaction}
-              existingTransactions={transactions}
               onSubmit={async (data) => {
                 await editTransaction(editingTransaction.id!, data)
                 setIsTxDetailOpen(false)

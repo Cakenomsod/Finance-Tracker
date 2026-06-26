@@ -58,6 +58,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { cn } from '@/lib/utils'
 import { useTrips } from '@/hooks/use-trips'
+import { useTripsData } from '@/hooks/use-trips-data-context'
 import { useTransactions } from '@/hooks/use-transactions'
 import { TransactionDetailDialog } from '@/components/transactions/transaction-detail-dialog'
 import { shouldIgnoreRowClick } from '@/lib/row-click'
@@ -73,8 +74,7 @@ import {
 } from '@/components/trips/trip-settings-fields'
 import { convertToHomeCurrency, formatCurrencySymbol, formatHomeConversion } from '@/lib/trip-currency'
 import { saveTripExpenseWithTransaction } from '@/lib/sync-expense-transaction'
-import { Timestamp, collection, query, where, onSnapshot } from 'firebase/firestore'
-import { db } from '@/lib/firebase'
+import { Timestamp } from 'firebase/firestore'
 
 // --- Settlement calculation ---
 interface Settlement {
@@ -517,7 +517,13 @@ export default function TripsPage() {
     endTrip,
     resumeTrip,
   } = useTrips()
-  const { transactions, loading: txLoading, addTransaction, editTransaction } = useTransactions()
+  const { addTransaction, editTransaction } = useTransactions()
+  const {
+    tripExpenses: allTripExpenses,
+    tripSettlements: allTripSettlements,
+    legacyTripTransactions: transactions,
+    loading: tripsDataLoading,
+  } = useTripsData()
 
   // Create Trip Dialog state
   const [isCreateOpen, setIsCreateOpen] = React.useState(false)
@@ -541,58 +547,16 @@ export default function TripsPage() {
     displayName: expenseTrip?.memberProfiles?.[k]?.displayName || k,
   }))
 
-  const loading = tripsLoading || txLoading
-
-  // Real-time listener for all user's trip expenses and settlements
-  const [allTripExpenses, setAllTripExpenses] = React.useState<TripExpense[]>([])
-  const [allTripSettlements, setAllTripSettlements] = React.useState<TripSettlement[]>([])
-
-  React.useEffect(() => {
-    if (!user) {
-      setAllTripExpenses([])
-      setAllTripSettlements([])
-      return
-    }
-
-    const tripIds = [...activeTrips, ...closedTrips].map(t => t.id).filter(Boolean) as string[]
-    if (tripIds.length === 0) {
-      setAllTripExpenses([])
-      setAllTripSettlements([])
-      return
-    }
-
-    const queryTripIds = tripIds.slice(0, 30)
-
-    // Listen to all expenses for these trips
-    const qExp = query(
-      collection(db, 'trip_expenses'),
-      where('tripId', 'in', queryTripIds)
-    )
-    const unsubExp = onSnapshot(qExp, (snap) => {
-      setAllTripExpenses(snap.docs.map(d => ({ id: d.id, ...d.data() } as TripExpense)))
-    }, (err) => console.error("Error loading all trip expenses:", err))
-
-    // Listen to all settlements for these trips
-    const qSet = query(
-      collection(db, 'trip_settlements'),
-      where('tripId', 'in', queryTripIds)
-    )
-    const unsubSet = onSnapshot(qSet, (snap) => {
-      setAllTripSettlements(snap.docs.map(d => ({ id: d.id, ...d.data() } as TripSettlement)))
-    }, (err) => console.error("Error loading all trip settlements:", err))
-
-    return () => {
-      unsubExp()
-      unsubSet()
-    }
-  }, [user, activeTrips.length, closedTrips.length])
+  const loading = tripsLoading || tripsDataLoading
 
   // Group transactions by tripId
   const getTransactionsForTrip = (tripId: string) =>
     transactions.filter((tx) => tx.tripId === tripId && !tx.tripExpenseId)
 
-  // All trip-related transactions
-  const allTripTransactions = transactions.filter((tx) => tx.tripId)
+  // All trip-related transactions (exclude sync'd copies of TripExpense rows)
+  const allTripTransactions = transactions.filter(
+    (tx) => tx.tripId && !tx.tripExpenseId
+  )
 
   const handleCreateTrip = async () => {
     if (!newTripName.trim()) return
@@ -986,7 +950,6 @@ export default function TripsPage() {
           if (!open) setDetailTransaction(null)
         }}
         transaction={detailTransaction}
-        existingTransactions={transactions}
         onSaveTransaction={async (id, data) => {
           await editTransaction(id, data)
           setDetailTransaction(null)

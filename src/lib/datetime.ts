@@ -93,6 +93,148 @@ export interface DateGroupedItems<T> {
   items: T[]
 }
 
+export type MonthSelection = { year: number; month: number }
+
+/** `YYYY-MM` in local timezone — stable key for grouping by calendar month. */
+export function getLocalMonthKey(date: Date): string {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  return `${y}-${m}`
+}
+
+export function getCurrentMonthSelection(): MonthSelection {
+  const now = new Date()
+  return { year: now.getFullYear(), month: now.getMonth() }
+}
+
+export function getPreviousMonthSelection({ year, month }: MonthSelection): MonthSelection {
+  if (month === 0) return { year: year - 1, month: 11 }
+  return { year, month: month - 1 }
+}
+
+export function monthSelectionToDate({ year, month }: MonthSelection): Date {
+  return new Date(year, month, 1)
+}
+
+export function isSameMonthSelection(a: MonthSelection, b: MonthSelection): boolean {
+  return a.year === b.year && a.month === b.month
+}
+
+export function isCurrentMonthSelection({ year, month }: MonthSelection): boolean {
+  return isSameMonthSelection({ year, month }, getCurrentMonthSelection())
+}
+
+/** `YYYY-MM` key for a month selection (matches `getLocalMonthKey`). */
+export function monthSelectionToKey({ year, month }: MonthSelection): string {
+  return `${year}-${String(month + 1).padStart(2, '0')}`
+}
+
+export function monthKeyToSelection(key: string): MonthSelection {
+  const [year, month] = key.split('-')
+  return { year: parseInt(year, 10), month: parseInt(month, 10) - 1 }
+}
+
+function compareMonthSelection(a: MonthSelection, b: MonthSelection): number {
+  if (a.year !== b.year) return a.year - b.year
+  return a.month - b.month
+}
+
+export function getPreviousAvailableMonth(
+  current: MonthSelection,
+  available: ReadonlySet<string>
+): MonthSelection | null {
+  let best: MonthSelection | null = null
+  for (const key of available) {
+    const selection = monthKeyToSelection(key)
+    if (compareMonthSelection(selection, current) >= 0) continue
+    if (!best || compareMonthSelection(selection, best) > 0) best = selection
+  }
+  return best
+}
+
+export function getNextAvailableMonth(
+  current: MonthSelection,
+  available: ReadonlySet<string>
+): MonthSelection | null {
+  let best: MonthSelection | null = null
+  for (const key of available) {
+    const selection = monthKeyToSelection(key)
+    if (compareMonthSelection(selection, current) <= 0) continue
+    if (!best || compareMonthSelection(selection, best) < 0) best = selection
+  }
+  return best
+}
+
+export function getLatestAvailableMonth(
+  available: ReadonlySet<string>
+): MonthSelection | null {
+  let best: MonthSelection | null = null
+  for (const key of available) {
+    const selection = monthKeyToSelection(key)
+    if (!best || compareMonthSelection(selection, best) > 0) best = selection
+  }
+  return best
+}
+
+export function hasMonthData(
+  monthsWithData: ReadonlySet<string>,
+  selection: MonthSelection
+): boolean {
+  return monthsWithData.has(monthSelectionToKey(selection))
+}
+
+/** Human-readable month label, e.g. "มิถุนายน 2026". */
+export function formatMonthLabel(
+  { year, month }: MonthSelection,
+  locale = 'th-TH'
+): string {
+  return new Date(year, month, 1).toLocaleDateString(locale, {
+    month: 'long',
+    year: 'numeric',
+  })
+}
+
+export interface MonthGroupedItems<T> {
+  monthKey: string
+  year: number
+  month: number
+  label: string
+  dateGroups: DateGroupedItems<T>[]
+}
+
+/** Sort by date descending, group by month then by local calendar day. */
+export function groupItemsByMonthAndDate<T>(
+  items: T[],
+  getDate: (item: T) => Date | null,
+  locale = 'th-TH'
+): MonthGroupedItems<T>[] {
+  const dateGroups = groupItemsByDate(items, getDate, locale)
+  const monthGroups: MonthGroupedItems<T>[] = []
+
+  for (const group of dateGroups) {
+    const monthKey = getLocalMonthKey(group.date)
+    const last = monthGroups[monthGroups.length - 1]
+
+    if (last && last.monthKey === monthKey) {
+      last.dateGroups.push(group)
+      continue
+    }
+
+    monthGroups.push({
+      monthKey,
+      year: group.date.getFullYear(),
+      month: group.date.getMonth(),
+      label: formatMonthLabel(
+        { year: group.date.getFullYear(), month: group.date.getMonth() },
+        locale
+      ),
+      dateGroups: [group],
+    })
+  }
+
+  return monthGroups
+}
+
 /** Sort items by date descending, then group by local calendar day. */
 export function groupItemsByDate<T>(
   items: T[],

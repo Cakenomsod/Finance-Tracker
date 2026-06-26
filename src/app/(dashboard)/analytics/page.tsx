@@ -4,14 +4,11 @@ import * as React from 'react'
 import {
   TrendingUp,
   TrendingDown,
-  Calendar,
   Download,
   ArrowUpRight,
   ArrowDownRight,
-  Wallet,
   Target,
   PiggyBank,
-  CreditCard,
   BarChart3,
 } from 'lucide-react'
 import {
@@ -35,19 +32,35 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart'
 import { cn } from '@/lib/utils'
-import { useTransactions } from '@/hooks/use-transactions'
+import { useAnalyticsData } from '@/hooks/use-analytics-data'
 import { useAllTripExpenses } from '@/hooks/use-all-trip-expenses'
 import { useAuth } from '@/hooks/use-auth'
-import { mergeTransactions } from '@/lib/aggregate-transactions'
+import { useTransactions } from '@/hooks/use-transactions'
+import { MonthPicker } from '@/components/shared/month-picker'
+import {
+  MonthAnimatedValue,
+  MonthContentTransition,
+  useMonthTransition,
+} from '@/components/shared/month-transition'
+import {
+  getCurrentMonthSelection,
+  getLatestAvailableMonth,
+  formatMonthLabel,
+  hasMonthData,
+  type MonthSelection,
+} from '@/lib/datetime'
+import {
+  buildMonthlyOverview,
+  buildCategoryBreakdown,
+  collectMonthsWithData,
+  getDateFromTx,
+  getCountedExpenseThb,
+  computeMonthTotals,
+  mergeTransactions,
+  type CombinedTransaction,
+} from '@/lib/aggregate-transactions'
 
 const chartConfig = {
   income: { label: 'Income', color: 'var(--chart-1)' },
@@ -68,114 +81,16 @@ const categoryColors = [
   'var(--muted-foreground)',
 ]
 
-// --- Helper functions to aggregate transaction data ---
-
-type AnalyticsRow = {
-  amount: number
-  date: { seconds: number } | null
-  category?: string
-}
-
-function getDateFromTx(tx: AnalyticsRow): Date {
-  if (tx.date?.seconds) {
-    return new Date(tx.date.seconds * 1000)
-  }
-  return new Date()
-}
-
-function filterByTimeRange(transactions: AnalyticsRow[], range: string): AnalyticsRow[] {
-  const now = new Date()
-  let cutoff: Date
-
-  switch (range) {
-    case '1month':
-      cutoff = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate())
-      break
-    case '3months':
-      cutoff = new Date(now.getFullYear(), now.getMonth() - 3, now.getDate())
-      break
-    case '6months':
-      cutoff = new Date(now.getFullYear(), now.getMonth() - 6, now.getDate())
-      break
-    case '1year':
-      cutoff = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate())
-      break
-    default:
-      cutoff = new Date(now.getFullYear(), now.getMonth() - 6, now.getDate())
-  }
-
-  return transactions.filter((tx) => getDateFromTx(tx) >= cutoff)
-}
-
-function buildMonthlyOverview(transactions: AnalyticsRow[]) {
-  const monthMap = new Map<string, { income: number; expenses: number }>()
-
-  transactions.forEach((tx) => {
-    const d = getDateFromTx(tx)
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-
-    if (!monthMap.has(key)) {
-      monthMap.set(key, { income: 0, expenses: 0 })
-    }
-    const entry = monthMap.get(key)!
-    if (tx.amount > 0) {
-      entry.income += tx.amount
-    } else {
-      entry.expenses += Math.abs(tx.amount)
-    }
-  })
-
-  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-
-  return Array.from(monthMap.entries())
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([key, data]) => {
-      const monthIndex = parseInt(key.split('-')[1], 10) - 1
-      return {
-        month: monthNames[monthIndex],
-        income: Math.round(data.income),
-        expenses: Math.round(data.expenses),
-        savings: Math.round(data.income - data.expenses),
-      }
-    })
-}
-
-function buildCategoryBreakdown(transactions: AnalyticsRow[]) {
-  const catMap = new Map<string, number>()
-
-  transactions
-    .filter((tx) => tx.amount < 0) // expenses only
-    .forEach((tx) => {
-      const cat = tx.category || 'Others'
-      catMap.set(cat, (catMap.get(cat) || 0) + Math.abs(tx.amount))
-    })
-
-  const totalExpenses = Array.from(catMap.values()).reduce((s, v) => s + v, 0)
-
-  return Array.from(catMap.entries())
-    .map(([name, value]) => ({
-      name,
-      value: Math.round(value),
-      percentage: totalExpenses > 0 ? Math.round((value / totalExpenses) * 100) : 0,
-    }))
-    .sort((a, b) => b.value - a.value)
-}
-
-function buildDailySpending(transactions: AnalyticsRow[]) {
-  // Current month only
-  const now = new Date()
-  const currentMonth = now.getMonth()
-  const currentYear = now.getFullYear()
-
+function buildDailySpending(transactions: CombinedTransaction[], month: MonthSelection) {
   const dayMap = new Map<number, number>()
 
   transactions
-    .filter((tx) => tx.amount < 0) // expenses only
+    .filter((tx) => tx.amountThb < 0)
     .forEach((tx) => {
       const d = getDateFromTx(tx)
-      if (d.getMonth() === currentMonth && d.getFullYear() === currentYear) {
+      if (d.getMonth() === month.month && d.getFullYear() === month.year) {
         const day = d.getDate()
-        dayMap.set(day, (dayMap.get(day) || 0) + Math.abs(tx.amount))
+        dayMap.set(day, (dayMap.get(day) || 0) + Math.abs(tx.amountThb))
       }
     })
 
@@ -187,67 +102,47 @@ function buildDailySpending(transactions: AnalyticsRow[]) {
     }))
 }
 
-function buildWeekdayPattern(transactions: AnalyticsRow[]) {
+function buildWeekdayPattern(transactions: CombinedTransaction[], month: MonthSelection) {
   const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-  const daySums = new Array(7).fill(0)
-  const dayCounts = new Array(7).fill(0)
-
-  // Current week
-  const now = new Date()
-  const startOfWeek = new Date(now)
-  startOfWeek.setDate(now.getDate() - now.getDay()) // Sunday
-  startOfWeek.setHours(0, 0, 0, 0)
-
-  const thisWeekSums = new Array(7).fill(0)
+  const monthSums = new Array(7).fill(0)
 
   transactions
-    .filter((tx) => tx.amount < 0) // expenses only
+    .filter((tx) => tx.amountThb < 0)
     .forEach((tx) => {
       const d = getDateFromTx(tx)
-      const dayOfWeek = d.getDay()
-      daySums[dayOfWeek] += Math.abs(tx.amount)
-      dayCounts[dayOfWeek] += 1
-
-      if (d >= startOfWeek) {
-        thisWeekSums[dayOfWeek] += Math.abs(tx.amount)
+      if (d.getMonth() === month.month && d.getFullYear() === month.year) {
+        monthSums[d.getDay()] += Math.abs(tx.amountThb)
       }
     })
 
-  // Reorder: Mon-Sun
   const ordered = [1, 2, 3, 4, 5, 6, 0]
   return ordered.map((idx) => ({
     day: dayNames[idx],
-    thisWeek: Math.round(thisWeekSums[idx]),
-    average: dayCounts[idx] > 0 ? Math.round(daySums[idx] / dayCounts[idx]) : 0,
+    thisWeek: Math.round(monthSums[idx]),
+    average: 0,
   }))
 }
 
-function getFinancialHabits(transactions: AnalyticsRow[]) {
-  const expenseTxs = transactions.filter((tx) => tx.amount < 0)
-  const totalExpenses = expenseTxs.reduce((s, tx) => s + Math.abs(tx.amount), 0)
+function getFinancialHabits(transactions: CombinedTransaction[], month: MonthSelection) {
+  const expenseTxs = transactions.filter((tx) => getCountedExpenseThb(tx) > 0)
+  const totalExpenses = expenseTxs.reduce((s, tx) => s + getCountedExpenseThb(tx), 0)
 
-  // Avg daily spending (last 30 days)
-  const now = new Date()
-  const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
-  const recentExpenses = expenseTxs.filter((tx) => getDateFromTx(tx) >= thirtyDaysAgo)
-  const recentTotal = recentExpenses.reduce((s, tx) => s + Math.abs(tx.amount), 0)
-  const avgDaily = recentExpenses.length > 0 ? Math.round(recentTotal / 30) : 0
+  const daysInMonth = new Date(month.year, month.month + 1, 0).getDate()
+  const avgDaily = daysInMonth > 0 ? Math.round(totalExpenses / daysInMonth) : 0
 
-  // Highest spending day of week
   const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
   const daySums = new Array(7).fill(0)
   expenseTxs.forEach((tx) => {
     const d = getDateFromTx(tx)
-    daySums[d.getDay()] += Math.abs(tx.amount)
+    daySums[d.getDay()] += getCountedExpenseThb(tx)
   })
   const highestDayIdx = daySums.indexOf(Math.max(...daySums))
   const highestDay = daySums[highestDayIdx] > 0 ? dayNames[highestDayIdx] : '-'
 
-  // Top category
   const catMap = new Map<string, number>()
   expenseTxs.forEach((tx) => {
     const cat = tx.category || 'Others'
-    catMap.set(cat, (catMap.get(cat) || 0) + Math.abs(tx.amount))
+    catMap.set(cat, (catMap.get(cat) || 0) + getCountedExpenseThb(tx))
   })
   let topCategory = '-'
   let topCategoryPct = 0
@@ -257,7 +152,6 @@ function getFinancialHabits(transactions: AnalyticsRow[]) {
     topCategoryPct = totalExpenses > 0 ? Math.round((sorted[0][1] / totalExpenses) * 100) : 0
   }
 
-  // Transaction count
   const txCount = transactions.length
 
   return { avgDaily, highestDay, topCategory, topCategoryPct, txCount }
@@ -265,42 +159,64 @@ function getFinancialHabits(transactions: AnalyticsRow[]) {
 
 export default function AnalyticsPage() {
   const { user } = useAuth()
-  const { transactions, loading: txLoading } = useTransactions()
-  const { allTripExpenses, loading: tripLoading } = useAllTripExpenses()
-  const [timeRange, setTimeRange] = React.useState('6months')
-  
-  const loading = txLoading || tripLoading
+  const [selectedMonth, setSelectedMonth] = React.useState(getCurrentMonthSelection)
+  const { monthKey, direction: monthDirection, onMonthChange } = useMonthTransition(selectedMonth)
 
-  const allCombined = React.useMemo(() => {
-    return mergeTransactions(transactions, allTripExpenses, user?.uid).map((tx) => ({
-      id: tx.id,
-      description: tx.description,
-      amount: tx.amountThb,
-      category: tx.category,
-      date: tx.date,
-      paidBy: tx.paidBy,
-      isLegacy: tx.isLegacy,
-    }))
-  }, [transactions, allTripExpenses, user?.uid])
-
-  // Filter transactions by time range
-  const filtered = React.useMemo(
-    () => filterByTimeRange(allCombined, timeRange),
-    [allCombined, timeRange]
+  const handleSelectedMonthChange = React.useCallback(
+    (next: typeof selectedMonth) => onMonthChange(next, setSelectedMonth),
+    [onMonthChange]
   )
 
-  // Aggregated data
-  const monthlyOverview = React.useMemo(() => buildMonthlyOverview(filtered), [filtered])
-  const categoryBreakdown = React.useMemo(() => buildCategoryBreakdown(filtered), [filtered])
-  const dailySpending = React.useMemo(() => buildDailySpending(allCombined), [allCombined])
-  const weekdayPattern = React.useMemo(() => buildWeekdayPattern(filtered), [filtered])
-  const habits = React.useMemo(() => getFinancialHabits(filtered), [filtered])
+  const { transactions: allTransactions } = useTransactions()
+  const { allTripExpenses: fullTripExpenses } = useAllTripExpenses()
+  const { combined, loading } = useAnalyticsData(user?.uid, selectedMonth)
 
-  // Summary totals
-  const totalIncome = monthlyOverview.reduce((sum, m) => sum + m.income, 0)
-  const totalExpenses = monthlyOverview.reduce((sum, m) => sum + m.expenses, 0)
-  const totalSavings = totalIncome - totalExpenses
-  const avgSavingsRate = totalIncome > 0 ? Math.round((totalSavings / totalIncome) * 100) : 0
+  const summaryCombined = React.useMemo(
+    () => mergeTransactions(allTransactions, fullTripExpenses, user?.uid),
+    [allTransactions, fullTripExpenses, user?.uid]
+  )
+
+  const monthsWithData = React.useMemo(
+    () => collectMonthsWithData(summaryCombined),
+    [summaryCombined]
+  )
+
+  React.useEffect(() => {
+    if (monthsWithData.size === 0) return
+    if (!hasMonthData(monthsWithData, selectedMonth)) {
+      const latest = getLatestAvailableMonth(monthsWithData)
+      if (latest) setSelectedMonth(latest)
+    }
+  }, [monthsWithData, selectedMonth])
+
+  const monthLabel = formatMonthLabel(selectedMonth)
+
+  const monthlyOverview = React.useMemo(
+    () => buildMonthlyOverview(combined),
+    [combined]
+  )
+  const categoryBreakdown = React.useMemo(
+    () => buildCategoryBreakdown(combined),
+    [combined]
+  )
+  const dailySpending = React.useMemo(
+    () => buildDailySpending(combined, selectedMonth),
+    [combined, selectedMonth]
+  )
+  const weekdayPattern = React.useMemo(
+    () => buildWeekdayPattern(combined, selectedMonth),
+    [combined, selectedMonth]
+  )
+  const habits = React.useMemo(
+    () => getFinancialHabits(combined, selectedMonth),
+    [combined, selectedMonth]
+  )
+
+  const monthTotals = React.useMemo(() => computeMonthTotals(combined), [combined])
+  const totalIncome = monthTotals.income
+  const totalExpenses = monthTotals.expenses
+  const totalSavings = monthTotals.net
+  const avgSavingsRate = monthTotals.savingsRate
 
   if (loading) {
     return (
@@ -313,21 +229,28 @@ export default function AnalyticsPage() {
     )
   }
 
-  if (allCombined.length === 0) {
+  if (combined.length === 0 && !loading) {
     return (
       <div className="flex flex-col gap-6 p-6">
-        <div className="flex flex-col gap-1">
-          <h1 className="text-2xl font-semibold tracking-tight">Analytics</h1>
-          <p className="text-muted-foreground">
-            Detailed financial insights and spending analysis.
-          </p>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-1">
+            <h1 className="text-2xl font-semibold tracking-tight">Analytics</h1>
+            <p className="text-muted-foreground">
+              Detailed financial insights and spending analysis.
+            </p>
+          </div>
+          <MonthPicker
+            value={selectedMonth}
+            onChange={handleSelectedMonthChange}
+            monthsWithData={monthsWithData}
+          />
         </div>
         <Card className="border-dashed">
           <CardContent className="flex flex-col items-center justify-center py-12">
             <BarChart3 className="size-12 text-muted-foreground/50" />
-            <p className="mt-4 text-lg font-medium">No transaction data yet</p>
+            <p className="mt-4 text-lg font-medium">No transaction data for {monthLabel}</p>
             <p className="text-sm text-muted-foreground">
-              Add some transactions to see your analytics
+              Try selecting a different month or add some transactions
             </p>
           </CardContent>
         </Card>
@@ -346,18 +269,11 @@ export default function AnalyticsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Select value={timeRange} onValueChange={setTimeRange}>
-            <SelectTrigger className="w-[140px]">
-              <Calendar className="mr-2 size-4" />
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="1month">Last Month</SelectItem>
-              <SelectItem value="3months">3 Months</SelectItem>
-              <SelectItem value="6months">6 Months</SelectItem>
-              <SelectItem value="1year">1 Year</SelectItem>
-            </SelectContent>
-          </Select>
+          <MonthPicker
+            value={selectedMonth}
+            onChange={handleSelectedMonthChange}
+            monthsWithData={monthsWithData}
+          />
           <Button variant="outline" size="icon">
             <Download className="size-4" />
           </Button>
@@ -365,59 +281,76 @@ export default function AnalyticsPage() {
       </div>
 
       {/* Summary Stats */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Card>
+      <MonthContentTransition
+        monthKey={monthKey}
+        direction={monthDirection}
+        className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"
+      >
+        <Card className="animate-in fade-in-0 slide-in-from-bottom-1 duration-300 fill-mode-both motion-reduce:animate-none" style={{ animationDelay: '0ms' }}>
           <CardContent className="pt-6">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <ArrowUpRight className="size-4 text-success" />
               Total Income
             </div>
-            <p className="mt-2 text-2xl font-bold text-success">฿{totalIncome.toLocaleString()}</p>
+            <MonthAnimatedValue valueKey={`${monthKey}-income`} className="mt-2 block text-2xl font-bold text-success">
+              ฿{totalIncome.toLocaleString()}
+            </MonthAnimatedValue>
             <p className="mt-1 text-xs text-muted-foreground">
-              {monthlyOverview.length} months of data
+              <MonthAnimatedValue valueKey={`${monthKey}-label`} className="inline">
+                {monthLabel}
+              </MonthAnimatedValue>
             </p>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="animate-in fade-in-0 slide-in-from-bottom-1 duration-300 fill-mode-both motion-reduce:animate-none" style={{ animationDelay: '45ms' }}>
           <CardContent className="pt-6">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <ArrowDownRight className="size-4 text-destructive" />
               Total Expenses
             </div>
-            <p className="mt-2 text-2xl font-bold text-destructive">฿{totalExpenses.toLocaleString()}</p>
+            <MonthAnimatedValue valueKey={`${monthKey}-expenses`} className="mt-2 block text-2xl font-bold text-destructive">
+              ฿{totalExpenses.toLocaleString()}
+            </MonthAnimatedValue>
             <p className="mt-1 text-xs text-muted-foreground">
-              {habits.txCount} transactions total
+              <MonthAnimatedValue valueKey={`${monthKey}-tx-count`} className="inline">
+                {habits.txCount} transactions in {monthLabel}
+              </MonthAnimatedValue>
             </p>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="animate-in fade-in-0 slide-in-from-bottom-1 duration-300 fill-mode-both motion-reduce:animate-none" style={{ animationDelay: '90ms' }}>
           <CardContent className="pt-6">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <PiggyBank className="size-4 text-primary" />
               Net Savings
             </div>
-            <p className={cn('mt-2 text-2xl font-bold', totalSavings >= 0 ? 'text-success' : 'text-destructive')}>
+            <MonthAnimatedValue
+              valueKey={`${monthKey}-savings`}
+              className={cn('mt-2 block text-2xl font-bold', totalSavings >= 0 ? 'text-success' : 'text-destructive')}
+            >
               {totalSavings >= 0 ? '+' : ''}฿{totalSavings.toLocaleString()}
-            </p>
+            </MonthAnimatedValue>
             <p className="mt-1 text-xs text-muted-foreground">
               Income minus expenses
             </p>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="animate-in fade-in-0 slide-in-from-bottom-1 duration-300 fill-mode-both motion-reduce:animate-none" style={{ animationDelay: '135ms' }}>
           <CardContent className="pt-6">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Target className="size-4" />
               Savings Rate
             </div>
-            <p className="mt-2 text-2xl font-bold">{avgSavingsRate}%</p>
+            <MonthAnimatedValue valueKey={`${monthKey}-rate`} className="mt-2 block text-2xl font-bold">
+              {avgSavingsRate}%
+            </MonthAnimatedValue>
             <Progress value={Math.max(0, avgSavingsRate)} className="mt-2 h-2" />
           </CardContent>
         </Card>
-      </div>
+      </MonthContentTransition>
 
       {/* Charts Section */}
       <div className="grid gap-6 lg:grid-cols-3">
@@ -425,9 +358,15 @@ export default function AnalyticsPage() {
         <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle>Cash Flow Overview</CardTitle>
-            <CardDescription>Income and expenses over time</CardDescription>
+            <CardDescription>
+              Income and expenses for{' '}
+              <MonthAnimatedValue valueKey={`${monthKey}-cashflow-desc`} className="inline">
+                {monthLabel}
+              </MonthAnimatedValue>
+            </CardDescription>
           </CardHeader>
           <CardContent>
+            <MonthContentTransition monthKey={monthKey} direction={monthDirection}>
             {monthlyOverview.length > 0 ? (
               <ChartContainer config={chartConfig} className="h-[300px] w-full">
                 <AreaChart data={monthlyOverview} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
@@ -468,6 +407,7 @@ export default function AnalyticsPage() {
                 No data for the selected period
               </div>
             )}
+            </MonthContentTransition>
           </CardContent>
         </Card>
 
@@ -478,6 +418,7 @@ export default function AnalyticsPage() {
             <CardDescription>Expense breakdown</CardDescription>
           </CardHeader>
           <CardContent>
+            <MonthContentTransition monthKey={monthKey} direction={monthDirection}>
             {categoryBreakdown.length > 0 ? (
               <>
                 <ChartContainer config={chartConfig} className="mx-auto h-[180px] w-full">
@@ -502,7 +443,6 @@ export default function AnalyticsPage() {
                     </Pie>
                   </PieChart>
                 </ChartContainer>
-                {/* Legend */}
                 <div className="mt-4 space-y-2">
                   {categoryBreakdown.slice(0, 5).map((cat, index) => (
                     <div key={cat.name} className="flex items-center justify-between text-sm">
@@ -530,19 +470,20 @@ export default function AnalyticsPage() {
                 No expense data
               </div>
             )}
+            </MonthContentTransition>
           </CardContent>
         </Card>
       </div>
 
       {/* Category Details and Patterns */}
       <div className="grid gap-6 lg:grid-cols-2">
-        {/* Category Top Spenders */}
         <Card>
           <CardHeader>
             <CardTitle>Category Ranking</CardTitle>
             <CardDescription>Your highest spending categories</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            <MonthContentTransition monthKey={monthKey} direction={monthDirection}>
             {categoryBreakdown.length > 0 ? (
               categoryBreakdown.slice(0, 6).map((category, index) => {
                 const maxValue = categoryBreakdown[0]?.value || 1
@@ -561,10 +502,7 @@ export default function AnalyticsPage() {
                         <span className="text-muted-foreground tabular-nums">
                           ฿{category.value.toLocaleString()}
                         </span>
-                        <Badge
-                          variant="secondary"
-                          className="text-xs"
-                        >
+                        <Badge variant="secondary" className="text-xs">
                           {category.percentage}%
                         </Badge>
                       </div>
@@ -576,16 +514,22 @@ export default function AnalyticsPage() {
             ) : (
               <div className="text-center text-muted-foreground py-8">No expense data</div>
             )}
+            </MonthContentTransition>
           </CardContent>
         </Card>
 
-        {/* Weekday Spending Pattern */}
         <Card>
           <CardHeader>
             <CardTitle>Weekday Spending Pattern</CardTitle>
-            <CardDescription>This week vs your average</CardDescription>
+            <CardDescription>
+              Spending by day of week in{' '}
+              <MonthAnimatedValue valueKey={`${monthKey}-weekday-desc`} className="inline">
+                {monthLabel}
+              </MonthAnimatedValue>
+            </CardDescription>
           </CardHeader>
           <CardContent>
+            <MonthContentTransition monthKey={monthKey} direction={monthDirection}>
             <ChartContainer config={chartConfig} className="h-[250px] w-full">
               <BarChart data={weekdayPattern} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-muted" vertical={false} />
@@ -602,21 +546,26 @@ export default function AnalyticsPage() {
                   className="text-xs fill-muted-foreground"
                 />
                 <ChartTooltip content={<ChartTooltipContent />} />
-                <Bar dataKey="thisWeek" fill="var(--chart-1)" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="average" fill="var(--chart-4)" radius={[4, 4, 0, 0]} opacity={0.5} />
+                <Bar dataKey="thisWeek" fill="var(--chart-1)" radius={[4, 4, 0, 0]} name="Spending" />
               </BarChart>
             </ChartContainer>
+            </MonthContentTransition>
           </CardContent>
         </Card>
       </div>
 
-      {/* Daily Spending Trend */}
       <Card>
         <CardHeader>
           <CardTitle>Daily Spending Trend</CardTitle>
-          <CardDescription>Your spending pattern this month</CardDescription>
+          <CardDescription>
+            Spending pattern for{' '}
+            <MonthAnimatedValue valueKey={`${monthKey}-daily-desc`} className="inline">
+              {monthLabel}
+            </MonthAnimatedValue>
+          </CardDescription>
         </CardHeader>
         <CardContent>
+          <MonthContentTransition monthKey={monthKey} direction={monthDirection}>
           {dailySpending.length > 0 ? (
             <ChartContainer config={chartConfig} className="h-[200px] w-full">
               <LineChart data={dailySpending} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
@@ -649,38 +598,50 @@ export default function AnalyticsPage() {
               No spending data for this month yet
             </div>
           )}
+          </MonthContentTransition>
         </CardContent>
       </Card>
 
-      {/* Financial Habits Summary */}
       <Card>
         <CardHeader>
           <CardTitle>Financial Habits Summary</CardTitle>
           <CardDescription>Key insights from your spending patterns</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="rounded-lg bg-muted p-4">
+          <MonthContentTransition
+            monthKey={monthKey}
+            direction={monthDirection}
+            className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"
+          >
+            <div className="rounded-lg bg-muted p-4 animate-in fade-in-0 slide-in-from-bottom-1 duration-300 fill-mode-both motion-reduce:animate-none" style={{ animationDelay: '0ms' }}>
               <p className="text-sm text-muted-foreground">Avg. Daily Spending</p>
-              <p className="mt-1 text-2xl font-bold">฿{habits.avgDaily.toLocaleString()}</p>
-              <p className="text-xs text-muted-foreground mt-1">Based on last 30 days</p>
+              <MonthAnimatedValue valueKey={`${monthKey}-avg-daily`} className="mt-1 block text-2xl font-bold">
+                ฿{habits.avgDaily.toLocaleString()}
+              </MonthAnimatedValue>
+              <p className="text-xs text-muted-foreground mt-1">Average for {monthLabel}</p>
             </div>
-            <div className="rounded-lg bg-muted p-4">
+            <div className="rounded-lg bg-muted p-4 animate-in fade-in-0 slide-in-from-bottom-1 duration-300 fill-mode-both motion-reduce:animate-none" style={{ animationDelay: '45ms' }}>
               <p className="text-sm text-muted-foreground">Highest Spending Day</p>
-              <p className="mt-1 text-2xl font-bold">{habits.highestDay}</p>
+              <MonthAnimatedValue valueKey={`${monthKey}-highest-day`} className="mt-1 block text-2xl font-bold">
+                {habits.highestDay}
+              </MonthAnimatedValue>
               <p className="text-xs text-muted-foreground mt-1">Day with most spending</p>
             </div>
-            <div className="rounded-lg bg-muted p-4">
+            <div className="rounded-lg bg-muted p-4 animate-in fade-in-0 slide-in-from-bottom-1 duration-300 fill-mode-both motion-reduce:animate-none" style={{ animationDelay: '90ms' }}>
               <p className="text-sm text-muted-foreground">Top Category</p>
-              <p className="mt-1 text-2xl font-bold truncate">{habits.topCategory}</p>
+              <MonthAnimatedValue valueKey={`${monthKey}-top-cat`} className="mt-1 block truncate text-2xl font-bold">
+                {habits.topCategory}
+              </MonthAnimatedValue>
               <p className="text-xs text-muted-foreground mt-1">{habits.topCategoryPct}% of total expenses</p>
             </div>
-            <div className="rounded-lg bg-muted p-4">
+            <div className="rounded-lg bg-muted p-4 animate-in fade-in-0 slide-in-from-bottom-1 duration-300 fill-mode-both motion-reduce:animate-none" style={{ animationDelay: '135ms' }}>
               <p className="text-sm text-muted-foreground">Total Transactions</p>
-              <p className="mt-1 text-2xl font-bold">{habits.txCount}</p>
-              <p className="text-xs text-muted-foreground mt-1">In selected period</p>
+              <MonthAnimatedValue valueKey={`${monthKey}-habit-tx`} className="mt-1 block text-2xl font-bold">
+                {habits.txCount}
+              </MonthAnimatedValue>
+              <p className="text-xs text-muted-foreground mt-1">In {monthLabel}</p>
             </div>
-          </div>
+          </MonthContentTransition>
         </CardContent>
       </Card>
     </div>

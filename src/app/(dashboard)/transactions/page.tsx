@@ -15,6 +15,7 @@ import {
   Tag,
   User,
   X,
+  Loader2,
 } from 'lucide-react'
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -59,29 +60,88 @@ import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
 import { cn, amountColorClass } from '@/lib/utils'
 import { getTransactionEffectiveAmount, getPaotangCapReasonLabel, isPaotangPayment, PAOTANG_GOV_PERCENT } from '@/lib/transaction-payment'
+import { useWindowedTransactions } from '@/hooks/use-windowed-transactions'
+import { useWindowedTripExpenses } from '@/hooks/use-windowed-trip-expenses'
 import { useTransactions } from '@/hooks/use-transactions'
 import { useAllTripExpenses } from '@/hooks/use-all-trip-expenses'
+import { useInfiniteScroll } from '@/hooks/use-infinite-scroll'
 import { useAuth } from '@/hooks/use-auth'
-import { getTripExpenseUserShare } from '@/lib/trip-balance'
+import { getTripExpensePersonalExpenseAmount, getTripExpenseUserShare, isTripExpensePendingDebt } from '@/lib/trip-balance'
+import {
+  mergeTransactions,
+  filterByMonth,
+  computeMonthTotals,
+  collectMonthsWithData,
+} from '@/lib/aggregate-transactions'
 import { useCategories } from '@/hooks/use-categories'
 import { TransactionForm } from '@/components/transactions/transaction-form'
 import { TransactionAiPanel, type TransactionAiPanelHandle } from '@/components/transactions/transaction-ai-panel'
 import { DateGroupDividerRow } from '@/components/transactions/date-group-divider'
+import { MonthGroupDividerRow } from '@/components/transactions/month-group-divider'
+import { MonthPicker } from '@/components/shared/month-picker'
+import {
+  MonthAnimatedValue,
+  MonthContentTransition,
+  useMonthTransition,
+} from '@/components/shared/month-transition'
 import { TransactionMobileList } from '@/components/transactions/transaction-mobile-list'
 import { TransactionDetailDialog } from '@/components/transactions/transaction-detail-dialog'
+import { TripExpenseDialog } from '@/components/trips/trip-expense-dialog'
+import { useTrips } from '@/hooks/use-trips'
 import { Transaction, TripExpense } from '@/lib/firestore-types'
 import {
   formatTransactionDisplayTime,
-  groupItemsByDate,
+  getCurrentMonthSelection,
+  getLatestAvailableMonth,
+  groupItemsByMonthAndDate,
+  hasMonthData,
   toDateFromFirestore,
 } from '@/lib/datetime'
 import { shouldIgnoreRowClick } from '@/lib/row-click'
+type TransactionsPageRow = {
+  id: string | undefined
+  description: string
+  amount: number
+  fullAmount: number
+  amountThb: number
+  category: string
+  date: Transaction['date']
+  paidBy: string
+  isLegacy: boolean
+  isPaotang: boolean
+  paotangQuotaCapped?: boolean
+  paotangCapReason?: Transaction['paotangCapReason']
+  paotangSubsidy?: number | null
+  rawTx: Transaction | null
+  rawEx: TripExpense | null
+  note?: string
+  isTripDebtPending?: boolean
+  expenseAmountThb?: number
+}
 
 export default function TransactionsPage() {
   const { user } = useAuth()
-  const { transactions, loading: txLoading, addTransaction, editTransaction, removeTransaction } = useTransactions()
-  const { allTripExpenses, loading: tripLoading } = useAllTripExpenses()
+  const {
+    items: transactions,
+    loading: txLoading,
+    addTransaction,
+    editTransaction,
+    removeTransaction,
+    loadOlder: loadOlderTransactions,
+    loadingOlder: txLoadingOlder,
+    hasMoreOlder: hasMoreOlderTx,
+  } = useWindowedTransactions(user?.uid)
+  const {
+    items: allTripExpenses,
+    loading: tripLoading,
+    loadOlder: loadOlderTripExpenses,
+    loadingOlder: tripLoadingOlder,
+    hasMoreOlder: hasMoreOlderTrip,
+  } = useWindowedTripExpenses(user?.uid)
+  const { transactions: allTransactions } = useTransactions()
+  const { allTripExpenses: fullTripExpenses } = useAllTripExpenses()
   const { categories } = useCategories()
+  const { trips } = useTrips()
 
   const filterCategories = React.useMemo(
     () => ['All Categories', ...categories.map((c) => c.name)],
@@ -94,6 +154,55 @@ export default function TransactionsPage() {
   )
   
   const loading = txLoading || tripLoading
+  const loadingOlder = txLoadingOlder || tripLoadingOlder
+  const hasMoreOlder = hasMoreOlderTx || hasMoreOlderTrip
+
+  const loadOlderInFlightRef = React.useRef(false)
+  const hasMoreTxRef = React.useRef(hasMoreOlderTx)
+  const hasMoreTripRef = React.useRef(hasMoreOlderTrip)
+
+  React.useEffect(() => {
+    hasMoreTxRef.current = hasMoreOlderTx
+  }, [hasMoreOlderTx])
+
+  React.useEffect(() => {
+    hasMoreTripRef.current = hasMoreOlderTrip
+  }, [hasMoreOlderTrip])
+
+  const loadOlder = React.useCallback(async () => {
+    if (loadOlderInFlightRef.current || loadingOlder) return
+
+    loadOlderInFlightRef.current = true
+    let added = 0
+
+    try {
+      while (added < 50) {
+        const fetches: Promise<number>[] = []
+        if (hasMoreTxRef.current) fetches.push(loadOlderTransactions())
+        if (hasMoreTripRef.current) fetches.push(loadOlderTripExpenses())
+        if (fetches.length === 0) break
+
+        const results = await Promise.all(fetches)
+        const roundAdded = results.reduce((sum, count) => sum + count, 0)
+        if (roundAdded === 0) break
+        added += roundAdded
+      }
+    } finally {
+      loadOlderInFlightRef.current = false
+    }
+  }, [loadingOlder, loadOlderTransactions, loadOlderTripExpenses])
+
+  const loadOlderSentinelRef = useInfiniteScroll(loadOlder, {
+    enabled: hasMoreOlder && !loading && !loadingOlder,
+  })
+
+  const [selectedMonth, setSelectedMonth] = React.useState(getCurrentMonthSelection)
+  const { monthKey, direction: monthDirection, onMonthChange } = useMonthTransition(selectedMonth)
+
+  const handleSelectedMonthChange = React.useCallback(
+    (next: typeof selectedMonth) => onMonthChange(next, setSelectedMonth),
+    [onMonthChange]
+  )
 
   const [searchQuery, setSearchQuery] = React.useState('')
   const [selectedCategory, setSelectedCategory] = React.useState('All Categories')
@@ -103,19 +212,29 @@ export default function TransactionsPage() {
   const [isDetailOpen, setIsDetailOpen] = React.useState(false)
   const [detailTransaction, setDetailTransaction] = React.useState<Transaction | null>(null)
   const [detailTripExpense, setDetailTripExpense] = React.useState<TripExpense | null>(null)
+  const [viewingTripExpense, setViewingTripExpense] = React.useState<TripExpense | null>(null)
+  const [isTripExpenseOpen, setIsTripExpenseOpen] = React.useState(false)
+
+  const tripForViewingExpense = React.useMemo(
+    () =>
+      viewingTripExpense
+        ? trips.find((trip) => trip.id === viewingTripExpense.tripId) ?? null
+        : null,
+    [trips, viewingTripExpense]
+  )
   const [ocrDraft, setOcrDraft] = React.useState<Omit<Transaction, 'id' | 'createdAt' | 'userId'> | null>(null)
   const [pendingImmichAssetIds, setPendingImmichAssetIds] = React.useState<string[]>([])
   const transactionAiPanelRef = React.useRef<TransactionAiPanelHandle>(null)
 
   // Merge legacy transactions and trip expenses (trip rows show only the user's share)
-  const allCombined = React.useMemo(() => {
+  const allCombined = React.useMemo((): TransactionsPageRow[] => {
     const legacy = transactions
       .filter((tx) => !tx.tripExpenseId)
       .map((tx) => {
       const factor = tx.currency === 'JPY' ? 0.22 : 1
       const effectiveAmount = getTransactionEffectiveAmount(tx)
       return {
-        id: tx.id,
+        id: tx.id!,
         description: tx.description,
         amount: effectiveAmount,
         fullAmount: tx.amount,
@@ -140,9 +259,13 @@ export default function TransactionsPage() {
 
       const factor = ex.currency === 'JPY' ? 0.22 : 1
       const payersStr = ex.payers.map((p) => p.displayName).join(', ')
+      const personalExpense = user
+        ? getTripExpensePersonalExpenseAmount(ex, user.uid)
+        : ex.totalAmount
+      const isPending = user ? isTripExpensePendingDebt(ex, user.uid) : false
       const personalAmount = -myShare
       return [{
-        id: ex.id,
+        id: ex.id!,
         description: ex.description,
         amount: personalAmount,
         amountThb: personalAmount * factor,
@@ -158,6 +281,8 @@ export default function TransactionsPage() {
         rawTx: null,
         rawEx: ex,
         note: ex.note,
+        isTripDebtPending: isPending,
+        expenseAmountThb: -personalExpense * factor,
       }]
     })
 
@@ -170,7 +295,29 @@ export default function TransactionsPage() {
     return combined
   }, [transactions, allTripExpenses, user?.uid])
 
-  // Filter transactions
+  const summaryCombined = React.useMemo(
+    () => mergeTransactions(allTransactions, fullTripExpenses, user?.uid),
+    [allTransactions, fullTripExpenses, user?.uid]
+  )
+
+  const monthsWithData = React.useMemo(
+    () => collectMonthsWithData(summaryCombined),
+    [summaryCombined]
+  )
+
+  React.useEffect(() => {
+    if (monthsWithData.size === 0) return
+    if (!hasMonthData(monthsWithData, selectedMonth)) {
+      const latest = getLatestAvailableMonth(monthsWithData)
+      if (latest) setSelectedMonth(latest)
+    }
+  }, [monthsWithData, selectedMonth])
+
+  const summaryTotals = React.useMemo(() => {
+    const monthTxs = filterByMonth(summaryCombined, selectedMonth.year, selectedMonth.month)
+    return computeMonthTotals(monthTxs)
+  }, [summaryCombined, selectedMonth])
+
   const filteredTransactions = allCombined.filter((t) => {
     const descMatches = t.description?.toLowerCase().includes(searchQuery.toLowerCase()) || false
     const noteMatches = t.note?.toLowerCase().includes(searchQuery.toLowerCase()) || false
@@ -181,9 +328,16 @@ export default function TransactionsPage() {
     return matchesSearch && matchesCategory
   })
 
-  const groupedTransactions = React.useMemo(
+  const hasActiveFilters =
+    searchQuery.trim().length > 0 || selectedCategory !== 'All Categories'
+  const showLoadOlderHint =
+    hasActiveFilters &&
+    filteredTransactions.length === 0 &&
+    allCombined.length > 0
+
+  const monthGroupedTransactions = React.useMemo(
     () =>
-      groupItemsByDate(filteredTransactions, (transaction) =>
+      groupItemsByMonthAndDate(filteredTransactions, (transaction) =>
         toDateFromFirestore(transaction.date)
       ),
     [filteredTransactions]
@@ -203,7 +357,11 @@ export default function TransactionsPage() {
     }
   }
 
-  const handleViewTransaction = (transaction: (typeof filteredTransactions)[number]) => {
+  const handleViewTransaction = (transaction: {
+    isLegacy: boolean
+    rawTx: Transaction | null
+    rawEx: TripExpense | null
+  }) => {
     if (transaction.isLegacy && transaction.rawTx) {
       setDetailTransaction(transaction.rawTx)
       setDetailTripExpense(null)
@@ -211,6 +369,12 @@ export default function TransactionsPage() {
       return
     }
     if (transaction.rawEx) {
+      const trip = trips.find((t) => t.id === transaction.rawEx!.tripId)
+      if (trip) {
+        setViewingTripExpense(transaction.rawEx)
+        setIsTripExpenseOpen(true)
+        return
+      }
       setDetailTransaction(null)
       setDetailTripExpense(transaction.rawEx)
       setIsDetailOpen(true)
@@ -312,7 +476,6 @@ export default function TransactionsPage() {
               <TransactionForm
                 key={editingTransaction?.id || (ocrDraft ? 'ocr-draft' : 'new')}
                 initialData={editingTransaction || (ocrDraft as Transaction | null)}
-                existingTransactions={transactions}
                 pendingImmichAssetIds={pendingImmichAssetIds}
                 onSubmit={async (data) => {
                   if (editingTransaction) {
@@ -369,6 +532,52 @@ export default function TransactionsPage() {
         </div>
       )}
 
+      {/* Sticky summary — totals for selected month */}
+      <div className="sticky top-0 z-20 -mx-6 border-b bg-background/95 px-6 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+        <div className="mb-3 flex justify-center">
+          <MonthPicker
+            value={selectedMonth}
+            onChange={handleSelectedMonthChange}
+            size="sm"
+            monthsWithData={monthsWithData}
+          />
+        </div>
+        <MonthContentTransition
+          monthKey={monthKey}
+          direction={monthDirection}
+          className="grid gap-3 sm:grid-cols-3"
+        >
+          <Card className="shadow-sm animate-in fade-in-0 slide-in-from-bottom-1 duration-300 fill-mode-both motion-reduce:animate-none" style={{ animationDelay: '0ms' }}>
+            <CardContent className="p-4">
+              <div className="text-sm text-muted-foreground">Total Income</div>
+              <MonthAnimatedValue valueKey={`${monthKey}-income`} className="mt-1 block text-xl font-bold text-success sm:text-2xl">
+                +฿{summaryTotals.income.toLocaleString()}
+              </MonthAnimatedValue>
+            </CardContent>
+          </Card>
+          <Card className="shadow-sm animate-in fade-in-0 slide-in-from-bottom-1 duration-300 fill-mode-both motion-reduce:animate-none" style={{ animationDelay: '45ms' }}>
+            <CardContent className="p-4">
+              <div className="text-sm text-muted-foreground">Total Expenses</div>
+              <MonthAnimatedValue valueKey={`${monthKey}-expenses`} className="mt-1 block text-xl font-bold text-destructive sm:text-2xl">
+                -฿{summaryTotals.expenses.toLocaleString()}
+              </MonthAnimatedValue>
+            </CardContent>
+          </Card>
+          <Card className="shadow-sm animate-in fade-in-0 slide-in-from-bottom-1 duration-300 fill-mode-both motion-reduce:animate-none" style={{ animationDelay: '90ms' }}>
+            <CardContent className="p-4">
+              <div className="text-sm text-muted-foreground">Net Balance</div>
+              <MonthAnimatedValue
+                valueKey={`${monthKey}-net`}
+                className={cn('mt-1 block text-xl font-bold sm:text-2xl', amountColorClass(summaryTotals.net, 'text-foreground'))}
+              >
+                {summaryTotals.net >= 0 ? '+' : ''}฿
+                {Math.abs(summaryTotals.net).toLocaleString()}
+              </MonthAnimatedValue>
+            </CardContent>
+          </Card>
+        </MonthContentTransition>
+      </div>
+
       <TransactionMobileList
         transactions={filteredTransactions}
         loading={loading}
@@ -420,9 +629,21 @@ export default function TransactionsPage() {
                 </TableRow>
               ) : filteredTransactions.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="h-24 text-center">No transactions found.</TableCell>
+                  <TableCell colSpan={7} className="h-24 text-center">
+                    <div className="space-y-1">
+                      <p>No transactions found.</p>
+                      {showLoadOlderHint && (
+                        <p className="text-xs text-muted-foreground">
+                          ลองเลื่อนลงเพื่อโหลดรายการเพิ่ม หรือล้างตัวกรอง
+                        </p>
+                      )}
+                    </div>
+                  </TableCell>
                 </TableRow>
-              ) : groupedTransactions.map((group) => (
+              ) : monthGroupedTransactions.map((monthGroup) => (
+                <React.Fragment key={monthGroup.monthKey}>
+                  <MonthGroupDividerRow label={monthGroup.label} colSpan={7} />
+                  {monthGroup.dateGroups.map((group) => (
                 <React.Fragment key={group.dateKey}>
                   <DateGroupDividerRow label={group.label} colSpan={7} />
                   {group.items.map((transaction) => (
@@ -438,10 +659,12 @@ export default function TransactionsPage() {
                   }}
                 >
                   <TableCell>
-                    <Checkbox
-                      checked={selectedRows.includes(transaction.id!)}
-                      onCheckedChange={() => handleRowSelect(transaction.id!)}
-                    />
+                    <div data-row-click-ignore onClick={(e) => e.stopPropagation()}>
+                      <Checkbox
+                        checked={selectedRows.includes(transaction.id!)}
+                        onCheckedChange={() => handleRowSelect(transaction.id!)}
+                      />
+                    </div>
                   </TableCell>
                   <TableCell className="text-muted-foreground">
                     {(() => {
@@ -464,7 +687,9 @@ export default function TransactionsPage() {
                           </Badge>
                         )}
                         {!transaction.isLegacy && (
-                          <Badge variant="outline" className="ml-2 text-[10px]">Trip Expense</Badge>
+                          <Badge variant="outline" className="ml-2 text-[10px]">
+                            {transaction.isTripDebtPending ? 'ค้างจ่ายทริป' : 'Trip Expense'}
+                          </Badge>
                         )}
                       </p>
                       {transaction.note && (
@@ -497,7 +722,9 @@ export default function TransactionsPage() {
                   <TableCell
                     className={cn(
                       'text-right font-semibold tabular-nums',
-                      amountColorClass(transaction.amount)
+                      transaction.isTripDebtPending
+                        ? 'text-muted-foreground'
+                        : amountColorClass(transaction.amount)
                     )}
                   >
                     {(() => {
@@ -524,6 +751,11 @@ export default function TransactionsPage() {
                           {transaction.isPaotang && transaction.paotangQuotaCapped && (
                             <span className="text-[10px] text-warning block font-normal">
                               โควต้าจำกัด — {getPaotangCapReasonLabel(transaction.paotangCapReason)}
+                            </span>
+                          )}
+                          {transaction.isTripDebtPending && (
+                            <span className="text-[10px] text-muted-foreground block font-normal">
+                              ยังไม่นับในรายจ่าย — จ่ายคืนในหน้าทริป
                             </span>
                           )}
                           {isJpy && (
@@ -573,6 +805,8 @@ export default function TransactionsPage() {
                 </TableRow>
                   ))}
                 </React.Fragment>
+                  ))}
+                </React.Fragment>
               ))}
             </TableBody>
             </Table>
@@ -580,40 +814,13 @@ export default function TransactionsPage() {
         </CardContent>
       </Card>
 
-      {/* Summary Stats */}
-      <div className="grid gap-4 sm:grid-cols-3">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-sm text-muted-foreground">Total Income</div>
-            <div className="mt-1 text-2xl font-bold text-success">
-              +฿{allCombined
-                .filter((t) => t.amountThb > 0)
-                .reduce((sum, t) => sum + t.amountThb, 0)
-                .toLocaleString()}
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-sm text-muted-foreground">Total Expenses</div>
-            <div className="mt-1 text-2xl font-bold text-destructive">
-              -฿{Math.abs(
-                allCombined
-                  .filter((t) => t.amountThb < 0)
-                  .reduce((sum, t) => sum + t.amountThb, 0)
-              ).toLocaleString()}
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-sm text-muted-foreground">Net Balance</div>
-            <div className={cn('mt-1 text-2xl font-bold', amountColorClass(allCombined.reduce((sum, t) => sum + t.amountThb, 0), 'text-foreground'))}>
-              {allCombined.reduce((sum, t) => sum + t.amountThb, 0) >= 0 ? '+' : ''}฿
-              {allCombined.reduce((sum, t) => sum + t.amountThb, 0).toLocaleString()}
-            </div>
-          </CardContent>
-        </Card>
+      <div ref={loadOlderSentinelRef} className="flex h-12 items-center justify-center">
+        {loadingOlder && (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" />
+            กำลังโหลดรายการเพิ่ม...
+          </div>
+        )}
       </div>
 
       <TransactionDetailDialog
@@ -627,12 +834,22 @@ export default function TransactionsPage() {
         }}
         transaction={detailTransaction}
         tripExpense={detailTripExpense}
-        existingTransactions={transactions}
         onSaveTransaction={async (id, data) => {
           await editTransaction(id, data)
           setDetailTransaction(null)
           setDetailTripExpense(null)
         }}
+      />
+
+      <TripExpenseDialog
+        open={isTripExpenseOpen}
+        onOpenChange={(open) => {
+          setIsTripExpenseOpen(open)
+          if (!open) setViewingTripExpense(null)
+        }}
+        expense={viewingTripExpense}
+        trip={tripForViewingExpense}
+        myUserId={user?.uid || ''}
       />
 
       {/* Floating Add Button (Mobile) — above bottom nav */}

@@ -1,12 +1,21 @@
 import { Transaction, TripExpense } from '@/lib/firestore-types'
+import { getLocalMonthKey } from '@/lib/datetime'
 import { getTransactionEffectiveAmount } from '@/lib/transaction-payment'
-import { getTripExpenseUserShare } from '@/lib/trip-balance'
+import {
+  getTripExpensePersonalExpenseAmount,
+  getTripExpenseUserShare,
+  isTripExpensePendingDebt,
+} from '@/lib/trip-balance'
 
 export interface CombinedTransaction {
   id?: string
   description: string
   amount: number
   amountThb: number
+  /** Expense counted in totals (0 for unpaid trip debt shares). */
+  expenseAmountThb?: number
+  /** Trip share owed but not paid back — excluded from expense totals until settlement. */
+  isTripDebtPending?: boolean
   category: string
   date: { seconds: number } | null
   paidBy: string
@@ -14,6 +23,20 @@ export interface CombinedTransaction {
   rawTx?: Transaction | null
   rawEx?: TripExpense | null
   note?: string
+}
+
+export function getCountedExpenseThb(tx: CombinedTransaction): number {
+  if (tx.isTripDebtPending) return 0
+  const thb = tx.expenseAmountThb ?? tx.amountThb
+  return thb < 0 ? Math.abs(thb) : 0
+}
+
+export function getCountedIncomeThb(tx: CombinedTransaction): number {
+  return tx.amountThb > 0 ? tx.amountThb : 0
+}
+
+export function getCountedNetThb(tx: CombinedTransaction): number {
+  return getCountedIncomeThb(tx) - getCountedExpenseThb(tx)
 }
 
 const JPY_TO_THB = 0.22
@@ -87,12 +110,19 @@ export function mergeTransactions(
 
     const factor = ex.currency === 'JPY' ? JPY_TO_THB : 1
     const payersStr = ex.payers.map((p) => p.displayName).join(', ')
+    const personalExpense = userId
+      ? getTripExpensePersonalExpenseAmount(ex, userId)
+      : ex.totalAmount
+    const isPending = userId ? isTripExpensePendingDebt(ex, userId) : false
     const personalAmount = -myShare
+    const expenseAmount = -personalExpense
     return [{
       id: ex.id,
       description: ex.description,
       amount: personalAmount,
       amountThb: personalAmount * factor,
+      expenseAmountThb: expenseAmount * factor,
+      isTripDebtPending: isPending,
       category: ex.category || 'Other',
       date: ex.date,
       paidBy: payersStr,
@@ -134,12 +164,44 @@ export function filterByTimeRange(transactions: CombinedTransaction[], range: st
   return transactions.filter((tx) => getDateFromTx(tx) >= cutoff)
 }
 
-export function filterCurrentMonth(transactions: CombinedTransaction[]): CombinedTransaction[] {
-  const now = new Date()
+export function filterByMonth(
+  transactions: CombinedTransaction[],
+  year: number,
+  month: number
+): CombinedTransaction[] {
   return transactions.filter((tx) => {
     const d = getDateFromTx(tx)
-    return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()
+    return d.getFullYear() === year && d.getMonth() === month
   })
+}
+
+export function collectTransactionMonthKeys(
+  transactions: CombinedTransaction[]
+): Set<string> {
+  const keys = new Set<string>()
+  for (const tx of transactions) {
+    const d = getDateFromTx(tx)
+    keys.add(
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    )
+  }
+  return keys
+}
+
+/** Calendar months that contain at least one transaction (legacy + trip expenses). */
+export function collectMonthsWithData(
+  transactions: CombinedTransaction[]
+): Set<string> {
+  const months = new Set<string>()
+  for (const tx of transactions) {
+    months.add(getLocalMonthKey(getDateFromTx(tx)))
+  }
+  return months
+}
+
+export function filterCurrentMonth(transactions: CombinedTransaction[]): CombinedTransaction[] {
+  const now = new Date()
+  return filterByMonth(transactions, now.getFullYear(), now.getMonth())
 }
 
 export function filterPreviousMonth(transactions: CombinedTransaction[]): CombinedTransaction[] {
@@ -163,11 +225,8 @@ export function buildMonthlyOverview(transactions: CombinedTransaction[]) {
       monthMap.set(key, { income: 0, expenses: 0 })
     }
     const entry = monthMap.get(key)!
-    if (tx.amountThb > 0) {
-      entry.income += tx.amountThb
-    } else {
-      entry.expenses += Math.abs(tx.amountThb)
-    }
+    entry.income += getCountedIncomeThb(tx)
+    entry.expenses += getCountedExpenseThb(tx)
   })
 
   return Array.from(monthMap.entries())
@@ -186,12 +245,12 @@ export function buildMonthlyOverview(transactions: CombinedTransaction[]) {
 export function buildCategoryBreakdown(transactions: CombinedTransaction[]) {
   const catMap = new Map<string, number>()
 
-  transactions
-    .filter((tx) => tx.amountThb < 0)
-    .forEach((tx) => {
-      const cat = tx.category || 'Others'
-      catMap.set(cat, (catMap.get(cat) || 0) + Math.abs(tx.amountThb))
-    })
+  transactions.forEach((tx) => {
+    const expense = getCountedExpenseThb(tx)
+    if (expense <= 0) return
+    const cat = tx.category || 'Others'
+    catMap.set(cat, (catMap.get(cat) || 0) + expense)
+  })
 
   const totalExpenses = Array.from(catMap.values()).reduce((s, v) => s + v, 0)
 
@@ -218,14 +277,14 @@ export function buildWeekdaySpending(transactions: CombinedTransaction[]) {
 
   const thisWeekSums = new Array(7).fill(0)
 
-  transactions
-    .filter((tx) => tx.amountThb < 0)
-    .forEach((tx) => {
-      const d = getDateFromTx(tx)
-      if (d >= startOfWeek) {
-        thisWeekSums[d.getDay()] += Math.abs(tx.amountThb)
-      }
-    })
+  transactions.forEach((tx) => {
+    const expense = getCountedExpenseThb(tx)
+    if (expense <= 0) return
+    const d = getDateFromTx(tx)
+    if (d >= startOfWeek) {
+      thisWeekSums[d.getDay()] += expense
+    }
+  })
 
   const ordered = [1, 2, 3, 4, 5, 6, 0]
   return ordered.map((idx) => ({
@@ -246,29 +305,28 @@ export function getWeekSpendingComparison(transactions: CombinedTransaction[]) {
   let thisWeek = 0
   let lastWeek = 0
 
-  transactions
-    .filter((tx) => tx.amountThb < 0)
-    .forEach((tx) => {
-      const d = getDateFromTx(tx)
-      const amount = Math.abs(tx.amountThb)
-      if (d >= startOfThisWeek) {
-        thisWeek += amount
-      } else if (d >= startOfLastWeek && d < startOfThisWeek) {
-        lastWeek += amount
-      }
-    })
+  transactions.forEach((tx) => {
+    const amount = getCountedExpenseThb(tx)
+    if (amount <= 0) return
+    const d = getDateFromTx(tx)
+    if (d >= startOfThisWeek) {
+      thisWeek += amount
+    } else if (d >= startOfLastWeek && d < startOfThisWeek) {
+      lastWeek += amount
+    }
+  })
 
   return computePercentChange(thisWeek, lastWeek)
 }
 
 export function getFinancialHabits(transactions: CombinedTransaction[]) {
-  const expenseTxs = transactions.filter((tx) => tx.amountThb < 0)
-  const totalExpenses = expenseTxs.reduce((s, tx) => s + Math.abs(tx.amountThb), 0)
+  const expenseTxs = transactions.filter((tx) => getCountedExpenseThb(tx) > 0)
+  const totalExpenses = expenseTxs.reduce((s, tx) => s + getCountedExpenseThb(tx), 0)
 
   const now = new Date()
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
   const recentExpenses = expenseTxs.filter((tx) => getDateFromTx(tx) >= thirtyDaysAgo)
-  const recentTotal = recentExpenses.reduce((s, tx) => s + Math.abs(tx.amountThb), 0)
+  const recentTotal = recentExpenses.reduce((s, tx) => s + getCountedExpenseThb(tx), 0)
   const avgDaily = recentExpenses.length > 0 ? Math.round(recentTotal / 30) : 0
 
   const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
@@ -279,7 +337,7 @@ export function getFinancialHabits(transactions: CombinedTransaction[]) {
   expenseTxs.forEach((tx) => {
     const d = getDateFromTx(tx)
     const day = d.getDay()
-    const amount = Math.abs(tx.amountThb)
+    const amount = getCountedExpenseThb(tx)
     daySums[day] += amount
     if (day === 0 || day === 6) {
       weekendTotal += amount
@@ -294,7 +352,7 @@ export function getFinancialHabits(transactions: CombinedTransaction[]) {
   const catMap = new Map<string, number>()
   expenseTxs.forEach((tx) => {
     const cat = tx.category || 'Others'
-    catMap.set(cat, (catMap.get(cat) || 0) + Math.abs(tx.amountThb))
+    catMap.set(cat, (catMap.get(cat) || 0) + getCountedExpenseThb(tx))
   })
 
   let topCategory = '-'
@@ -328,11 +386,8 @@ export function computeMonthTotals(transactions: CombinedTransaction[]) {
   let income = 0
   let expenses = 0
   transactions.forEach((tx) => {
-    if (tx.amountThb > 0) {
-      income += tx.amountThb
-    } else {
-      expenses += Math.abs(tx.amountThb)
-    }
+    income += getCountedIncomeThb(tx)
+    expenses += getCountedExpenseThb(tx)
   })
   const net = income - expenses
   const savingsRate = income > 0 ? Math.round((net / income) * 100) : 0

@@ -45,7 +45,6 @@ import {
   computePaotangSplitWithQuota,
   getPaotangCapReasonLabel,
   getPaotangQuotaMode,
-  getPaotangUsageFromTransactions,
   isPaotangPaidByOther,
   PAOTANG_DAILY_GOV_MAX,
   PAOTANG_GOV_PERCENT,
@@ -61,6 +60,7 @@ import {
   toDateFromFirestore,
 } from '@/lib/datetime'
 import { useCategories } from '@/hooks/use-categories'
+import { usePaotangUsage } from '@/hooks/use-paotang-usage'
 
 const formSchema = z.object({
   amount: z.string().min(1, 'Amount is required'),
@@ -77,7 +77,6 @@ type TransactionFormValues = z.infer<typeof formSchema>
 
 interface TransactionFormProps {
   initialData?: Transaction | null;
-  existingTransactions?: Transaction[];
   pendingImmichAssetIds?: string[];
   onSubmit: (data: Omit<Transaction, 'id' | 'createdAt' | 'userId'>) => Promise<void>;
   onCancel: () => void;
@@ -91,7 +90,6 @@ interface ReceiptItemInput {
 
 export function TransactionForm({
   initialData,
-  existingTransactions = [],
   pendingImmichAssetIds,
   onSubmit,
   onCancel,
@@ -346,15 +344,11 @@ export function TransactionForm({
     }
   }, [paymentMethod, paotangPayerMode, splitEnabled, form])
 
-  const paotangUsage = React.useMemo(
-    () =>
-      getPaotangUsageFromTransactions(existingTransactions, {
-        excludeTxId: initialData?.id,
-        forDate: txPreviewDate,
-        quotaOwner: paotangQuotaOwner,
-      }),
-    [existingTransactions, initialData?.id, txPreviewDate, paotangQuotaOwner]
-  )
+  const paotangUsage = usePaotangUsage({
+    forDate: txPreviewDate,
+    quotaOwner: paotangQuotaOwner,
+    excludeTxId: initialData?.id,
+  })
 
   const paotangSplit =
     paymentMethod === 'paotang' && totalForPayment > 0
@@ -507,14 +501,9 @@ export function TransactionForm({
             : paotangPayerMode === 'other' && values.paidBy
               ? values.paidBy
               : 'Me'
-        const usage = getPaotangUsageFromTransactions(existingTransactions, {
-          excludeTxId: initialData?.id,
-          forDate: parseLocalDateTime(values.date, values.time),
-          quotaOwner: isPaotangPaidByOther(quotaOwner) ? quotaOwner : 'Me',
-        })
         Object.assign(
           transactionData,
-          buildPaotangPaymentFields(paotangBase, usage, quotaOwner)
+          buildPaotangPaymentFields(paotangBase, paotangUsage, quotaOwner)
         )
       } else {
         transactionData.paymentMethod = 'normal'

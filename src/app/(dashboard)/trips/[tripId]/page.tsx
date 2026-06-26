@@ -40,11 +40,13 @@ import {
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart'
 import { cn, amountColorClass } from '@/lib/utils'
 import { useTrips } from '@/hooks/use-trips'
+import { useTripsData } from '@/hooks/use-trips-data-context'
 import { useTransactions } from '@/hooks/use-transactions'
 import { useAuth } from '@/hooks/use-auth'
 import { useTripExpenses } from '@/hooks/use-trip-expenses'
 import { useTripSettlements } from '@/hooks/use-trip-settlements'
 import { TripExpenseFormV2 } from '@/components/trips/trip-expense-form'
+import { TripExpenseList, type TripExpenseListItem } from '@/components/trips/trip-expense-list'
 import { TransactionDetailDialog } from '@/components/transactions/transaction-detail-dialog'
 import { TripAiPanel, type TripAiPanelHandle } from '@/components/trips/trip-ai-panel'
 import {
@@ -90,7 +92,8 @@ export default function TripDetailPage() {
   const tripId = params.tripId as string
   const { user } = useAuth()
   const { trips, loading: tripsLoading, removeTrip, endTrip, resumeTrip, editTrip } = useTrips()
-  const { transactions, loading: txLoading, addTransaction, editTransaction, removeTransaction } = useTransactions()
+  const { addTransaction, editTransaction, removeTransaction } = useTransactions()
+  const { legacyTripTransactions: transactions, loading: tripsDataLoading } = useTripsData()
 
   const [isAddExpenseOpen, setIsAddExpenseOpen] = React.useState(false)
   const [ocrDraft, setOcrDraft] = React.useState<Omit<TripExpense, 'id' | 'createdAt' | 'userId' | 'tripId' | 'transactionId'> | null>(null)
@@ -121,7 +124,7 @@ export default function TripDetailPage() {
   const [recordPaymentData, setRecordPaymentData] = React.useState<{ from: string, to: string, amount: number } | null>(null)
   const [settlementAmount, setSettlementAmount] = React.useState<string>('')
 
-  const loading = tripsLoading || txLoading
+  const loading = tripsLoading || tripsDataLoading
 
   // --- Trip Expenses (new system) ---
   const { expenses: tripExpenses, calcBalances, addExpense, editExpense, removeExpense } = useTripExpenses(tripId, trip)
@@ -405,7 +408,7 @@ export default function TripDetailPage() {
     return matchSearch && matchPaidBy
   })
 
-  const handleViewExpense = (ex: (typeof filteredExpenses)[number]) => {
+  const handleViewExpense = (ex: TripExpenseListItem) => {
     if (ex.isLegacy && ex.rawTx) {
       setDetailTransaction(ex.rawTx)
       setIsTxDetailOpen(true)
@@ -674,184 +677,26 @@ export default function TripDetailPage() {
               ) : filteredExpenses.length === 0 ? (
                 <div className="py-8 text-center text-muted-foreground">ไม่พบรายการที่ค้นหา</div>
               ) : (
-                <div className="space-y-3">
-                  {filteredExpenses.map((ex) => {
-                    const txDate = ex.date?.seconds ? new Date(ex.date.seconds * 1000) : new Date()
-                    const dateOptions: Intl.DateTimeFormatOptions = {
-                      month: 'short',
-                      day: 'numeric',
-                      ...(tripTimeZone ? { timeZone: tripTimeZone } : {}),
-                    }
-                    const timeOptions: Intl.DateTimeFormatOptions = {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                      hour12: false,
-                      ...(tripTimeZone ? { timeZone: tripTimeZone } : {}),
-                    }
-                    const exCurrency = ex.rawTx?.currency || ex.rawEx?.currency || trip?.tripCurrency || 'THB'
-                    const exSymbol = formatCurrencySymbol(exCurrency)
-                    const exHomeHint = formatHomeConversion(ex.amount, exCurrency, trip)
-                    return (
-                      <div
-                        key={ex.id}
-                        className="group flex cursor-pointer flex-col justify-start rounded-lg border p-3 transition-all hover:bg-muted/20 hover:shadow-sm sm:p-4"
-                        onClick={(e) => {
-                          if (shouldIgnoreRowClick(e.target)) return
-                          handleViewExpense(ex)
-                        }}
-                      >
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                          <div className="flex min-w-0 items-start gap-3">
-                            <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted sm:size-10">
-                              <Receipt className="size-4 text-muted-foreground" />
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <p className="font-medium break-words">{ex.description}</p>
-                                {ex.isLegacy && <Badge variant="outline" className="text-[10px] h-4 px-1">Legacy</Badge>}
-                                {ex.rawEx?.items && ex.rawEx.items.length > 0 && (
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    onClick={() => {
-                                      setExpandedReceipts(prev => ({ ...prev, [ex.id!]: !prev[ex.id!] }))
-                                    }}
-                                    className="h-5 px-1.5 text-[9px] text-muted-foreground hover:bg-muted flex items-center gap-1 ml-1"
-                                  >
-                                    {expandedReceipts[ex.id!] ? 'ซ่อนรายการ ▲' : 'ดูรายการใบเสร็จ ▼'}
-                                  </Button>
-                                )}
-                              </div>
-                              <p className="text-xs text-muted-foreground break-words">
-                                จ่ายโดย {ex.paidBy || 'Me'} · {ex.category} · {ex.splitLabel}
-                              </p>
-                              <p className="text-xs text-muted-foreground">
-                                {txDate.toLocaleDateString('th-TH', dateOptions)}
-                                <span className="mx-1">·</span>
-                                {txDate.toLocaleTimeString('en-GB', timeOptions)}
-                              </p>
-                              {ex.rawEx?.note && (
-                                <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">
-                                  📝 {ex.rawEx.note}
-                                </p>
-                              )}
-                              {!ex.rawEx?.note && ex.rawTx?.note && (
-                                <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">
-                                  📝 {ex.rawTx.note}
-                                </p>
-                              )}
-                            </div>
-                          </div>
-                          <div className="flex shrink-0 items-center justify-between gap-2 sm:justify-end">
-                            <div className="text-left sm:text-right">
-                              <span className="block font-semibold tabular-nums text-destructive">
-                                -{exSymbol}{ex.amount.toLocaleString()}
-                              </span>
-                              {exHomeHint && (
-                                <span className="text-[10px] text-muted-foreground block font-normal">
-                                  ({exHomeHint})
-                                </span>
-                              )}
-                            </div>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon" className="size-8 opacity-100 sm:opacity-0 sm:group-hover:opacity-100">
-                                  <MoreHorizontal className="size-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem onClick={() => {
-                                  if (ex.isLegacy) {
-                                    alert('Legacy transactions cannot be edited directly. Please delete and create a new expense.')
-                                  } else {
-                                    setEditingExpense(ex.rawEx as TripExpense)
-                                    setIsAddExpenseOpen(true)
-                                  }
-                                }}>
-                                  <Edit2 className="mr-2 size-4" /> Edit
-                                </DropdownMenuItem>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem className="text-destructive" onClick={async () => {
-                                  if (ex.isLegacy) {
-                                    const tx = transactions.find((t) => t.id === ex.id)
-                                    removeTransaction(ex.id!, tx ?? null)
-                                  } else {
-                                    const raw = ex.rawEx as TripExpense
-                                    await requestDeleteImmichAssets(collectImmichAssetIds(raw))
-                                    await deleteTripExpenseWithTransaction(ex.id!, raw?.transactionId)
-                                  }
-                                }}>
-                                  <Trash2 className="mr-2 size-4" /> Delete
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </div>
-                        </div>
-
-                        {/* Expandable Receipt breakdown details */}
-                        {expandedReceipts[ex.id!] && ex.rawEx?.items && (
-                          <div className="mt-3 border-t pt-3 space-y-2 text-xs">
-                            <div className="flex justify-between text-[10px] uppercase font-semibold tracking-wider text-muted-foreground">
-                              <span>รายการสินค้า</span>
-                              <span>ราคา & ภาษี</span>
-                            </div>
-                            <div className="space-y-1.5">
-                              {ex.rawEx.items.map((item: any, i: number) => {
-                                const itemTotal = item.price + (item.tax || 0)
-                                return (
-                                  <div key={i} className="flex items-center justify-between py-1 border-b border-muted/50 last:border-0">
-                                    <div className="space-y-0.5">
-                                      <div className="flex items-center gap-2 flex-wrap">
-                                        <span className="font-medium text-foreground">{item.name || 'สินค้า'}</span>
-                                        <span className="text-[9px] bg-muted px-1.5 py-0.5 rounded text-muted-foreground">{item.category}</span>
-                                      </div>
-                                      <div className="flex items-center gap-1 mt-0.5">
-                                        <span className="text-[9px] text-muted-foreground">คนหาร:</span>
-                                        <div className="flex gap-0.5">
-                                          {(item.splitWith || []).map((k: string) => {
-                                            const initials = getDisplayName(k).split(' ').map((w) => w[0]).join('').toUpperCase().substring(0, 2)
-                                            return (
-                                              <span key={k} title={getDisplayName(k)} className="size-4 rounded-full bg-primary/10 text-primary border border-primary/20 text-[8px] font-bold flex items-center justify-center shrink-0">
-                                                {initials}
-                                              </span>
-                                            )
-                                          })}
-                                        </div>
-                                      </div>
-                                    </div>
-                                    <div className="text-right font-medium tabular-nums shrink-0">
-                                      <span>{exSymbol}{itemTotal.toLocaleString()}</span>
-                                      {formatHomeConversion(itemTotal, exCurrency, trip) && (
-                                        <span className="text-[9px] text-muted-foreground block font-normal">
-                                          ({formatHomeConversion(itemTotal, exCurrency, trip)})
-                                        </span>
-                                      )}
-                                      {item.tax > 0 ? (
-                                        <span className="text-[9px] text-muted-foreground block">
-                                          (สินค้า {exSymbol}{item.price.toLocaleString()} + ภาษี {exSymbol}{item.tax.toLocaleString()})
-                                        </span>
-                                      ) : (
-                                        <span className="text-[9px] text-green-600 block">Tax free</span>
-                                      )}
-                                    </div>
-                                  </div>
-                                )
-                              })}
-                            </div>
-                            {ex.rawEx.baseAmount !== undefined && (
-                              <div className="flex justify-between text-[10px] text-muted-foreground pt-1.5 border-t flex-wrap gap-1">
-                                <span>ราคาสินค้ารวม: {exSymbol}{ex.rawEx.baseAmount.toLocaleString()} · ภาษีรวม: {exSymbol}{(ex.rawEx.taxAmount || 0).toLocaleString()}</span>
-                                <span className="font-semibold text-foreground">
-                                  ยอดรวมทั้งหมด: {exSymbol}{ex.amount.toLocaleString()} {exHomeHint && `(${exHomeHint})`}
-                                </span>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
+                <TripExpenseList
+                  expenses={filteredExpenses}
+                  trip={trip}
+                  transactions={transactions}
+                  getDisplayName={getDisplayName}
+                  expandedReceipts={expandedReceipts}
+                  onToggleReceipt={(id) =>
+                    setExpandedReceipts((prev) => ({ ...prev, [id]: !prev[id] }))
+                  }
+                  onView={handleViewExpense}
+                  onEdit={(expense) => {
+                    setEditingExpense(expense)
+                    setIsAddExpenseOpen(true)
+                  }}
+                  onDeleteLegacy={(id, tx) => removeTransaction(id, tx)}
+                  onDeleteExpense={async (id, raw) => {
+                    await requestDeleteImmichAssets(collectImmichAssetIds(raw))
+                    await deleteTripExpenseWithTransaction(id, raw.transactionId)
+                  }}
+                />
               )}
             </CardContent>
           </Card>
@@ -1333,7 +1178,6 @@ export default function TripDetailPage() {
           if (!open) setDetailTransaction(null)
         }}
         transaction={detailTransaction}
-        existingTransactions={transactions}
         onSaveTransaction={async (id, data) => {
           await editTransaction(id, data)
           setDetailTransaction(null)

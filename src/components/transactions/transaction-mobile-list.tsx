@@ -14,11 +14,12 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { cn, amountColorClass } from '@/lib/utils'
 import { getPaotangCapReasonLabel, PAOTANG_GOV_PERCENT } from '@/lib/transaction-payment'
-import { Transaction, Category } from '@/lib/firestore-types'
+import { Transaction, Category, TripExpense } from '@/lib/firestore-types'
 import { DateGroupDividerRow } from '@/components/transactions/date-group-divider'
+import { MonthGroupDividerMobile } from '@/components/transactions/month-group-divider'
 import {
   formatTransactionDisplayTime,
-  groupItemsByDate,
+  groupItemsByMonthAndDate,
   toDateFromFirestore,
 } from '@/lib/datetime'
 import { shouldIgnoreRowClick } from '@/lib/row-click'
@@ -27,6 +28,7 @@ type CombinedTransaction = {
   id: string | undefined
   description: string
   amount: number
+  amountThb?: number
   fullAmount?: number
   category: string
   date: Transaction['date']
@@ -36,8 +38,9 @@ type CombinedTransaction = {
   paotangQuotaCapped?: boolean
   paotangCapReason?: Transaction['paotangCapReason']
   rawTx: Transaction | null
-  rawEx: { currency?: string } | null
+  rawEx: TripExpense | null
   note?: string
+  isTripDebtPending?: boolean
 }
 
 interface TransactionMobileListProps {
@@ -63,7 +66,7 @@ export function TransactionMobileList({
 }: TransactionMobileListProps) {
   const grouped = React.useMemo(
     () =>
-      groupItemsByDate(transactions, (transaction) =>
+      groupItemsByMonthAndDate(transactions, (transaction) =>
         toDateFromFirestore(transaction.date)
       ),
     [transactions]
@@ -87,7 +90,10 @@ export function TransactionMobileList({
 
   return (
     <div className="space-y-3 md:hidden">
-      {grouped.map((group) => (
+      {grouped.map((monthGroup) => (
+        <div key={monthGroup.monthKey}>
+          <MonthGroupDividerMobile label={monthGroup.label} />
+          {monthGroup.dateGroups.map((group) => (
         <div key={group.dateKey}>
           <div className="overflow-hidden rounded-lg border bg-card">
             <table className="w-full">
@@ -118,11 +124,17 @@ export function TransactionMobileList({
                       onView(transaction)
                     }}
                   >
-                    <Checkbox
-                      checked={selectedRows.includes(txId)}
-                      onCheckedChange={() => onRowSelect(txId)}
-                      className="mt-1"
-                    />
+                    <div
+                      data-row-click-ignore
+                      className="shrink-0"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <Checkbox
+                        checked={selectedRows.includes(txId)}
+                        onCheckedChange={() => onRowSelect(txId)}
+                        className="mt-1"
+                      />
+                    </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
@@ -140,7 +152,7 @@ export function TransactionMobileList({
                             )}
                             {!transaction.isLegacy && (
                               <Badge variant="outline" className="text-[10px]">
-                                Trip Expense
+                                {transaction.isTripDebtPending ? 'ค้างจ่ายทริป' : 'Trip Expense'}
                               </Badge>
                             )}
                             <Badge
@@ -164,13 +176,20 @@ export function TransactionMobileList({
                           <p
                             className={cn(
                               'font-semibold tabular-nums',
-                              amountColorClass(displayAmount)
+                              transaction.isTripDebtPending
+                                ? 'text-muted-foreground'
+                                : amountColorClass(displayAmount)
                             )}
                           >
                             {displayAmount > 0 ? '+' : ''}
                             {isJpy ? '¥' : '฿'}
                             {Math.abs(displayAmount).toLocaleString()}
                           </p>
+                          {transaction.isTripDebtPending && (
+                            <p className="text-[10px] text-muted-foreground">
+                              ยังไม่นับในรายจ่าย
+                            </p>
+                          )}
                           {isJpy && (
                             <p className="text-[10px] text-muted-foreground tabular-nums">
                               ({displayAmount > 0 ? '+' : ''}฿
@@ -244,6 +263,8 @@ export function TransactionMobileList({
               })}
             </div>
           </div>
+        </div>
+          ))}
         </div>
       ))}
     </div>

@@ -186,6 +186,32 @@ export function getTripExpenseUserShare(expense: TripExpense, userId: string): n
   return entry?.amount ?? 0
 }
 
+/** Amount the user paid upfront on a trip expense. */
+export function getTripExpenseUserPaidAmount(expense: TripExpense, userId: string): number {
+  const entry = expense.payers.find((p) => isCurrentUserKey(p.userId, userId))
+  return entry?.amount ?? 0
+}
+
+/**
+ * Personal expense recognized in cash flow: user's share when they paid upfront;
+ * zero when someone else paid (debt until a settlement transaction is recorded).
+ */
+export function getTripExpensePersonalExpenseAmount(
+  expense: TripExpense,
+  userId: string
+): number {
+  const share = getTripExpenseUserShare(expense, userId)
+  if (share <= 0) return 0
+  return getTripExpenseUserPaidAmount(expense, userId) > 0.001 ? share : 0
+}
+
+/** Trip expense where the user owes their share but has not paid anyone back yet. */
+export function isTripExpensePendingDebt(expense: TripExpense, userId: string): boolean {
+  const share = getTripExpenseUserShare(expense, userId)
+  if (share <= 0) return false
+  return getTripExpenseUserPaidAmount(expense, userId) <= 0.001
+}
+
 export interface TripDebtSummary {
   personId: string
   personName: string
