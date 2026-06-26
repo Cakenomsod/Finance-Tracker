@@ -4,6 +4,8 @@ import { adminDb } from '@/lib/firebase-admin';
 import { parseExpenseTextWithProvider } from '@/lib/ai';
 import { getGoogleAiApiKey } from '@/lib/ai/env';
 import { AiTextProvider } from '@/lib/firestore-types';
+import { loadUserContactsForAi, mergeTripMembersIntoContacts } from '@/lib/ai/load-user-contacts';
+import type { ExpenseTextAiContext } from '@/lib/ai/receipt-schema';
 
 export async function POST(request: NextRequest) {
   const session = await verifySession();
@@ -40,7 +42,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    let context: { tripName?: string; currency?: string; countryCode?: string } | undefined;
+    let context: ExpenseTextAiContext | undefined;
+    let contacts = await loadUserContactsForAi(session.uid);
 
     if (tripId) {
       if (typeof tripId !== 'string') {
@@ -57,16 +60,17 @@ export async function POST(request: NextRequest) {
         currency: trip?.tripCurrency,
         countryCode: trip?.countryCode,
       };
+      contacts = await mergeTripMembersIntoContacts(contacts, tripId);
     }
 
-    // 🤖 4. สวมลิงก์ sharedLocalAiUrl ที่ดึงมาสดๆ เข้าไปรันประมวลผลคำนวณบิลค่าใช้จ่าย
     const draft = await parseExpenseTextWithProvider(
       text.trim(),
       {
         provider,
         localAiConfig: provider === 'local' && sharedLocalAiUrl ? { baseUrl: sharedLocalAiUrl } : undefined,
       },
-      context
+      context,
+      contacts
     );
 
     return NextResponse.json({ draft, provider });

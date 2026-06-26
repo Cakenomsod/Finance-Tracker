@@ -18,7 +18,7 @@ export default function FriendsPage() {
   const {
     friendListItems, pendingReceived, pendingSent,
     loading, addFriend, addCustomFriend, removeCustomFriend,
-    reorderContacts, accept, decline, remove,
+    reorderContacts, accept, decline, remove, saveContactAliases,
   } = useFriends()
   const [searchEmail, setSearchEmail] = React.useState('')
   const [customName, setCustomName] = React.useState('')
@@ -169,6 +169,7 @@ export default function FriendsPage() {
                     items={friendListItems}
                     onReorder={reorderContacts}
                     onRemoveCustom={removeCustomFriend}
+                    onSaveAliases={saveContactAliases}
                   />
                 </div>
               )}

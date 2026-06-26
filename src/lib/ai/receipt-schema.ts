@@ -8,6 +8,11 @@ export const receiptItemSchema = z.object({
   taxCategoryId: z.enum(['food', 'goods', 'standard', 'exempt']).optional(),
 });
 
+export const expenseSplitPersonSchema = z.object({
+  name: z.string(),
+  amount: z.number().nonnegative(),
+});
+
 export const receiptParseSchema = z.object({
   documentType: z.enum(['receipt', 'transfer_slip']),
   description: z.string(),
@@ -22,6 +27,16 @@ export const receiptParseSchema = z.object({
   baseAmount: z.number().optional(),
   taxAmount: z.number().optional(),
   discount: z.number().nonnegative().optional(),
+  /** Expense text only — how the bill was paid */
+  paymentMethod: z.enum(['normal', 'paotang']).optional(),
+  /** Expense text only — track friend debts from split */
+  debtTracking: z.boolean().optional(),
+  /** Expense text only — equal / custom / solo split */
+  splitMode: z.enum(['equal', 'custom', 'solo']).optional(),
+  /** Who paid (names as spoken; resolved server-side) */
+  payers: z.array(expenseSplitPersonSchema).optional(),
+  /** Who owes shares of the bill */
+  shares: z.array(expenseSplitPersonSchema).optional(),
 });
 
 export type ReceiptParseResult = z.infer<typeof receiptParseSchema>;
@@ -33,6 +48,15 @@ export interface ReceiptAiContext {
   countryCode?: string;
   /** Appended to prompts for receipt scanning (Thai/English user hints). */
   extraInstructions?: string;
+}
+
+/** Context for natural-language expense text parsing */
+export interface ExpenseTextAiContext {
+  tripName?: string;
+  currency?: string;
+  countryCode?: string;
+  /** Serialized contacts hint for the model */
+  contactsHint?: string;
 }
 
 export const RECEIPT_PARSE_PROMPT = `You are a receipt and bank transfer slip OCR parser for a personal finance app.
@@ -76,7 +100,7 @@ Accuracy:
 export const EXPENSE_TEXT_PARSE_PROMPT = `You are an expense data extractor for a personal finance app — NOT a chatbot.
 The user types a short expense note in Thai or English. Return ONLY one JSON object — no markdown, no explanation, no questions.
 
-Use the same JSON shape as receipt parsing:
+JSON shape (base fields + optional split/debt fields):
 {
   "documentType": "receipt",
   "description": string,
@@ -85,7 +109,12 @@ Use the same JSON shape as receipt parsing:
   "time": "HH:mm" (optional, 24-hour),
   "totalAmount": number,
   "currency": "THB" | "JPY" (optional),
-  "items": [{ "name": string, "category": string, "price": number }] (optional)
+  "items": [{ "name": string, "category": string, "price": number }] (optional),
+  "paymentMethod": "normal" | "paotang" (optional),
+  "debtTracking": boolean (optional),
+  "splitMode": "equal" | "custom" | "solo" (optional),
+  "payers": [{ "name": string, "amount": number }] (optional),
+  "shares": [{ "name": string, "amount": number }] (optional)
 }
 
 Rules:
@@ -97,4 +126,20 @@ Rules:
 - category: one of Food & Dining, Transport, Shopping, Entertainment, Bills & Utilities, Health & Fitness, Accommodation, Activities, Others
 - documentType is always "receipt" for text input
 - description: short summary of the expense (main item or comma-separated names)
-- totalAmount must equal sum of items when items are provided`;
+- totalAmount must equal sum of items when items are provided
+
+Split / debt / payment (Thai & English):
+- ผม, ฉัน, ตัวเอง, me, myself → name "Me" in payers/shares
+- When a known contact list is provided, use their exact displayName in payers/shares
+- จ่ายให้, จ่ายแทน, ออกให้, paid for, fronted → that person is a payer with their paid amount
+- คืน, ต้องคืน, เป็นหนี้, owe → debtTracking true; shares reflect who owes what
+- แบ่ง, หาร, คนละ, เท่าๆกัน, split equally → splitMode "equal"; divide totalAmount evenly across participants in shares
+- คนเดียว, ไม่แบ่ง, solo → splitMode "solo"
+- Custom amounts per person → splitMode "custom" with explicit shares amounts
+- payers amounts should sum to totalAmount (or the amount actually paid)
+- shares amounts should sum to totalAmount
+- If someone paid the full bill and others owe them back, set payers to the payer(s) and shares to each person's owed portion
+- เป๋าตัง, เป๋าตังค์, paotang, สิทธิ์รัฐ → paymentMethod "paotang"
+- Omit paymentMethod when normal cash/card/bank transfer with no Paotang mention
+- debtTracking: true when friends owe each other money from this expense; false only if user says not to track debt
+- If no split mentioned, omit payers, shares, splitMode (solo expense paid by Me)`;

@@ -11,6 +11,8 @@ import {
   createCustomFriend,
   deleteCustomFriend,
   updateContactOrder,
+  updateCustomFriendAliases,
+  updateFriendAliases,
 } from '@/lib/firestore';
 import { contactKeyForCustom, mergeContactOrder, sortByContactOrder } from '@/lib/contact-order';
 import { useAuth } from './use-auth';
@@ -27,6 +29,7 @@ export interface Contact {
   photoURL?: string | null;
   isCustom?: boolean;
   isSelf?: boolean;
+  aliases?: string[];
 }
 
 export interface FriendListItem {
@@ -35,6 +38,7 @@ export interface FriendListItem {
   displayName: string;
   photoURL?: string | null;
   customId?: string;
+  aliases?: string[];
 }
 
 export function useFriends() {
@@ -43,6 +47,7 @@ export function useFriends() {
   const [customFriends, setCustomFriends] = useState<CustomFriend[]>([]);
   const [profiles, setProfiles] = useState<Record<string, { displayName: string; photoURL: string | null }>>({});
   const [contactOrder, setContactOrder] = useState<string[]>([]);
+  const [friendAliases, setFriendAliases] = useState<Record<string, string[]>>({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -87,6 +92,11 @@ export function useFriends() {
     const unsub4 = onSnapshot(doc(db, 'users', user.uid), (snap) => {
       const data = snap.data();
       setContactOrder(Array.isArray(data?.contactOrder) ? data.contactOrder : []);
+      setFriendAliases(
+        data?.friendAliases && typeof data.friendAliases === 'object'
+          ? (data.friendAliases as Record<string, string[]>)
+          : {}
+      );
     });
 
     return () => { unsub1(); unsub2(); unsub3(); unsub4(); };
@@ -177,16 +187,18 @@ export function useFriends() {
         type: 'friend' as const,
         displayName: f.displayName,
         photoURL: f.photoURL,
+        aliases: friendAliases[f.uid] || [],
       })),
       ...customFriends.map((cf) => ({
         key: contactKeyForCustom(cf.id!),
         type: 'custom' as const,
         displayName: cf.name,
         customId: cf.id,
+        aliases: cf.aliases || [],
       })),
     ];
     return sortByContactOrder(items, (item) => item.key, mergedContactOrder);
-  }, [friends, customFriends, mergedContactOrder]);
+  }, [friends, customFriends, mergedContactOrder, friendAliases]);
 
   const sortedFriends = useMemo(
     () => sortByContactOrder(friends, (f) => f.uid, mergedContactOrder),
@@ -205,6 +217,7 @@ export function useFriends() {
       displayName: item.displayName,
       photoURL: item.photoURL,
       isCustom: item.type === 'custom',
+      aliases: item.aliases,
     })),
   ], [friendListItems]);
 
@@ -276,6 +289,15 @@ export function useFriends() {
   const decline = (requestId: string) => respondFriendRequest(requestId, 'declined');
   const remove = (requestId: string) => deleteFriendRequest(requestId);
 
+  const saveContactAliases = async (item: FriendListItem, aliases: string[]) => {
+    if (!user) throw new Error('Not logged in');
+    if (item.type === 'custom' && item.customId) {
+      await updateCustomFriendAliases(item.customId, aliases);
+    } else if (item.type === 'friend') {
+      await updateFriendAliases(user.uid, item.key, aliases);
+    }
+  };
+
   return {
     friends: sortedFriends,
     customFriends: sortedCustomFriends,
@@ -291,5 +313,6 @@ export function useFriends() {
     accept,
     decline,
     remove,
+    saveContactAliases,
   };
 }

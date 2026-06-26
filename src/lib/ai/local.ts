@@ -4,6 +4,7 @@ import {
   EXPENSE_TEXT_PARSE_PROMPT,
   type ReceiptParseResult,
   type ReceiptAiContext,
+  type ExpenseTextAiContext,
 } from '@/lib/ai/receipt-schema';
 import { parseJsonFromAiContent } from '@/lib/ai/parse-json';
 import { extractLocalAiMessageContent } from '@/lib/ai/local-response';
@@ -145,7 +146,7 @@ export async function parseReceiptImageLocal(
 export async function parseExpenseTextLocal(
   text: string,
   config: LocalAiConfig,
-  context?: { tripName?: string; currency?: string; countryCode?: string }
+  context?: ExpenseTextAiContext
 ): Promise<ReceiptParseResult> {
   if (!config.baseUrl) {
     throw new Error('Local AI baseUrl is not configured');
@@ -157,6 +158,7 @@ export async function parseExpenseTextLocal(
   const contextHint = context
     ? `\nContext: trip="${context.tripName || ''}", default currency=${context.currency || 'THB'}, country=${context.countryCode || 'TH'}`
     : '';
+  const contactsHint = context?.contactsHint || '';
 
   try {
     const response = await fetch(`${baseUrl}/v1/chat/completions`, {
@@ -173,7 +175,7 @@ export async function parseExpenseTextLocal(
           },
           {
             role: 'user',
-            content: `${EXPENSE_TEXT_PARSE_PROMPT}${contextHint}\n\nUser input:\n${text.trim()}`,
+            content: `${EXPENSE_TEXT_PARSE_PROMPT}${contextHint}${contactsHint}\n\nUser input:\n${text.trim()}`,
           },
         ],
         temperature: 0.1,

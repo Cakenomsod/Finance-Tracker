@@ -1,5 +1,5 @@
 import { AiTextProvider } from '@/lib/firestore-types';
-import type { ReceiptAiContext } from '@/lib/ai/receipt-schema';
+import type { ReceiptAiContext, ExpenseTextAiContext, ReceiptParseResult } from '@/lib/ai/receipt-schema';
 import {
   parseReceiptImage,
   parseExpenseText,
@@ -11,7 +11,8 @@ import {
   sendChatMessageLocal,
   type LocalAiConfig,
 } from '@/lib/ai/local';
-import type { ReceiptParseResult } from '@/lib/ai/receipt-schema';
+import { buildContactsPromptHint, resolveSplitPeople } from '@/lib/ai/contact-resolve';
+import type { AiContact } from '@/lib/ai/contact-resolve';
 import { tryParseExpenseTextStrictFormat } from '@/lib/ai/expense-text-heuristic';
 import { getGoogleAiApiKey } from '@/lib/ai/env';
 
@@ -46,7 +47,8 @@ export async function parseReceiptImageWithProvider(
 export async function parseExpenseTextWithProvider(
   text: string,
   config: AiProviderConfig,
-  context?: { tripName?: string; currency?: string; countryCode?: string }
+  context?: ExpenseTextAiContext,
+  contacts?: AiContact[]
 ): Promise<ReceiptParseResult> {
   const currency =
     context?.currency === 'JPY' || context?.currency === 'THB'
@@ -56,30 +58,45 @@ export async function parseExpenseTextWithProvider(
   const strictMatch = tryParseExpenseTextStrictFormat(text, currency);
   if (strictMatch) return strictMatch;
 
+  const enrichedContext: ExpenseTextAiContext = {
+    ...context,
+    contactsHint: contacts?.length ? buildContactsPromptHint(contacts) : context?.contactsHint,
+  };
+
+  let result: ReceiptParseResult;
   try {
     if (config.provider === 'local') {
       if (!config.localAiConfig?.baseUrl) {
         throw new Error('Local AI is not configured. Please set up Local AI URL in Settings.');
       }
-      return await parseExpenseTextLocal(text, config.localAiConfig, context);
+      result = await parseExpenseTextLocal(text, config.localAiConfig, enrichedContext);
+    } else {
+      result = await parseExpenseText(text, enrichedContext);
     }
-
-    return await parseExpenseText(text, context);
   } catch (aiError) {
     const retry = tryParseExpenseTextStrictFormat(text, currency);
     if (retry) return retry;
 
-    // Local ล้ม → ลอง Gemini 2 Flash เป็นตัวสำรอง
     if (config.provider === 'local' && getGoogleAiApiKey()) {
       try {
-        return await parseExpenseText(text, context);
+        result = await parseExpenseText(text, enrichedContext);
       } catch {
-        // keep original error below
+        throw aiError;
       }
+    } else {
+      throw aiError;
     }
-
-    throw aiError;
   }
+
+  if (contacts?.length) {
+    return {
+      ...result,
+      payers: resolveSplitPeople(result.payers, contacts),
+      shares: resolveSplitPeople(result.shares, contacts),
+    };
+  }
+
+  return result;
 }
 
 /**

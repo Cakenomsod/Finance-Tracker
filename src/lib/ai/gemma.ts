@@ -5,6 +5,7 @@ import {
   EXPENSE_TEXT_PARSE_PROMPT,
   type ReceiptParseResult,
   type ReceiptAiContext,
+  type ExpenseTextAiContext,
 } from '@/lib/ai/receipt-schema';
 import { parseJsonFromAiContent } from '@/lib/ai/parse-json';
 import {
@@ -95,15 +96,16 @@ export async function parseReceiptImage(
 
 export async function parseExpenseText(
   text: string,
-  context?: { tripName?: string; currency?: string; countryCode?: string }
+  context?: ExpenseTextAiContext
 ): Promise<ReceiptParseResult> {
   const contextHint = context
     ? `\nContext: trip="${context.tripName || ''}", default currency=${context.currency || 'THB'}, country=${context.countryCode || 'TH'}`
     : '';
+  const contactsHint = context?.contactsHint || '';
 
   return generateJsonWithModels(
     geminiModelCandidates(getChatModel()),
-    [{ text: EXPENSE_TEXT_PARSE_PROMPT + contextHint + `\n\nUser input:\n${text.trim()}` }]
+    [{ text: EXPENSE_TEXT_PARSE_PROMPT + contextHint + contactsHint + `\n\nUser input:\n${text.trim()}` }]
   );
 }
 

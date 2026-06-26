@@ -124,20 +124,6 @@ export function TransactionForm({
     return 'self'
   })
   const [note, setNote] = React.useState(initialData?.note || '')
-  const hasStandardBreakdown = Boolean(
-    initialData?.baseAmount != null &&
-      (!initialData.items || initialData.items.length === 0)
-  )
-  const [subtotal, setSubtotal] = React.useState(
-    hasStandardBreakdown && initialData?.baseAmount != null
-      ? String(initialData.baseAmount)
-      : ''
-  )
-  const [tax, setTax] = React.useState(
-    hasStandardBreakdown && initialData?.taxAmount != null
-      ? String(initialData.taxAmount)
-      : ''
-  )
   const [discount, setDiscount] = React.useState(
     initialData?.discount ? String(initialData.discount) : ''
   )
@@ -286,9 +272,6 @@ export function TransactionForm({
   )
 
   const discountAmount = isIncome ? 0 : (parseFloat(discount) || 0)
-  const usesStandardBreakdown = Boolean(subtotal || tax)
-  const standardGross = (parseFloat(subtotal) || 0) + (parseFloat(tax) || 0)
-  const standardNet = Math.max(0, standardGross - discountAmount)
   const receiptNet = Math.max(0, receiptTotal - discountAmount)
 
   React.useEffect(() => {
@@ -301,16 +284,6 @@ export function TransactionForm({
     }
   }, [isReceiptMode, receiptNet, form])
 
-  React.useEffect(() => {
-    if (!isReceiptMode && usesStandardBreakdown) {
-      form.setValue(
-        'amount',
-        standardNet > 0 ? standardNet.toFixed(2) : '',
-        { shouldValidate: true }
-      )
-    }
-  }, [isReceiptMode, usesStandardBreakdown, standardNet, form])
-
   const watchedAmount = form.watch('amount')
   const watchedDate = form.watch('date')
   const watchedTime = form.watch('time')
@@ -318,9 +291,7 @@ export function TransactionForm({
 
   const totalForPayment = isReceiptMode
     ? receiptNet
-    : usesStandardBreakdown
-      ? standardNet
-      : parseFloat(watchedAmount) || 0
+    : parseFloat(watchedAmount) || 0
 
   const txPreviewDate = React.useMemo(() => {
     if (!watchedDate) return new Date()
@@ -361,19 +332,13 @@ export function TransactionForm({
     setIsSubmitting(true)
     try {
       const disc = isIncome ? 0 : (parseFloat(discount) || 0)
-      if (disc > 0 && !isIncome) {
-        const gross = isReceiptMode ? receiptTotal : usesStandardBreakdown ? standardGross : 0
-        if (gross > 0 && disc > gross) {
+      let rawAmount: number
+      if (isReceiptMode) {
+        if (disc > 0 && receiptTotal > 0 && disc > receiptTotal) {
           form.setError('amount', { message: 'ส่วนลดต้องไม่เกินยอดรวม' })
           return
         }
-      }
-
-      let rawAmount: number
-      if (isReceiptMode) {
         rawAmount = receiptNet
-      } else if (usesStandardBreakdown) {
-        rawAmount = standardNet
       } else {
         rawAmount = parseFloat(values.amount) || 0
       }
@@ -484,9 +449,6 @@ export function TransactionForm({
           }))
         transactionData.baseAmount = receiptTotal
         transactionData.taxAmount = 0
-      } else if (usesStandardBreakdown) {
-        transactionData.baseAmount = parseFloat(subtotal) || 0
-        transactionData.taxAmount = parseFloat(tax) || 0
       } else {
         transactionData.baseAmount = disc > 0 ? rawAmount + disc : rawAmount
         transactionData.taxAmount = 0
@@ -803,71 +765,21 @@ export function TransactionForm({
           <div className="space-y-3 rounded-lg border bg-muted/20 p-3">
             <div className={cn(
               'grid gap-3',
-              !isIncome ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-1 sm:grid-cols-2'
+              !isIncome ? 'grid-cols-2' : 'grid-cols-1'
             )}>
               {!isIncome && (
-                <>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">ราคาสินค้า (฿)</Label>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      placeholder="0.00"
-                      className="h-9 text-xs"
-                      value={subtotal}
-                      onChange={(e) => {
-                        const val = e.target.value
-                        setSubtotal(val)
-                        const sub = parseFloat(val) || 0
-                        const tx = parseFloat(tax) || 0
-                        const disc = parseFloat(discount) || 0
-                        const net = Math.max(0, sub + tx - disc)
-                        form.setValue('amount', sub > 0 || tx > 0 || disc > 0 ? net.toFixed(2) : '')
-                      }}
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">ภาษี (฿)</Label>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      placeholder="0.00"
-                      className="h-9 text-xs"
-                      value={tax}
-                      onChange={(e) => {
-                        const val = e.target.value
-                        setTax(val)
-                        const sub = parseFloat(subtotal) || 0
-                        const tx = parseFloat(val) || 0
-                        const disc = parseFloat(discount) || 0
-                        const net = Math.max(0, sub + tx - disc)
-                        form.setValue('amount', sub > 0 || tx > 0 || disc > 0 ? net.toFixed(2) : '')
-                      }}
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">ส่วนลด (฿)</Label>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      placeholder="0.00"
-                      className="h-9 text-xs"
-                      value={discount}
-                      onChange={(e) => {
-                        const val = e.target.value
-                        setDiscount(val)
-                        const sub = parseFloat(subtotal) || 0
-                        const tx = parseFloat(tax) || 0
-                        const disc = parseFloat(val) || 0
-                        const net = Math.max(0, sub + tx - disc)
-                        form.setValue('amount', sub > 0 || tx > 0 || disc > 0 ? net.toFixed(2) : '')
-                      }}
-                    />
-                  </div>
-                </>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">ส่วนลด (฿)</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="0.00"
+                    className="h-9 text-xs"
+                    value={discount}
+                    onChange={(e) => setDiscount(e.target.value)}
+                  />
+                </div>
               )}
               <FormField
                 control={form.control}
@@ -888,13 +800,6 @@ export function TransactionForm({
                           placeholder="0.00"
                           className="h-9 pl-8 font-semibold border-primary/40 focus-visible:ring-primary"
                           {...field}
-                          onChange={(e) => {
-                            field.onChange(e)
-                            if (!isIncome) {
-                              setSubtotal('')
-                              setTax('')
-                            }
-                          }}
                         />
                       </div>
                     </FormControl>
@@ -903,24 +808,24 @@ export function TransactionForm({
                 )}
               />
             </div>
-            {!isIncome && discountAmount > 0 && usesStandardBreakdown && standardGross > 0 && (
+            {!isIncome && discountAmount > 0 && (parseFloat(watchedAmount) || 0) > 0 && (
               <p className="text-[10px] text-muted-foreground tabular-nums">
-                ราคาสินค้า + ภาษี ฿{standardGross.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} − ส่วนลด ฿{discountAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                ยอดก่อนหักส่วนลด ฿{((parseFloat(watchedAmount) || 0) + discountAmount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} − ส่วนลด ฿{discountAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </p>
             )}
           </div>
         )}
 
         {!isIncome && (
-          <div className="space-y-2.5 rounded-lg border bg-muted/20 p-3">
-            <div className="flex items-center gap-2">
-              <p className="shrink-0 text-xs font-medium sm:text-sm">วิธีชำระเงิน</p>
-              <div className="flex min-w-0 flex-1 gap-1 rounded-lg bg-muted p-1">
+          <div className="space-y-2 rounded-lg border bg-muted/20 p-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs sm:text-sm">วิธีชำระเงิน</Label>
+              <div className="inline-flex gap-0.5 rounded-lg border bg-muted/50 p-0.5">
                 <button
                   type="button"
                   onClick={() => setPaymentMethod('normal')}
                   className={cn(
-                    'flex-1 rounded-md py-1.5 text-xs font-medium transition-all',
+                    'rounded-md px-2.5 py-1 text-xs font-medium transition-all',
                     paymentMethod === 'normal'
                       ? 'bg-background text-foreground shadow-sm'
                       : 'text-muted-foreground hover:text-foreground'
@@ -932,7 +837,7 @@ export function TransactionForm({
                   type="button"
                   onClick={() => setPaymentMethod('paotang')}
                   className={cn(
-                    'flex-1 rounded-md py-1.5 text-xs font-medium transition-all',
+                    'rounded-md px-2.5 py-1 text-xs font-medium transition-all',
                     paymentMethod === 'paotang'
                       ? 'bg-background text-foreground shadow-sm'
                       : 'text-muted-foreground hover:text-foreground'
@@ -945,9 +850,8 @@ export function TransactionForm({
 
             {paymentMethod === 'paotang' && !splitEnabled && (
               <div className="space-y-1.5">
-                <div className="flex items-center gap-2">
-                  <Label className="shrink-0 text-xs">สแกนโดย</Label>
-                  <div className="flex min-w-0 flex-1 gap-1 rounded-lg bg-muted p-1">
+                <Label className="text-xs">สแกนโดย</Label>
+                <div className="inline-flex gap-0.5 rounded-lg border bg-muted/50 p-0.5">
                   <button
                     type="button"
                     onClick={() => {
@@ -955,7 +859,7 @@ export function TransactionForm({
                       form.setValue('paidBy', 'Me')
                     }}
                     className={cn(
-                      'flex-1 py-1.5 text-xs font-medium rounded-md transition-all',
+                      'rounded-md px-2.5 py-1 text-xs font-medium transition-all',
                       paotangPayerMode === 'self'
                         ? 'bg-background text-foreground shadow-sm'
                         : 'text-muted-foreground hover:text-foreground'
@@ -967,7 +871,7 @@ export function TransactionForm({
                     type="button"
                     onClick={() => setPaotangPayerMode('other')}
                     className={cn(
-                      'flex-1 py-1.5 text-xs font-medium rounded-md transition-all',
+                      'rounded-md px-2.5 py-1 text-xs font-medium transition-all',
                       paotangPayerMode === 'other'
                         ? 'bg-background text-foreground shadow-sm'
                         : 'text-muted-foreground hover:text-foreground'
@@ -975,7 +879,6 @@ export function TransactionForm({
                   >
                     เพื่อนจ่ายให้
                   </button>
-                </div>
                 </div>
                 {paotangPayerMode === 'other' && (
                   <FormField

@@ -106,7 +106,10 @@ export function TransactionSplitSection({
     if (initialShares?.length && (initialSplitMode === 'equal' || !initialSplitMode)) {
       return new Set(initialShares.map((s) => s.userId))
     }
-    return new Set(members.map((m) => m.personId))
+    if (initialPayers?.length) {
+      return new Set(initialPayers.map((p) => p.userId))
+    }
+    return new Set([ME_PERSON_ID])
   })
 
   const [customShares, setCustomShares] = React.useState<Record<string, string>>(() => {
@@ -126,6 +129,28 @@ export function TransactionSplitSection({
   }, [payers])
 
   const payerIdsKey = payerParticipants.map((p) => p.personId).join('|')
+
+  React.useEffect(() => {
+    setEqualIncluded((prev) => {
+      const payerIds = new Set(payerParticipants.map((p) => p.personId))
+      const next = new Set<string>()
+      let changed = false
+
+      for (const id of prev) {
+        if (payerIds.has(id)) next.add(id)
+        else changed = true
+      }
+
+      for (const p of payerParticipants) {
+        if (!next.has(p.personId)) {
+          next.add(p.personId)
+          changed = true
+        }
+      }
+
+      return changed ? next : prev
+    })
+  }, [payerIdsKey, payerParticipants])
 
   React.useEffect(() => {
     if (splitMode !== 'custom') return
@@ -250,9 +275,9 @@ export function TransactionSplitSection({
     } else if (splitMode === 'equal') {
       if (equalIncluded.size === 0) errs.push('กรุณาเลือกอย่างน้อย 1 คน')
       const share = parseFloat((total / equalIncluded.size).toFixed(2))
-      finalShares = members
-        .filter((m) => equalIncluded.has(m.personId))
-        .map((m) => ({ userId: m.personId, displayName: m.displayName, amount: share }))
+      finalShares = payerParticipants
+        .filter((p) => equalIncluded.has(p.personId))
+        .map((p) => ({ userId: p.personId, displayName: p.displayName, amount: share }))
     } else {
       finalShares = payerParticipants
         .filter((p) => customShares[p.personId] && parseFloat(customShares[p.personId]) > 0)
@@ -273,7 +298,6 @@ export function TransactionSplitSection({
     lastPayerSuggestion,
     splitMode,
     equalIncluded,
-    members,
     payerParticipants,
     customShares,
     customTotal,
@@ -331,7 +355,7 @@ export function TransactionSplitSection({
           {payers.length < members.length && (
             <Button
               type="button"
-              variant="ghost"
+              variant="outline"
               size="sm"
               onClick={addPayer}
               disabled={disabled}
@@ -437,35 +461,41 @@ export function TransactionSplitSection({
         {splitMode === 'equal' && (
           <div className="space-y-1.5">
             <p className="text-xs text-muted-foreground">
-              เลือกคนที่หารด้วย ({equalIncluded.size} คน → คนละ {currencySymbol}
+              เลือกจากผู้จ่ายเท่านั้น ({equalIncluded.size} คน → คนละ {currencySymbol}
               {equalShareAmount.toFixed(0)})
             </p>
+            {payerParticipants.length === 0 ? (
+              <p className="text-xs text-muted-foreground">เพิ่มผู้จ่ายก่อน</p>
+            ) : (
             <div className="flex flex-wrap gap-2">
-              {members.map((m) => {
-                const on = equalIncluded.has(m.personId)
+              {payerParticipants.map((p) => {
+                const on = equalIncluded.has(p.personId)
+                const isLastSelected = on && equalIncluded.size === 1
                 return (
                   <button
-                    key={m.personId}
+                    key={p.personId}
                     type="button"
-                    disabled={disabled}
+                    disabled={disabled || isLastSelected}
                     onClick={() => {
                       const next = new Set(equalIncluded)
-                      if (on) next.delete(m.personId)
-                      else next.add(m.personId)
+                      if (on) next.delete(p.personId)
+                      else next.add(p.personId)
                       setEqualIncluded(next)
                     }}
                     className={cn(
                       'rounded-full border px-3 py-1 text-xs font-medium transition-all',
                       on
                         ? 'border-primary bg-primary text-primary-foreground'
-                        : 'border-border hover:border-primary/50'
+                        : 'border-border hover:border-primary/50',
+                      isLastSelected && 'opacity-90'
                     )}
                   >
-                    {m.displayName}
+                    {p.displayName}
                   </button>
                 )
               })}
             </div>
+            )}
           </div>
         )}
 

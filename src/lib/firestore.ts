@@ -216,6 +216,25 @@ export const deleteCustomFriend = async (id: string) => {
   return await deleteDoc(doc(db, 'custom_friends', id));
 };
 
+export const updateCustomFriendAliases = async (id: string, aliases: string[]) => {
+  const cleaned = aliases.map((a) => a.trim()).filter(Boolean);
+  await updateDoc(doc(db, 'custom_friends', id), {
+    aliases: cleaned,
+    updatedAt: serverTimestamp(),
+  });
+};
+
+export const updateFriendAliases = async (userId: string, friendUid: string, aliases: string[]) => {
+  const cleaned = aliases.map((a) => a.trim()).filter(Boolean);
+  const userRef = doc(db, 'users', userId);
+  const snap = await getDoc(userRef);
+  const existing = (snap.data()?.friendAliases as Record<string, string[]>) || {};
+  await updateDoc(userRef, {
+    friendAliases: { ...existing, [friendUid]: cleaned },
+    updatedAt: serverTimestamp(),
+  });
+};
+
 // --- Categories ---
 
 export const createCategory = async (data: Omit<Category, 'id' | 'createdAt'>) => {

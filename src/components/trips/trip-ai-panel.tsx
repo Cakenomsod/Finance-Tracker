@@ -6,6 +6,7 @@ import { ReceiptParseResult } from '@/lib/ai/receipt-schema'
 import { getTripTimeZone } from '@/lib/trip-currency'
 import { Trip, TripCurrency, TripExpense } from '@/lib/firestore-types'
 import { AiReceiptReviewDialog } from '@/components/ai/ai-receipt-review-dialog'
+import { useAuth } from '@/hooks/use-auth'
 import {
   AiExpenseQuickInput,
   type AiExpenseQuickInputHandle,
@@ -32,6 +33,7 @@ export interface TripAiPanelHandle {
 
 export const TripAiPanel = React.forwardRef<TripAiPanelHandle, TripAiPanelProps>(
   function TripAiPanel({ tripId, trip, tripMembers, onOpenExpenseForm }, ref) {
+    const { user } = useAuth()
     const aiInputRef = React.useRef<AiExpenseQuickInputHandle>(null)
     const activeJobIdRef = React.useRef<string | null>(null)
 
@@ -67,7 +69,8 @@ export const TripAiPanel = React.forwardRef<TripAiPanelHandle, TripAiPanelProps>
         draft,
         tripMembers,
         tripCurrency,
-        getTripTimeZone(trip.countryCode, tripCurrency)
+        getTripTimeZone(trip.countryCode, tripCurrency),
+        user?.uid
       )
       const ids = reviewImmichIds.length ? reviewImmichIds : pendingImmichIds
       onOpenExpenseForm(expenseDraft, ids.length ? ids : undefined)

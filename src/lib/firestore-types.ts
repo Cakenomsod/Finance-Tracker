@@ -28,6 +28,8 @@ export interface UserProfile {
   immichGeneralAlbumId?: string | null;
   /** User-defined display order for friends & custom contacts (uid or custom:{id}) */
   contactOrder?: string[];
+  /** Nicknames per app-friend uid for AI matching and display */
+  friendAliases?: Record<string, string[]>;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }
@@ -229,6 +231,8 @@ export interface CustomFriend {
   id?: string;
   userId: string;
   name: string;
+  /** Nicknames for AI / informal reference (e.g. เบล) */
+  aliases?: string[];
   createdAt: Timestamp;
 }
 
