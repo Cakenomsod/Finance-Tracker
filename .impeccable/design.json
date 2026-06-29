@@ -1,0 +1,286 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-06-26T00:00:00.000Z",
+  "title": "Design System: Finance Tracker",
+  "extensions": {
+    "colorMeta": {
+      "cooperative-mint": {
+        "role": "primary",
+        "displayName": "Cooperative Mint",
+        "canonical": "oklch(0.55 0.17 162.48)",
+        "tonalRamp": [
+          "oklch(0.15 0.17 162.48)",
+          "oklch(0.25 0.17 162.48)",
+          "oklch(0.35 0.17 162.48)",
+          "oklch(0.45 0.17 162.48)",
+          "oklch(0.55 0.17 162.48)",
+          "oklch(0.65 0.17 162.48)",
+          "oklch(0.75 0.14 162.48)",
+          "oklch(0.90 0.08 162.48)"
+        ]
+      },
+      "morning-balance-bg": {
+        "role": "neutral",
+        "displayName": "Morning Balance Background",
+        "canonical": "oklch(0.98 0.005 250)",
+        "tonalRamp": [
+          "oklch(0.13 0.02 250)",
+          "oklch(0.18 0.02 250)",
+          "oklch(0.22 0.02 250)",
+          "oklch(0.50 0.02 250)",
+          "oklch(0.75 0.02 250)",
+          "oklch(0.90 0.01 250)",
+          "oklch(0.94 0.01 250)",
+          "oklch(0.98 0.005 250)"
+        ]
+      },
+      "morning-balance-ink": {
+        "role": "neutral",
+        "displayName": "Morning Balance Ink",
+        "canonical": "oklch(0.18 0.02 250)",
+        "tonalRamp": [
+          "oklch(0.13 0.02 250)",
+          "oklch(0.18 0.02 250)",
+          "oklch(0.25 0.02 250)",
+          "oklch(0.35 0.02 250)",
+          "oklch(0.50 0.02 250)",
+          "oklch(0.65 0.01 250)",
+          "oklch(0.80 0.01 250)",
+          "oklch(0.95 0.01 250)"
+        ]
+      },
+      "alert-red": {
+        "role": "semantic",
+        "displayName": "Alert Red",
+        "canonical": "oklch(0.577 0.245 27.325)",
+        "tonalRamp": [
+          "oklch(0.20 0.20 27)",
+          "oklch(0.30 0.22 27)",
+          "oklch(0.40 0.23 27)",
+          "oklch(0.50 0.24 27)",
+          "oklch(0.577 0.245 27.325)",
+          "oklch(0.65 0.20 27)",
+          "oklch(0.75 0.15 27)",
+          "oklch(0.90 0.08 27)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Page titles — Dashboard, Transactions. Fixed rem, not fluid clamp."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Section headers within cards and dialog titles."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Card titles, stat labels, table column headers."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Default UI copy, form labels, list items."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Badges, sidebar group labels, chart ticks, compact nav."
+      },
+      "mono": {
+        "displayName": "Mono",
+        "purpose": "IDs, codes, monospace data fields."
+      }
+    },
+    "shadows": [
+      {
+        "name": "hairline",
+        "value": "0 1px 2px 0 rgb(0 0 0 / 0.05)",
+        "purpose": "Inputs, selects, outline buttons, checkboxes at rest."
+      },
+      {
+        "name": "card",
+        "value": "0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)",
+        "purpose": "Dashboard cards, inset sidebar content, active tabs."
+      },
+      {
+        "name": "overlay",
+        "value": "0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)",
+        "purpose": "Dropdown menus, select popovers, hover cards."
+      },
+      {
+        "name": "floating",
+        "value": "0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)",
+        "purpose": "Context menus, mobile sheets, dialogs."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-standard",
+        "value": "cubic-bezier(0.4, 0, 0.2, 1)",
+        "purpose": "Default easing for color, shadow, and opacity transitions."
+      },
+      {
+        "name": "ease-linear-sidebar",
+        "value": "linear",
+        "purpose": "Sidebar width collapse/expand — mechanical, not bouncy."
+      },
+      {
+        "name": "duration-fast",
+        "value": "150ms",
+        "purpose": "Hover and focus feedback on buttons, nav items."
+      },
+      {
+        "name": "duration-standard",
+        "value": "200ms",
+        "purpose": "Sidebar transitions, tab switches."
+      },
+      {
+        "name": "duration-sheet",
+        "value": "300ms",
+        "purpose": "Sheet/dialog open and close."
+      }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "640px" },
+      { "name": "md", "value": "768px" },
+      { "name": "lg", "value": "1024px" },
+      { "name": "xl", "value": "1280px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Main call-to-action — Quick Add, Save, Confirm settlement.",
+      "html": "<button class=\"ds-btn-primary\">Quick Add</button>",
+      "css": ".ds-btn-primary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 36px; padding: 8px 16px; font-family: 'Geist', system-ui, sans-serif; font-size: 0.875rem; font-weight: 500; line-height: 1; white-space: nowrap; color: var(--primary-foreground, oklch(0.98 0.005 250)); background: var(--primary, oklch(0.55 0.17 162.48)); border: none; border-radius: 10px; cursor: pointer; transition: background 0.15s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.15s; outline: none; } .ds-btn-primary:hover { background: color-mix(in oklch, var(--primary, oklch(0.55 0.17 162.48)) 90%, transparent); } .ds-btn-primary:focus-visible { box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring, oklch(0.55 0.17 162.48)) 50%, transparent); } .ds-btn-primary:disabled { opacity: 0.5; pointer-events: none; }"
+    },
+    {
+      "name": "Outline Button",
+      "kind": "button",
+      "refersTo": "button-outline",
+      "description": "Secondary actions — Cancel, Filter, Export.",
+      "html": "<button class=\"ds-btn-outline\">Export</button>",
+      "css": ".ds-btn-outline { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 36px; padding: 8px 16px; font-family: 'Geist', system-ui, sans-serif; font-size: 0.875rem; font-weight: 500; color: var(--foreground, oklch(0.18 0.02 250)); background: var(--background, oklch(0.98 0.005 250)); border: 1px solid var(--border, oklch(0.90 0.01 250)); border-radius: 10px; box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05); cursor: pointer; transition: background 0.15s, color 0.15s; outline: none; } .ds-btn-outline:hover { background: var(--accent, oklch(0.55 0.17 162.48)); color: var(--accent-foreground, oklch(0.98 0.005 250)); } .ds-btn-outline:focus-visible { box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring, oklch(0.55 0.17 162.48)) 50%, transparent); }"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "input-default",
+      "description": "Standard text field for amounts, descriptions, search.",
+      "html": "<input class=\"ds-input\" type=\"text\" placeholder=\"Describe expense…\" />",
+      "css": ".ds-input { display: block; width: 100%; height: 36px; padding: 4px 12px; font-family: 'Geist', system-ui, sans-serif; font-size: 0.875rem; color: var(--foreground, oklch(0.18 0.02 250)); background: transparent; border: 1px solid var(--input, oklch(0.92 0.01 250)); border-radius: 10px; box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05); outline: none; transition: border-color 0.15s, box-shadow 0.15s; } .ds-input::placeholder { color: var(--muted-foreground, oklch(0.50 0.02 250)); } .ds-input:focus-visible { border-color: var(--ring, oklch(0.55 0.17 162.48)); box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring, oklch(0.55 0.17 162.48)) 50%, transparent); } .ds-input:disabled { opacity: 0.5; cursor: not-allowed; }"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card-default",
+      "description": "Default content container for dashboard stats, lists, forms.",
+      "html": "<div class=\"ds-card\"><div class=\"ds-card-header\"><div class=\"ds-card-title\">Total Balance</div><div class=\"ds-card-desc\">This month</div></div><div class=\"ds-card-body\"><span class=\"ds-card-value\">฿12,450.00</span></div></div>",
+      "css": ".ds-card { display: flex; flex-direction: column; gap: 24px; padding: 24px 0; background: var(--card, oklch(1 0 250)); color: var(--card-foreground, oklch(0.18 0.02 250)); border: 1px solid var(--border, oklch(0.90 0.01 250)); border-radius: 16px; box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1); } .ds-card-header { padding: 0 24px; display: flex; flex-direction: column; gap: 4px; } .ds-card-title { font-family: 'Geist', system-ui, sans-serif; font-size: 0.875rem; font-weight: 600; line-height: 1; } .ds-card-desc { font-family: 'Geist', system-ui, sans-serif; font-size: 0.875rem; color: var(--muted-foreground, oklch(0.50 0.02 250)); } .ds-card-body { padding: 0 24px; } .ds-card-value { font-family: 'Geist', system-ui, sans-serif; font-size: 1.5rem; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.025em; }"
+    },
+    {
+      "name": "Badge",
+      "kind": "chip",
+      "refersTo": "badge-default",
+      "description": "Status tags, category labels, notification counts.",
+      "html": "<span class=\"ds-badge\">Pending</span>",
+      "css": ".ds-badge { display: inline-flex; align-items: center; justify-content: center; padding: 2px 8px; font-family: 'Geist', system-ui, sans-serif; font-size: 0.75rem; font-weight: 500; line-height: 1.33; color: var(--primary-foreground, oklch(0.98 0.005 250)); background: var(--primary, oklch(0.55 0.17 162.48)); border: 1px solid transparent; border-radius: 10px; white-space: nowrap; transition: background 0.15s; } .ds-badge:hover { background: color-mix(in oklch, var(--primary, oklch(0.55 0.17 162.48)) 90%, transparent); }"
+    },
+    {
+      "name": "Sidebar Nav Item",
+      "kind": "nav",
+      "refersTo": "button-ghost",
+      "description": "Desktop sidebar navigation link — active and hover states.",
+      "html": "<a class=\"ds-nav-item ds-nav-item--active\" href=\"#\"><svg class=\"ds-nav-icon\" xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect width=\"7\" height=\"9\" x=\"3\" y=\"3\" rx=\"1\"/><rect width=\"7\" height=\"5\" x=\"14\" y=\"3\" rx=\"1\"/><rect width=\"7\" height=\"9\" x=\"14\" y=\"12\" rx=\"1\"/><rect width=\"7\" height=\"5\" x=\"3\" y=\"16\" rx=\"1\"/></svg><span>Dashboard</span></a>",
+      "css": ".ds-nav-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px; font-family: 'Geist', system-ui, sans-serif; font-size: 0.875rem; font-weight: 400; color: var(--sidebar-foreground, oklch(0.18 0.02 250)); text-decoration: none; border-radius: 10px; transition: background 0.15s, color 0.15s; outline: none; } .ds-nav-item:hover { background: var(--sidebar-accent, oklch(0.92 0.01 250)); color: var(--sidebar-accent-foreground, oklch(0.25 0.02 250)); } .ds-nav-item--active { background: var(--sidebar-accent, oklch(0.92 0.01 250)); color: var(--sidebar-accent-foreground, oklch(0.25 0.02 250)); font-weight: 500; } .ds-nav-item:focus-visible { box-shadow: 0 0 0 2px var(--sidebar-ring, oklch(0.55 0.17 162.48)); } .ds-nav-icon { flex-shrink: 0; width: 16px; height: 16px; }"
+    },
+    {
+      "name": "Mobile Bottom Nav",
+      "kind": "nav",
+      "refersTo": "button-primary",
+      "description": "Mobile primary navigation with center Quick Add action.",
+      "html": "<nav class=\"ds-mobile-nav\"><a class=\"ds-mobile-nav-item ds-mobile-nav-item--active\" href=\"#\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z\"/></svg><span>Home</span></a><button class=\"ds-mobile-nav-fab\" aria-label=\"Quick Add\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M5 12h14\"/><path d=\"M12 5v14\"/></svg></button><a class=\"ds-mobile-nav-item\" href=\"#\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z\"/></svg><span>Transactions</span></a></nav>",
+      "css": ".ds-mobile-nav { display: flex; align-items: stretch; height: 64px; background: color-mix(in oklch, var(--background, oklch(0.98 0.005 250)) 95%, transparent); border-top: 1px solid var(--border, oklch(0.90 0.01 250)); backdrop-filter: blur(8px); } .ds-mobile-nav-item { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-family: 'Geist', system-ui, sans-serif; font-size: 10px; font-weight: 500; color: var(--muted-foreground, oklch(0.50 0.02 250)); text-decoration: none; transition: color 0.15s; } .ds-mobile-nav-item--active { color: var(--primary, oklch(0.55 0.17 162.48)); } .ds-mobile-nav-fab { display: flex; align-items: center; justify-content: center; width: 56px; height: 56px; margin-top: -20px; color: var(--primary-foreground, oklch(0.98 0.005 250)); background: var(--primary, oklch(0.55 0.17 162.48)); border: none; border-radius: 50%; box-shadow: 0 4px 12px color-mix(in oklch, var(--primary, oklch(0.55 0.17 162.48)) 40%, transparent); cursor: pointer; transition: transform 0.15s, box-shadow 0.15s; } .ds-mobile-nav-fab:hover { transform: scale(1.05); } .ds-mobile-nav-fab:focus-visible { box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring, oklch(0.55 0.17 162.48)) 50%, transparent); }"
+    },
+    {
+      "name": "Destructive Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Delete, remove friend, cancel subscription — irreversible actions.",
+      "html": "<button class=\"ds-btn-destructive\">Delete</button>",
+      "css": ".ds-btn-destructive { display: inline-flex; align-items: center; justify-content: center; height: 36px; padding: 8px 16px; font-family: 'Geist', system-ui, sans-serif; font-size: 0.875rem; font-weight: 500; color: #ffffff; background: var(--destructive, oklch(0.577 0.245 27.325)); border: none; border-radius: 10px; cursor: pointer; transition: background 0.15s; outline: none; } .ds-btn-destructive:hover { background: color-mix(in oklch, var(--destructive, oklch(0.577 0.245 27.325)) 90%, transparent); } .ds-btn-destructive:focus-visible { box-shadow: 0 0 0 3px color-mix(in oklch, var(--destructive, oklch(0.577 0.245 27.325)) 20%, transparent); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Trusted Ledger",
+    "overview": "Finance Tracker looks like a ledger you trust with friends: cool, precise surfaces where numbers stay legible, and Cooperative Mint appears only where money moves, confirms, or settles. The system serves Thai personal-finance users juggling solo spending, shared debts, and group trips — clarity before ceremony, speed to capture, bilingual by default.\n\nMorning Balance neutrals provide an everyday-use calm: light, clear, cool blue-gray paper — never warm cream, never lifestyle-brand fluff. Soft and confident components (gentle curves, generous padding, approachable without playful-fintech energy) keep shared-money flows cooperative rather than confrontational. Delight comes from how well the tool works, not from mascots, streaks, or confetti.\n\nThis system explicitly rejects PRODUCT.md anti-references: no neon gradients or gamification, no navy-and-gold hero-metric dashboards, no dense corporate-banking jargon chrome. The tool should disappear into the task.",
+    "keyCharacteristics": [
+      "Restrained accent usage — Cooperative Mint on primary actions, positive balances, and success states only",
+      "Single sans family (Geist) across all UI; tabular nums for money",
+      "Subtle lift elevation — cards and floating panels carry a whisper of shadow; borders and tonal layers do the rest",
+      "Full light/dark support with mirrored semantic tokens",
+      "shadcn/ui + Radix primitives for familiar, accessible affordances",
+      "Bilingual-ready: mixed Thai/English copy, ฿ formatting, legible at compact densities"
+    ],
+    "rules": [
+      {
+        "name": "The One Voice Rule",
+        "body": "Cooperative Mint appears on ≤10% of any screen. Its rarity signals action and confirmation — never wallpaper, never decorative gradients.",
+        "section": "colors"
+      },
+      {
+        "name": "The Cool Paper Rule",
+        "body": "Neutrals stay on hue ~250 with chroma ≤0.02. Warm cream, sand, parchment, and beige body backgrounds are forbidden — warmth lives in Cooperative Mint and copy tone, not in the canvas.",
+        "section": "colors"
+      },
+      {
+        "name": "The Semantic Lock Rule",
+        "body": "Red is debt/expense/destructive. Mint is income/success/primary action. Amber is warning only. Never swap roles for visual variety.",
+        "section": "colors"
+      },
+      {
+        "name": "The Single Voice Rule",
+        "body": "Geist carries headings, buttons, labels, body, and data. No display/body pairing. No serif, no script, no gradient text.",
+        "section": "typography"
+      },
+      {
+        "name": "The Tabular Money Rule",
+        "body": "Every monetary value uses tabular-nums. Amounts align in lists, tables, and dashboard stat cards without ragged digits.",
+        "section": "typography"
+      },
+      {
+        "name": "The Subtle Lift Rule",
+        "body": "Cards and floating panels always carry a whisper of shadow. Resting surfaces are never naked on the canvas — border + shadow-sm minimum.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Overlay Escalation Rule",
+        "body": "Shadow strength scales with z-index layer. Dropdown < dialog < toast. Never use shadow-lg on a static card.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do use Cooperative Mint exclusively for primary actions, positive balances, and success — its scarcity is the brand.",
+      "Do render all money with tabular-nums and locale-aware ฿ formatting.",
+      "Do keep cards at rounded-xl (16px) with shadow-sm + 1px border — the default container vocabulary.",
+      "Do use 3px focus rings in Cooperative Mint at 50% opacity on all interactive elements.",
+      "Do support prefers-reduced-motion: reduce — crossfade or instant state changes, no choreographed page loads.",
+      "Do maintain WCAG 2.1 AA contrast, especially muted-foreground on Morning Balance Background.",
+      "Do use skeleton loaders for content areas, not centered spinners in blank space.",
+      "Do write empty states that teach the next action (\"Add your first transaction\", not \"Nothing here\")."
+    ],
+    "donts": [
+      "Don't use neon gradients, mascots, streaks, badges-as-gamification, or confetti on every action — PRODUCT.md forbids overly playful fintech.",
+      "Don't ship navy-and-gold hero metrics, identical icon-card grids, gradient text, or side-stripe callouts — generic SaaS dashboard tropes are banned.",
+      "Don't adopt dense corporate-banking jargon chrome or slow multi-step flows for simple tasks.",
+      "Don't use warm cream/sand/parchment body backgrounds — Morning Balance cool neutrals only.",
+      "Don't nest cards inside cards.",
+      "Don't use Cooperative Mint as decorative fill on large surface areas or chart backgrounds.",
+      "Don't reach for modals when inline or progressive disclosure would serve the task faster.",
+      "Don't pair a second sans or use display fonts in buttons, labels, or data tables.",
+      "Don't animate layout properties for page-load choreography — motion conveys state change only, 150–250ms."
+    ]
+  }
+}

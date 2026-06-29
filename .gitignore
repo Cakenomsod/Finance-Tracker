@@ -32,3 +32,4 @@ API.txt
 # Service account keys — never commit
 *-firebase-adminsdk-*.json
 docs/*-firebase-adminsdk-*.json
+

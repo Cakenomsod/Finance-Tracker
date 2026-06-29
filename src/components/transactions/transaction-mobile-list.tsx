@@ -4,7 +4,6 @@ import * as React from 'react'
 import { Edit2, MoreHorizontal, Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -17,6 +16,8 @@ import { getPaotangCapReasonLabel, PAOTANG_GOV_PERCENT } from '@/lib/transaction
 import { Transaction, Category, TripExpense } from '@/lib/firestore-types'
 import { DateGroupDividerRow } from '@/components/transactions/date-group-divider'
 import { MonthGroupDividerMobile } from '@/components/transactions/month-group-divider'
+import { TransactionEmptyState } from '@/components/transactions/transaction-empty-state'
+import { TransactionMobileListSkeleton } from '@/components/transactions/transaction-list-skeleton'
 import {
   formatTransactionDisplayTime,
   groupItemsByMonthAndDate,
@@ -47,22 +48,28 @@ interface TransactionMobileListProps {
   transactions: CombinedTransaction[]
   loading: boolean
   categoryByName: Map<string, Category>
-  selectedRows: string[]
-  onRowSelect: (id: string) => void
+  hasAnyData: boolean
+  hasActiveFilters: boolean
+  showLoadOlderHint: boolean
   onView: (transaction: CombinedTransaction) => void
   onEdit: (tx: Transaction) => void
   onDelete: (id: string, tx: Transaction | null) => void
+  onAddClick: () => void
+  onClearFilters: () => void
 }
 
 export function TransactionMobileList({
   transactions,
   loading,
   categoryByName,
-  selectedRows,
-  onRowSelect,
+  hasAnyData,
+  hasActiveFilters,
+  showLoadOlderHint,
   onView,
   onEdit,
   onDelete,
+  onAddClick,
+  onClearFilters,
 }: TransactionMobileListProps) {
   const grouped = React.useMemo(
     () =>
@@ -73,17 +80,23 @@ export function TransactionMobileList({
   )
 
   if (loading) {
-    return (
-      <div className="rounded-lg border bg-card p-8 text-center text-sm text-muted-foreground">
-        Loading transactions...
-      </div>
-    )
+    return <TransactionMobileListSkeleton />
   }
 
   if (transactions.length === 0) {
+    const emptyVariant = !hasAnyData
+      ? 'no-data'
+      : showLoadOlderHint
+        ? 'filtered-load-older'
+        : 'no-results'
+
     return (
-      <div className="rounded-lg border bg-card p-8 text-center text-sm text-muted-foreground">
-        No transactions found.
+      <div className="overflow-hidden rounded-lg border bg-card md:hidden">
+        <TransactionEmptyState
+          variant={emptyVariant}
+          onAddClick={onAddClick}
+          onClearFilters={hasActiveFilters ? onClearFilters : undefined}
+        />
       </div>
     )
   }
@@ -115,26 +128,12 @@ export function TransactionMobileList({
                 return (
                   <div
                     key={txId}
-                    className={cn(
-                      'flex cursor-pointer gap-3 p-4 transition-colors hover:bg-muted/30',
-                      selectedRows.includes(txId) && 'bg-muted/50'
-                    )}
+                    className="flex cursor-pointer gap-3 p-4 transition-colors hover:bg-muted/30"
                     onClick={(e) => {
                       if (shouldIgnoreRowClick(e.target)) return
                       onView(transaction)
                     }}
                   >
-                    <div
-                      data-row-click-ignore
-                      className="shrink-0"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <Checkbox
-                        checked={selectedRows.includes(txId)}
-                        onCheckedChange={() => onRowSelect(txId)}
-                        className="mt-1"
-                      />
-                    </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
@@ -218,7 +217,7 @@ export function TransactionMobileList({
                                   onClick={() => onEdit(transaction.rawTx!)}
                                 >
                                   <Edit2 className="mr-2 size-4" />
-                                  Edit
+                                  แก้ไข
                                 </DropdownMenuItem>
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem
@@ -228,12 +227,12 @@ export function TransactionMobileList({
                                   }
                                 >
                                   <Trash2 className="mr-2 size-4" />
-                                  Delete
+                                  ลบ
                                 </DropdownMenuItem>
                               </>
                             ) : (
                               <DropdownMenuItem disabled>
-                                Go to Trip to edit
+                                ไปที่หน้าทริปเพื่อแก้ไข
                               </DropdownMenuItem>
                             )}
                           </DropdownMenuContent>

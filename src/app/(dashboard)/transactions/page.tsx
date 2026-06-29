@@ -5,20 +5,13 @@ import {
   Search,
   Filter,
   Plus,
-  ChevronDown,
   MoreHorizontal,
   Edit2,
   Trash2,
-  ArrowUpDown,
-  Download,
-  Calendar,
-  Tag,
-  User,
-  X,
   Loader2,
 } from 'lucide-react'
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -32,10 +25,8 @@ import {
 } from '@/components/ui/table'
 import {
   DropdownMenu,
-  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
@@ -55,9 +46,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
-import { Checkbox } from '@/components/ui/checkbox'
 import { cn, amountColorClass } from '@/lib/utils'
 import { getTransactionEffectiveAmount, getPaotangCapReasonLabel, isPaotangPayment, PAOTANG_GOV_PERCENT } from '@/lib/transaction-payment'
 import { useWindowedTransactions } from '@/hooks/use-windowed-transactions'
@@ -85,6 +73,8 @@ import {
   useMonthTransition,
 } from '@/components/shared/month-transition'
 import { TransactionMobileList } from '@/components/transactions/transaction-mobile-list'
+import { TransactionEmptyState } from '@/components/transactions/transaction-empty-state'
+import { TransactionTableSkeleton } from '@/components/transactions/transaction-list-skeleton'
 import { TransactionDetailDialog } from '@/components/transactions/transaction-detail-dialog'
 import { TripExpenseDialog } from '@/components/trips/trip-expense-dialog'
 import { useTrips } from '@/hooks/use-trips'
@@ -98,6 +88,9 @@ import {
   toDateFromFirestore,
 } from '@/lib/datetime'
 import { shouldIgnoreRowClick } from '@/lib/row-click'
+
+const ALL_CATEGORIES = 'ทุกหมวดหมู่'
+
 type TransactionsPageRow = {
   id: string | undefined
   description: string
@@ -144,7 +137,7 @@ export default function TransactionsPage() {
   const { trips } = useTrips()
 
   const filterCategories = React.useMemo(
-    () => ['All Categories', ...categories.map((c) => c.name)],
+    () => [ALL_CATEGORIES, ...categories.map((c) => c.name)],
     [categories]
   )
 
@@ -205,8 +198,7 @@ export default function TransactionsPage() {
   )
 
   const [searchQuery, setSearchQuery] = React.useState('')
-  const [selectedCategory, setSelectedCategory] = React.useState('All Categories')
-  const [selectedRows, setSelectedRows] = React.useState<string[]>([])
+  const [selectedCategory, setSelectedCategory] = React.useState(ALL_CATEGORIES)
   const [isAddDialogOpen, setIsAddDialogOpen] = React.useState(false)
   const [editingTransaction, setEditingTransaction] = React.useState<Transaction | null>(null)
   const [isDetailOpen, setIsDetailOpen] = React.useState(false)
@@ -324,12 +316,12 @@ export default function TransactionsPage() {
     const catMatches = t.category?.toLowerCase().includes(searchQuery.toLowerCase()) || false
     const matchesSearch = descMatches || noteMatches || catMatches
     const matchesCategory =
-      selectedCategory === 'All Categories' || t.category === selectedCategory
+      selectedCategory === ALL_CATEGORIES || t.category === selectedCategory
     return matchesSearch && matchesCategory
   })
 
   const hasActiveFilters =
-    searchQuery.trim().length > 0 || selectedCategory !== 'All Categories'
+    searchQuery.trim().length > 0 || selectedCategory !== ALL_CATEGORIES
   const showLoadOlderHint =
     hasActiveFilters &&
     filteredTransactions.length === 0 &&
@@ -343,19 +335,16 @@ export default function TransactionsPage() {
     [filteredTransactions]
   )
 
-  const handleRowSelect = (id: string) => {
-    setSelectedRows((prev) =>
-      prev.includes(id) ? prev.filter((rowId) => rowId !== id) : [...prev, id]
-    )
-  }
+  const handleClearFilters = React.useCallback(() => {
+    setSearchQuery('')
+    setSelectedCategory(ALL_CATEGORIES)
+  }, [])
 
-  const handleSelectAll = () => {
-    if (selectedRows.length === filteredTransactions.length) {
-      setSelectedRows([])
-    } else {
-      setSelectedRows(filteredTransactions.map((t) => t.id as string))
-    }
-  }
+  const emptyVariant = !allCombined.length
+    ? 'no-data'
+    : showLoadOlderHint
+      ? 'filtered-load-older'
+      : 'no-results'
 
   const handleViewTransaction = (transaction: {
     isLegacy: boolean
@@ -385,9 +374,9 @@ export default function TransactionsPage() {
     <div className="flex flex-col gap-6 p-6">
       {/* Page Header */}
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Transactions</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">ธุรกรรม</h1>
         <p className="text-muted-foreground">
-          View and manage all your financial transactions.
+          ดูและจัดการรายการเงินทั้งหมดของคุณ
         </p>
       </div>
 
@@ -407,7 +396,7 @@ export default function TransactionsPage() {
           <div className="relative flex-1 max-w-sm">
             <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
-              placeholder="Search transactions..."
+              placeholder="ค้นหาธุรกรรม..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-9"
@@ -416,7 +405,7 @@ export default function TransactionsPage() {
           <Select value={selectedCategory} onValueChange={setSelectedCategory}>
             <SelectTrigger className="w-[180px]">
               <Filter className="mr-2 size-4" />
-              <SelectValue placeholder="Category" />
+              <SelectValue placeholder="หมวดหมู่" />
             </SelectTrigger>
             <SelectContent>
               {filterCategories.map((category) => (
@@ -426,28 +415,8 @@ export default function TransactionsPage() {
               ))}
             </SelectContent>
           </Select>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="icon">
-                <Calendar className="size-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuLabel>Date Range</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem>Today</DropdownMenuItem>
-              <DropdownMenuItem>This Week</DropdownMenuItem>
-              <DropdownMenuItem>This Month</DropdownMenuItem>
-              <DropdownMenuItem>Last 3 Months</DropdownMenuItem>
-              <DropdownMenuItem>Custom Range</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm">
-            <Download className="mr-2 size-4" />
-            Export
-          </Button>
           <Dialog open={isAddDialogOpen} onOpenChange={(open) => {
             setIsAddDialogOpen(open)
             if (!open) {
@@ -459,18 +428,18 @@ export default function TransactionsPage() {
             <DialogTrigger asChild>
               <Button size="sm" className="gap-2">
                 <Plus className="size-4" />
-                Add Transaction
+                เพิ่มธุรกรรม
               </Button>
             </DialogTrigger>
             <DialogContent className="max-h-[min(90vh,90dvh)] w-[calc(100vw-1rem)] overflow-y-auto overflow-x-hidden p-4 max-sm:top-[4vh] max-sm:translate-y-0 sm:max-w-[680px] sm:p-6">
               <DialogHeader>
                 <DialogTitle>
-                  {editingTransaction ? 'Edit Transaction' : ocrDraft ? 'ตรวจสอบธุรกรรมจาก AI' : 'Add Transaction'}
+                  {editingTransaction ? 'แก้ไขธุรกรรม' : ocrDraft ? 'ตรวจสอบธุรกรรมจาก AI' : 'เพิ่มธุรกรรม'}
                 </DialogTitle>
                 <DialogDescription>
                   {ocrDraft
                     ? 'ข้อมูลจาก Gemini — แก้ไขได้ก่อนกดบันทึก'
-                    : 'Enter the details for your transaction.'}
+                    : 'กรอกรายละเอียดธุรกรรมของคุณ'}
                 </DialogDescription>
               </DialogHeader>
               <TransactionForm
@@ -503,35 +472,6 @@ export default function TransactionsPage() {
         </div>
       </div>
 
-      {/* Selected Actions */}
-      {selectedRows.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2 rounded-lg bg-muted p-2">
-          <span className="text-sm text-muted-foreground">
-            {selectedRows.length} selected
-          </span>
-          <Button variant="ghost" size="sm">
-            <Tag className="mr-2 size-4" />
-            Add Tags
-          </Button>
-          <Button variant="ghost" size="sm">
-            <Edit2 className="mr-2 size-4" />
-            Edit Category
-          </Button>
-          <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive">
-            <Trash2 className="mr-2 size-4" />
-            Delete
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="ml-auto"
-            onClick={() => setSelectedRows([])}
-          >
-            <X className="size-4" />
-          </Button>
-        </div>
-      )}
-
       {/* Sticky summary — totals for selected month */}
       <div className="sticky top-0 z-20 -mx-6 border-b bg-background/95 px-6 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
         <div className="mb-3 flex justify-center">
@@ -549,7 +489,7 @@ export default function TransactionsPage() {
         >
           <Card className="shadow-sm animate-in fade-in-0 slide-in-from-bottom-1 duration-300 fill-mode-both motion-reduce:animate-none" style={{ animationDelay: '0ms' }}>
             <CardContent className="p-4">
-              <div className="text-sm text-muted-foreground">Total Income</div>
+              <div className="text-sm text-muted-foreground">รายรับรวม</div>
               <MonthAnimatedValue valueKey={`${monthKey}-income`} className="mt-1 block text-xl font-bold text-success sm:text-2xl">
                 +฿{summaryTotals.income.toLocaleString()}
               </MonthAnimatedValue>
@@ -557,7 +497,7 @@ export default function TransactionsPage() {
           </Card>
           <Card className="shadow-sm animate-in fade-in-0 slide-in-from-bottom-1 duration-300 fill-mode-both motion-reduce:animate-none" style={{ animationDelay: '45ms' }}>
             <CardContent className="p-4">
-              <div className="text-sm text-muted-foreground">Total Expenses</div>
+              <div className="text-sm text-muted-foreground">รายจ่ายรวม</div>
               <MonthAnimatedValue valueKey={`${monthKey}-expenses`} className="mt-1 block text-xl font-bold text-destructive sm:text-2xl">
                 -฿{summaryTotals.expenses.toLocaleString()}
               </MonthAnimatedValue>
@@ -565,7 +505,7 @@ export default function TransactionsPage() {
           </Card>
           <Card className="shadow-sm animate-in fade-in-0 slide-in-from-bottom-1 duration-300 fill-mode-both motion-reduce:animate-none" style={{ animationDelay: '90ms' }}>
             <CardContent className="p-4">
-              <div className="text-sm text-muted-foreground">Net Balance</div>
+              <div className="text-sm text-muted-foreground">ยอดสุทธิ</div>
               <MonthAnimatedValue
                 valueKey={`${monthKey}-net`}
                 className={cn('mt-1 block text-xl font-bold sm:text-2xl', amountColorClass(summaryTotals.net, 'text-foreground'))}
@@ -582,14 +522,17 @@ export default function TransactionsPage() {
         transactions={filteredTransactions}
         loading={loading}
         categoryByName={categoryByName}
-        selectedRows={selectedRows}
-        onRowSelect={handleRowSelect}
+        hasAnyData={allCombined.length > 0}
+        hasActiveFilters={hasActiveFilters}
+        showLoadOlderHint={showLoadOlderHint}
         onView={handleViewTransaction}
         onEdit={(tx) => {
           setEditingTransaction(tx)
           setIsAddDialogOpen(true)
         }}
         onDelete={(id, tx) => removeTransaction(id, tx)}
+        onAddClick={() => setIsAddDialogOpen(true)}
+        onClearFilters={handleClearFilters}
       />
 
       <Card className="hidden md:block">
@@ -598,74 +541,42 @@ export default function TransactionsPage() {
             <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead className="w-[40px]">
-                  <Checkbox
-                    checked={selectedRows.length === filteredTransactions.length}
-                    onCheckedChange={handleSelectAll}
-                  />
-                </TableHead>
-                <TableHead className="w-[80px]">
-                  <Button variant="ghost" size="sm" className="-ml-3 h-8">
-                    Time
-                    <ArrowUpDown className="ml-2 size-3" />
-                  </Button>
-                </TableHead>
-                <TableHead>Description</TableHead>
-                <TableHead>Category</TableHead>
-                <TableHead>Payer</TableHead>
-                <TableHead className="text-right">
-                  <Button variant="ghost" size="sm" className="-mr-3 h-8">
-                    Amount
-                    <ArrowUpDown className="ml-2 size-3" />
-                  </Button>
-                </TableHead>
+                <TableHead className="w-[80px]">เวลา</TableHead>
+                <TableHead>รายละเอียด</TableHead>
+                <TableHead>หมวดหมู่</TableHead>
+                <TableHead>ผู้จ่าย</TableHead>
+                <TableHead className="text-right">จำนวนเงิน</TableHead>
                 <TableHead className="w-[40px]"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading ? (
-                <TableRow>
-                  <TableCell colSpan={7} className="h-24 text-center">Loading transactions...</TableCell>
-                </TableRow>
+                <TransactionTableSkeleton />
               ) : filteredTransactions.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={7} className="h-24 text-center">
-                    <div className="space-y-1">
-                      <p>No transactions found.</p>
-                      {showLoadOlderHint && (
-                        <p className="text-xs text-muted-foreground">
-                          ลองเลื่อนลงเพื่อโหลดรายการเพิ่ม หรือล้างตัวกรอง
-                        </p>
-                      )}
-                    </div>
+                <TableRow className="hover:bg-transparent">
+                  <TableCell colSpan={6}>
+                    <TransactionEmptyState
+                      variant={emptyVariant}
+                      onAddClick={() => setIsAddDialogOpen(true)}
+                      onClearFilters={hasActiveFilters ? handleClearFilters : undefined}
+                    />
                   </TableCell>
                 </TableRow>
               ) : monthGroupedTransactions.map((monthGroup) => (
                 <React.Fragment key={monthGroup.monthKey}>
-                  <MonthGroupDividerRow label={monthGroup.label} colSpan={7} />
+                  <MonthGroupDividerRow label={monthGroup.label} colSpan={6} />
                   {monthGroup.dateGroups.map((group) => (
                 <React.Fragment key={group.dateKey}>
-                  <DateGroupDividerRow label={group.label} colSpan={7} />
+                  <DateGroupDividerRow label={group.label} colSpan={6} />
                   {group.items.map((transaction) => (
                 <TableRow
                   key={transaction.id}
-                  className={cn(
-                    'group cursor-pointer',
-                    selectedRows.includes(transaction.id!) && 'bg-muted/50'
-                  )}
+                  className="group cursor-pointer"
                   onClick={(e) => {
                     if (shouldIgnoreRowClick(e.target)) return
                     handleViewTransaction(transaction)
                   }}
                 >
-                  <TableCell>
-                    <div data-row-click-ignore onClick={(e) => e.stopPropagation()}>
-                      <Checkbox
-                        checked={selectedRows.includes(transaction.id!)}
-                        onCheckedChange={() => handleRowSelect(transaction.id!)}
-                      />
-                    </div>
-                  </TableCell>
                   <TableCell className="text-muted-foreground">
                     {(() => {
                       const txDate = toDateFromFirestore(transaction.date)
@@ -786,17 +697,17 @@ export default function TransactionsPage() {
                               setIsAddDialogOpen(true)
                             }}>
                               <Edit2 className="mr-2 size-4" />
-                              Edit
+                              แก้ไข
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem className="text-destructive" onClick={() => removeTransaction(transaction.id!, transaction.rawTx)}>
                               <Trash2 className="mr-2 size-4" />
-                              Delete
+                              ลบ
                             </DropdownMenuItem>
                           </>
                         ) : (
                           <DropdownMenuItem disabled>
-                            Go to Trip to edit
+                            ไปที่หน้าทริปเพื่อแก้ไข
                           </DropdownMenuItem>
                         )}
                       </DropdownMenuContent>
@@ -857,7 +768,7 @@ export default function TransactionsPage() {
         size="lg"
         onClick={() => setIsAddDialogOpen(true)}
         className="fixed right-4 z-40 size-14 rounded-full shadow-lg bottom-[calc(4.5rem+env(safe-area-inset-bottom))] md:hidden"
-        aria-label="Add transaction"
+        aria-label="เพิ่มธุรกรรม"
       >
         <Plus className="size-6" />
       </Button>
