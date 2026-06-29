@@ -4,6 +4,20 @@ const nextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
+  async redirects() {
+    return [
+      {
+        source: '/analytics',
+        destination: '/dashboard',
+        permanent: true,
+      },
+      {
+        source: '/transactions',
+        destination: '/',
+        permanent: true,
+      },
+    ];
+  },
 };
 
 export default nextConfig;

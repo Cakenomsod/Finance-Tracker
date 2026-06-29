@@ -33,7 +33,7 @@ export function QuickAddProvider({ children }: { children: React.ReactNode }) {
   const [isOpen, setIsOpen] = React.useState(false)
 
   const openQuickAdd = React.useCallback(() => setIsOpen(true), [])
-  const openSearch = React.useCallback(() => router.push('/transactions'), [router])
+  const openSearch = React.useCallback(() => router.push('/'), [router])
 
   const value = React.useMemo(
     () => ({ openQuickAdd, openSearch }),

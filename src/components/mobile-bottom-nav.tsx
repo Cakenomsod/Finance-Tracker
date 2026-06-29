@@ -10,7 +10,6 @@ import {
   Users,
   Plus,
   MoreHorizontal,
-  BarChart3,
   Sparkles,
   MessageCircle,
   Settings,
@@ -29,15 +28,14 @@ import {
 } from '@/components/ui/sheet'
 
 const primaryNav = [
-  { title: 'Home', icon: LayoutDashboard, href: '/' },
-  { title: 'Transactions', icon: Receipt, href: '/transactions' },
+  { title: 'Transactions', icon: Receipt, href: '/' },
   { title: 'Trips', icon: Plane, href: '/trips' },
   { title: 'Debts', icon: Users, href: '/debts' },
 ]
 
 const moreNav = [
   { title: 'Friends', icon: UserPlus2, href: '/friends', badge: 'friends' as const },
-  { title: 'Analytics', icon: BarChart3, href: '/analytics' },
+  { title: 'Dashboard', icon: LayoutDashboard, href: '/dashboard' },
   { title: 'AI Insights', icon: Sparkles, href: '/insights' },
   { title: 'LINE Bot', icon: MessageCircle, href: '/line' },
   { title: 'Settings', icon: Settings, href: '/settings' },

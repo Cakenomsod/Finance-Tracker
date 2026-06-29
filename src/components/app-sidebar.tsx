@@ -8,7 +8,6 @@ import {
   Receipt,
   Users,
   Plane,
-  BarChart3,
   Sparkles,
   MessageCircle,
   Settings,
@@ -55,15 +54,14 @@ import { AppLogo } from '@/components/app-logo'
 import { Badge } from '@/components/ui/badge'
 
 const mainNavItems = [
-  { title: 'Dashboard', icon: LayoutDashboard, href: '/' },
-  { title: 'Transactions', icon: Receipt, href: '/transactions' },
+  { title: 'Transactions', icon: Receipt, href: '/' },
   { title: 'Debts & Shared', icon: Users, href: '/debts' },
   { title: 'Trip Mode', icon: Plane, href: '/trips' },
   { title: 'Friends', icon: UserPlus2, href: '/friends' },
 ]
 
 const insightsNavItems = [
-  { title: 'Analytics', icon: BarChart3, href: '/analytics' },
+  { title: 'Dashboard', icon: LayoutDashboard, href: '/dashboard' },
   { title: 'AI Insights', icon: Sparkles, href: '/insights' },
 ]
 
@@ -109,7 +107,7 @@ export function AppSidebar({ children }: { children: React.ReactNode }) {
                   <SidebarMenuItem key={item.href}>
                     <SidebarMenuButton
                       asChild
-                      isActive={pathname === item.href || pathname.startsWith(item.href + '/')}
+                      isActive={pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href + '/'))}
                       tooltip={item.title}
                     >
                       <Link href={item.href} className="relative flex items-center gap-2">

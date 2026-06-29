@@ -9,6 +9,7 @@ export function middleware(request: NextRequest) {
   const isDashboardRoute = 
     request.nextUrl.pathname === '/' ||
     request.nextUrl.pathname.startsWith('/transactions') ||
+    request.nextUrl.pathname.startsWith('/dashboard') ||
     request.nextUrl.pathname.startsWith('/debts') ||
     request.nextUrl.pathname.startsWith('/trips') ||
     request.nextUrl.pathname.startsWith('/analytics') ||
