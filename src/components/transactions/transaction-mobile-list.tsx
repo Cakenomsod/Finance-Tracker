@@ -14,7 +14,7 @@ import {
 import { cn, amountColorClass } from '@/lib/utils'
 import { getPaotangCapReasonLabel, PAOTANG_GOV_PERCENT } from '@/lib/transaction-payment'
 import { Transaction, Category, TripExpense } from '@/lib/firestore-types'
-import { DateGroupDividerRow } from '@/components/transactions/date-group-divider'
+import { DateGroupDividerMobile } from '@/components/transactions/date-group-divider'
 import { MonthGroupDividerMobile } from '@/components/transactions/month-group-divider'
 import { TransactionEmptyState } from '@/components/transactions/transaction-empty-state'
 import { TransactionMobileListSkeleton } from '@/components/transactions/transaction-list-skeleton'
@@ -109,11 +109,7 @@ export function TransactionMobileList({
           {monthGroup.dateGroups.map((group) => (
         <div key={group.dateKey}>
           <div className="overflow-hidden rounded-lg border bg-card">
-            <table className="w-full">
-              <tbody>
-                <DateGroupDividerRow label={group.label} colSpan={1} />
-              </tbody>
-            </table>
+            <DateGroupDividerMobile label={group.label} />
             <div className="divide-y">
               {group.items.map((transaction) => {
                 const txId = transaction.id!

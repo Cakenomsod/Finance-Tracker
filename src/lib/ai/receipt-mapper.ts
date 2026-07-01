@@ -1,5 +1,6 @@
 import { Timestamp } from 'firebase/firestore';
 import { ReceiptParseResult } from '@/lib/ai/receipt-schema';
+import { normalizeAiDate, normalizeAiTime } from '@/lib/ai/ai-datetime';
 import { parseLocalDateTime } from '@/lib/datetime';
 import { parseTripLocalDateTime } from '@/lib/trip-currency';
 import { TripExpense, TripCurrency, Transaction, TripExpensePayer, TripExpenseShare } from '@/lib/firestore-types';
@@ -122,36 +123,16 @@ function mapSplitToTripMembers(
   };
 }
 
-/** Normalize AI time output to HH:mm for form inputs; null if not provided */
-export function normalizeAiTime(time?: string): string | null {
-  if (!time?.trim()) return null;
-
-  const t = time.trim();
-
-  const ampm = t.match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM|am|pm)$/);
-  if (ampm) {
-    let h = parseInt(ampm[1], 10);
-    const m = ampm[2];
-    if (ampm[3].toLowerCase() === 'pm' && h < 12) h += 12;
-    if (ampm[3].toLowerCase() === 'am' && h === 12) h = 0;
-    return `${String(Math.min(23, h)).padStart(2, '0')}:${m}`;
-  }
-
-  const hms = t.match(/^(\d{1,2}):(\d{2})/);
-  if (hms) {
-    return `${String(Math.min(23, parseInt(hms[1], 10))).padStart(2, '0')}:${hms[2]}`;
-  }
-
-  return null;
-}
-
 function toFirestoreDate(parsed: ReceiptParseResult, timeZone?: string | null): Date {
-  const time = normalizeAiTime(parsed.time) ?? '12:00';
+  const date = normalizeAiDate(parsed.date, timeZone ?? undefined);
+  const time = normalizeAiTime(parsed.time, timeZone ?? undefined);
   if (timeZone) {
-    return parseTripLocalDateTime(parsed.date, time, timeZone);
+    return parseTripLocalDateTime(date, time, timeZone);
   }
-  return parseLocalDateTime(parsed.date, time);
+  return parseLocalDateTime(date, time);
 }
+
+export { normalizeAiDate, normalizeAiTime } from '@/lib/ai/ai-datetime';
 
 export function receiptParseToTripExpenseDraft(
   parsed: ReceiptParseResult,

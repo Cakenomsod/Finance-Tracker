@@ -8,6 +8,7 @@ import {
   type ExpenseTextAiContext,
 } from '@/lib/ai/receipt-schema';
 import { parseJsonFromAiContent } from '@/lib/ai/parse-json';
+import { buildAiDateContext, aiTimeZoneFromContext } from '@/lib/ai/ai-datetime';
 import {
   geminiModelCandidates,
   getChatModel,
@@ -83,7 +84,7 @@ export async function parseReceiptImage(
   return generateJsonWithModels(
     geminiModelCandidates(getReceiptModel()),
     [
-      { text: RECEIPT_PARSE_PROMPT + contextHint },
+      { text: RECEIPT_PARSE_PROMPT + buildAiDateContext(aiTimeZoneFromContext(context)) + contextHint },
       {
         inlineData: {
           mimeType,
@@ -105,7 +106,7 @@ export async function parseExpenseText(
 
   return generateJsonWithModels(
     geminiModelCandidates(getChatModel()),
-    [{ text: EXPENSE_TEXT_PARSE_PROMPT + contextHint + contactsHint + `\n\nUser input:\n${text.trim()}` }]
+    [{ text: EXPENSE_TEXT_PARSE_PROMPT + buildAiDateContext(aiTimeZoneFromContext(context)) + contextHint + contactsHint + `\n\nUser input:\n${text.trim()}` }]
   );
 }
 

@@ -84,8 +84,6 @@ export const TripAiPanel = React.forwardRef<TripAiPanelHandle, TripAiPanelProps>
           ref={aiInputRef}
           tripId={tripId}
           storageScope={`trip:${tripId}`}
-          aiTextProvider="gemma"
-          showTextProviderSelect={true}
           pendingImmichIds={pendingImmichIds}
           onImmichNoteReady={(id) => setPendingImmichIds((p) => [...new Set([...p, id])])}
           onReview={handleReview}

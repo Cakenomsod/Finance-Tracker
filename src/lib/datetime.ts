@@ -18,6 +18,26 @@ export function toDateFromFirestore(value: FirestoreDateLike): Date | null {
   return null
 }
 
+/** `YYYY-MM-DD` for a specific IANA timezone (default: Asia/Bangkok). */
+export function getLocalTodayIso(timeZone = 'Asia/Bangkok'): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date())
+}
+
+/** `HH:mm` for a specific IANA timezone (default: Asia/Bangkok). */
+export function getLocalTimeInput(timeZone = 'Asia/Bangkok'): string {
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(new Date())
+}
+
 /** `YYYY-MM-DD` in the user's local timezone (for `<input type="date">`). */
 export function formatLocalDateInput(date: Date): string {
   const y = date.getFullYear()

@@ -61,7 +61,10 @@ import { allocateSettlementAcrossTrips } from '@/lib/trip-balance'
 import { useAuth } from '@/hooks/use-auth'
 import { Debt, Transaction, TripSettlement } from '@/lib/firestore-types'
 import { TransactionForm } from '@/components/transactions/transaction-form'
-import { DateGroupDividerRow } from '@/components/transactions/date-group-divider'
+import {
+  DateGroupDividerMobile,
+  DateGroupDividerRow,
+} from '@/components/transactions/date-group-divider'
 import { createTripSettlement } from '@/lib/firestore'
 import { createDebtSettlementTransaction } from '@/lib/debt-payment'
 import { Timestamp } from 'firebase/firestore'
@@ -159,11 +162,7 @@ function DebtTable({
       <div className="space-y-3 md:hidden">
         {groupedDebts.map((group) => (
           <div key={group.dateKey} className="overflow-hidden rounded-lg border bg-card">
-            <table className="w-full">
-              <tbody>
-                <DateGroupDividerRow label={group.label} colSpan={1} />
-              </tbody>
-            </table>
+            <DateGroupDividerMobile label={group.label} />
             <div className="divide-y">
               {group.items.map((debt) => {
                 const person =
@@ -890,9 +889,7 @@ export default function DebtsPage() {
                 <div className="divide-y md:hidden">
                   {groupedPaymentHistory.map((group) => (
                     <div key={group.dateKey}>
-                      <div className="px-4 py-2">
-                        <DateGroupDividerRow label={group.label} colSpan={1} />
-                      </div>
+                      <DateGroupDividerMobile label={group.label} />
                       {group.items.map((payment) => (
                         <div key={payment.id} className="px-4 py-4">
                           <div className="flex items-start justify-between gap-3">

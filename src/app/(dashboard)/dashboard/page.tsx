@@ -67,6 +67,7 @@ import {
   getFinancialHabits as getLibFinancialHabits,
   getWeekSpendingComparison,
   computeMonthTotals,
+  computeCumulativeBalanceUpToMonth,
   computePercentChange,
   mergeTransactions,
   type CombinedTransaction,
@@ -220,6 +221,10 @@ export default function DashboardPage() {
 
   const currentTotals = React.useMemo(() => computeMonthTotals(selectedMonthTxs), [selectedMonthTxs])
   const previousTotals = React.useMemo(() => computeMonthTotals(previousMonthTxs), [previousMonthTxs])
+  const cumulativeBalance = React.useMemo(
+    () => computeCumulativeBalanceUpToMonth(summaryCombined, selectedMonth.year, selectedMonth.month),
+    [summaryCombined, selectedMonth]
+  )
 
   const netChange = React.useMemo(
     () => computePercentChange(currentTotals.net, previousTotals.net),
@@ -352,6 +357,7 @@ export default function DashboardPage() {
         monthDirection={monthDirection}
         selectedMonthLabel={monthLabel}
         currentTotals={currentTotals}
+        cumulativeBalance={cumulativeBalance}
         netChange={netChange}
         incomeChange={incomeChange}
         expenseChange={expenseChange}

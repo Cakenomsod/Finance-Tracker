@@ -78,6 +78,7 @@ export function MonthlySummaryCard({
   monthDirection,
   selectedMonthLabel,
   currentTotals,
+  cumulativeBalance,
   netChange,
   incomeChange,
   expenseChange,
@@ -88,6 +89,7 @@ export function MonthlySummaryCard({
   monthDirection: MonthDirection
   selectedMonthLabel: string
   currentTotals: ReturnType<typeof computeMonthTotals>
+  cumulativeBalance: number
   netChange: ReturnType<typeof computePercentChange>
   incomeChange: ReturnType<typeof computePercentChange>
   expenseChange: ReturnType<typeof computePercentChange>
@@ -100,25 +102,37 @@ export function MonthlySummaryCard({
         <CardContent className="p-4 sm:p-6">
           <div className="space-y-1">
             <p className="text-sm font-medium text-muted-foreground">
-              Net Cash Flow
-              <span className="font-normal text-muted-foreground/80"> · {selectedMonthLabel}</span>
+              Total Balance
+              <span className="font-normal text-muted-foreground/80"> · through {selectedMonthLabel}</span>
             </p>
             <MonthAnimatedValue
-              valueKey={`${monthKey}-net`}
+              valueKey={`${monthKey}-balance`}
               className={cn(
                 'truncate text-3xl font-bold tabular-nums tracking-tight sm:text-4xl',
-                currentTotals.net >= 0 ? 'text-foreground' : 'text-destructive'
+                cumulativeBalance >= 0 ? 'text-foreground' : 'text-destructive'
               )}
             >
-              {formatMoney(currentTotals.net, currency, true)}
+              {formatMoney(cumulativeBalance, currency)}
             </MonthAnimatedValue>
+            <p className="pt-1 text-xs text-muted-foreground">
+              Net cash flow this month:{' '}
+              <MonthAnimatedValue
+                valueKey={`${monthKey}-net-inline`}
+                className={cn(
+                  'inline font-medium tabular-nums',
+                  currentTotals.net >= 0 ? 'text-primary' : 'text-destructive'
+                )}
+              >
+                {formatMoney(currentTotals.net, currency, true)}
+              </MonthAnimatedValue>
+            </p>
             <div className="flex flex-wrap items-center gap-2 pt-1">
               <ChangeBadge
                 change={netChange.value}
                 changeType={netChange.type}
                 valueKey={`${monthKey}-net-change`}
               />
-              <span className="text-xs text-muted-foreground">vs last month</span>
+              <span className="text-xs text-muted-foreground">monthly net vs last month</span>
             </div>
           </div>
 

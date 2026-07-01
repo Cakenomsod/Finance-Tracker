@@ -399,6 +399,23 @@ export function computeMonthTotals(transactions: CombinedTransaction[]) {
   }
 }
 
+/** Cumulative net balance from all transactions through the end of the given month. */
+export function computeCumulativeBalanceUpToMonth(
+  transactions: CombinedTransaction[],
+  year: number,
+  month: number
+): number {
+  const endOfMonth = new Date(year, month + 1, 0, 23, 59, 59, 999)
+  let balance = 0
+  for (const tx of transactions) {
+    const d = getDateFromTx(tx)
+    if (d <= endOfMonth) {
+      balance += getCountedNetThb(tx)
+    }
+  }
+  return Math.round(balance)
+}
+
 export function computePercentChange(
   current: number,
   previous: number

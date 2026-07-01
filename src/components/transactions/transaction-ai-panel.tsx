@@ -67,8 +67,6 @@ export const TransactionAiPanel = React.forwardRef<
       <AiExpenseQuickInput
         ref={aiInputRef}
         storageScope="transactions"
-        aiTextProvider="gemma"
-        showTextProviderSelect={true}
         pendingImmichIds={pendingImmichIds}
         onImmichNoteReady={(id) => setPendingImmichIds((p) => [...new Set([...p, id])])}
         onReview={handleReview}

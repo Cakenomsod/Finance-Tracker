@@ -6,10 +6,6 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/components/ui/select'
-import { AiTextProvider } from '@/lib/firestore-types'
 import { ReceiptParseResult } from '@/lib/ai/receipt-schema'
 import {
   AiParseJob,
@@ -25,17 +21,10 @@ export interface AiExpenseQuickInputProps {
   tripId?: string
   /** localStorage scope for persisting parse jobs */
   storageScope: string
-  aiTextProvider?: AiTextProvider
-  /** แสดงตัวเลือก Local / Gemini สำหรับทั้งข้อความและรูปใบเสร็จ */
-  showTextProviderSelect?: boolean
   /** เรียกเมื่อผู้ใช้กดตรวจสอบ/แก้ไขจาก job ที่เสร็จแล้ว */
   onReview?: (result: ReceiptParseResult, immichIds: string[], jobId: string) => void
   pendingImmichIds?: string[]
   onImmichNoteReady?: (assetId: string) => void
-}
-
-function providerLabel(p: AiTextProvider) {
-  return p === 'local' ? 'Local AI' : 'Gemini'
 }
 
 function statusLabel(job: AiParseJob) {
@@ -55,8 +44,6 @@ export const AiExpenseQuickInput = React.forwardRef<
   {
     tripId,
     storageScope,
-    aiTextProvider = 'gemma',
-    showTextProviderSelect = true,
     onReview,
     pendingImmichIds = [],
     onImmichNoteReady,
@@ -64,7 +51,6 @@ export const AiExpenseQuickInput = React.forwardRef<
   ref
 ) {
   const [input, setInput] = React.useState('')
-  const [textProvider, setTextProvider] = React.useState<AiTextProvider>(aiTextProvider)
   const [uploadingNote, setUploadingNote] = React.useState(false)
   const [jobs, setJobs] = React.useState<AiParseJob[]>(() => loadAiParseJobs(storageScope))
   const skipSaveRef = React.useRef(true)
@@ -80,10 +66,6 @@ export const AiExpenseQuickInput = React.forwardRef<
 
   const receiptMode = !!pendingReceiptFile
   const activeJobCount = jobs.filter((j) => j.status === 'processing').length
-
-  React.useEffect(() => {
-    setTextProvider(aiTextProvider)
-  }, [aiTextProvider])
 
   React.useEffect(() => {
     setJobs(loadAiParseJobs(storageScope))
@@ -181,7 +163,7 @@ export const AiExpenseQuickInput = React.forwardRef<
 
   const enqueueTextParse = (text: string) => {
     const job = createAiParseJob({
-      provider: textProvider,
+      provider: 'gemma',
       kind: 'text',
       inputLabel: text.length > 80 ? `${text.slice(0, 80)}…` : text,
       immichIds: [...pendingImmichRef.current],
@@ -193,7 +175,7 @@ export const AiExpenseQuickInput = React.forwardRef<
 
   const enqueueReceiptParse = (file: File, extraInstructions: string) => {
     const job = createAiParseJob({
-      provider: textProvider,
+      provider: 'gemma',
       kind: 'receipt',
       inputLabel: file.name || 'รูปใบเสร็จ',
       immichIds: [...pendingImmichRef.current],
@@ -260,22 +242,8 @@ export const AiExpenseQuickInput = React.forwardRef<
 
         </div>
         <div className="flex items-center gap-1.5 shrink-0 ml-auto">
-          {showTextProviderSelect && (
-            <Select
-              value={textProvider}
-              onValueChange={(v) => setTextProvider(v as AiTextProvider)}
-            >
-              <SelectTrigger className="h-7 w-[118px] text-[10px] px-2">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="local">Local AI</SelectItem>
-                <SelectItem value="gemma">Gemini</SelectItem>
-              </SelectContent>
-            </Select>
-          )}
           <Badge variant="secondary" className="text-[10px]">
-            {providerLabel(textProvider)}
+            Gemini
           </Badge>
         </div>
       </div>
@@ -433,7 +401,7 @@ export const AiExpenseQuickInput = React.forwardRef<
                   <div className="min-w-0 flex-1">
                     <p className="font-medium truncate">{job.inputLabel}</p>
                     <p className="text-muted-foreground">
-                      {job.kind === 'receipt' ? 'รูปใบเสร็จ' : 'ข้อความ'} · {providerLabel(job.provider)} · {statusLabel(job)}
+                      {job.kind === 'receipt' ? 'รูปใบเสร็จ' : 'ข้อความ'} · Gemini · {statusLabel(job)}
                     </p>
                   </div>
                   <button

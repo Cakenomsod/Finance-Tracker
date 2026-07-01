@@ -14,6 +14,7 @@ import {
 import { buildContactsPromptHint, resolveSplitPeople } from '@/lib/ai/contact-resolve';
 import type { AiContact } from '@/lib/ai/contact-resolve';
 import { tryParseExpenseTextStrictFormat } from '@/lib/ai/expense-text-heuristic';
+import { normalizeReceiptDateTime, aiTimeZoneFromContext } from '@/lib/ai/ai-datetime';
 import { getGoogleAiApiKey } from '@/lib/ai/env';
 
 export interface AiProviderConfig {
@@ -34,11 +35,17 @@ export async function parseReceiptImageWithProvider(
     if (!config.localAiConfig?.baseUrl) {
       throw new Error('Local AI is not configured. Please set up Local AI URL in Settings.');
     }
-    return parseReceiptImageLocal(imageBuffer, mimeType, config.localAiConfig, context);
+    return normalizeReceiptDateTime(
+      await parseReceiptImageLocal(imageBuffer, mimeType, config.localAiConfig, context),
+      aiTimeZoneFromContext(context)
+    );
   }
 
   // Default to Gemma API
-  return parseReceiptImage(imageBuffer, mimeType, context);
+  return normalizeReceiptDateTime(
+    await parseReceiptImage(imageBuffer, mimeType, context),
+    aiTimeZoneFromContext(context)
+  );
 }
 
 /**
@@ -55,8 +62,10 @@ export async function parseExpenseTextWithProvider(
       ? context.currency
       : 'THB';
 
+  const timeZone = aiTimeZoneFromContext(context);
+
   const strictMatch = tryParseExpenseTextStrictFormat(text, currency);
-  if (strictMatch) return strictMatch;
+  if (strictMatch) return normalizeReceiptDateTime(strictMatch, timeZone);
 
   const enrichedContext: ExpenseTextAiContext = {
     ...context,
@@ -75,7 +84,7 @@ export async function parseExpenseTextWithProvider(
     }
   } catch (aiError) {
     const retry = tryParseExpenseTextStrictFormat(text, currency);
-    if (retry) return retry;
+    if (retry) return normalizeReceiptDateTime(retry, timeZone);
 
     if (config.provider === 'local' && getGoogleAiApiKey()) {
       try {
@@ -89,14 +98,17 @@ export async function parseExpenseTextWithProvider(
   }
 
   if (contacts?.length) {
-    return {
-      ...result,
-      payers: resolveSplitPeople(result.payers, contacts),
-      shares: resolveSplitPeople(result.shares, contacts),
-    };
+    return normalizeReceiptDateTime(
+      {
+        ...result,
+        payers: resolveSplitPeople(result.payers, contacts),
+        shares: resolveSplitPeople(result.shares, contacts),
+      },
+      timeZone
+    );
   }
 
-  return result;
+  return normalizeReceiptDateTime(result, timeZone);
 }
 
 /**

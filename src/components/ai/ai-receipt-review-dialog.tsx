@@ -84,9 +84,7 @@ export function AiReceiptReviewDialog({
             <Row label="รายละเอียด" value={result.description} />
             <Row label="หมวดหมู่" value={result.category} />
             <Row label="วันที่" value={result.date} />
-            {normalizeAiTime(result.time) && (
-              <Row label="เวลา" value={normalizeAiTime(result.time)!} />
-            )}
+            <Row label="เวลา" value={normalizeAiTime(result.time)} />
             <Row
               label="ยอดรวม"
               value={`${result.totalAmount.toLocaleString()} ${currency}`}

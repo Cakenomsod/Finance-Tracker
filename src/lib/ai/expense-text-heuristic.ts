@@ -1,4 +1,5 @@
 import { ReceiptParseResult } from '@/lib/ai/receipt-schema';
+import { getLocalTimeInput, getLocalTodayIso } from '@/lib/datetime';
 
 const VALID_CATEGORIES = [
   'Food & Dining', 'Transport', 'Shopping', 'Entertainment',
@@ -14,7 +15,7 @@ const SIMPLE_AMOUNT_NAME_PATTERN =
   /^(\d+(?:\.\d+)?)\s*(?:บาท|บ|฿|baht)?\s+([^\d,]+?)$/i;
 
 function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
+  return getLocalTodayIso();
 }
 
 function guessCategory(name: string): string {
@@ -66,6 +67,7 @@ export function tryParseExpenseTextStrictFormat(
     description: name,
     category: guessCategory(name),
     date: todayIso(),
+    time: getLocalTimeInput(),
     totalAmount: price,
     currency: defaultCurrency,
   };

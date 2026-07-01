@@ -59,6 +59,7 @@ import {
   mergeTransactions,
   filterByMonth,
   computeMonthTotals,
+  computeCumulativeBalanceUpToMonth,
   collectMonthsWithData,
 } from '@/lib/aggregate-transactions'
 import { useCategories } from '@/hooks/use-categories'
@@ -310,6 +311,11 @@ export default function TransactionsPage() {
     return computeMonthTotals(monthTxs)
   }, [summaryCombined, selectedMonth])
 
+  const cumulativeBalance = React.useMemo(
+    () => computeCumulativeBalanceUpToMonth(summaryCombined, selectedMonth.year, selectedMonth.month),
+    [summaryCombined, selectedMonth]
+  )
+
   const filteredTransactions = allCombined.filter((t) => {
     const descMatches = t.description?.toLowerCase().includes(searchQuery.toLowerCase()) || false
     const noteMatches = t.note?.toLowerCase().includes(searchQuery.toLowerCase()) || false
@@ -485,7 +491,7 @@ export default function TransactionsPage() {
         <MonthContentTransition
           monthKey={monthKey}
           direction={monthDirection}
-          className="grid gap-3 sm:grid-cols-3"
+          className="grid grid-cols-2 gap-3 sm:grid-cols-4"
         >
           <Card className="shadow-sm animate-in fade-in-0 slide-in-from-bottom-1 duration-300 fill-mode-both motion-reduce:animate-none" style={{ animationDelay: '0ms' }}>
             <CardContent className="p-4">
@@ -505,7 +511,7 @@ export default function TransactionsPage() {
           </Card>
           <Card className="shadow-sm animate-in fade-in-0 slide-in-from-bottom-1 duration-300 fill-mode-both motion-reduce:animate-none" style={{ animationDelay: '90ms' }}>
             <CardContent className="p-4">
-              <div className="text-sm text-muted-foreground">ยอดสุทธิ</div>
+              <div className="text-sm text-muted-foreground">ยอดสุทธิเดือนนี้</div>
               <MonthAnimatedValue
                 valueKey={`${monthKey}-net`}
                 className={cn('mt-1 block text-xl font-bold sm:text-2xl', amountColorClass(summaryTotals.net, 'text-foreground'))}
@@ -513,6 +519,19 @@ export default function TransactionsPage() {
                 {summaryTotals.net >= 0 ? '+' : ''}฿
                 {Math.abs(summaryTotals.net).toLocaleString()}
               </MonthAnimatedValue>
+            </CardContent>
+          </Card>
+          <Card className="shadow-sm animate-in fade-in-0 slide-in-from-bottom-1 duration-300 fill-mode-both motion-reduce:animate-none" style={{ animationDelay: '135ms' }}>
+            <CardContent className="p-4">
+              <div className="text-sm text-muted-foreground">เงินสะสมทั้งหมด</div>
+              <MonthAnimatedValue
+                valueKey={`${monthKey}-balance`}
+                className={cn('mt-1 block text-xl font-bold sm:text-2xl', amountColorClass(cumulativeBalance, 'text-foreground'))}
+              >
+                {cumulativeBalance >= 0 ? '' : '-'}฿
+                {Math.abs(cumulativeBalance).toLocaleString()}
+              </MonthAnimatedValue>
+              <p className="mt-1 text-xs text-muted-foreground">สะสมถึงสิ้นเดือนนี้</p>
             </CardContent>
           </Card>
         </MonthContentTransition>
