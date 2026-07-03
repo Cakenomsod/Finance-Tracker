@@ -46,15 +46,25 @@ function DialogOverlay({
   )
 }
 
+const NESTED_OVERLAY_SELECTORS = [
+  '[data-slot="select-content"]',
+  '[data-slot="popover-content"]',
+  '[data-slot="dropdown-menu-content"]',
+  '[data-slot="calendar"]',
+  '[data-radix-select-content]',
+  '[data-radix-popper-content-wrapper]',
+] as const
+
 function isNestedOverlayTarget(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return false
-  return Boolean(
-    target.closest('[data-slot="select-content"]') ||
-      target.closest('[data-slot="popover-content"]') ||
-      target.closest('[data-slot="dropdown-menu-content"]') ||
-      target.closest('[data-slot="calendar"]') ||
-      target.closest('[data-radix-select-content]') ||
-      target.closest('[data-radix-popper-content-wrapper]')
+  return NESTED_OVERLAY_SELECTORS.some((selector) => target.closest(selector))
+}
+
+/** Radix portals dismiss on outside click; block dialog close until nested UI is gone. */
+function hasOpenNestedOverlay(): boolean {
+  if (typeof document === 'undefined') return false
+  return NESTED_OVERLAY_SELECTORS.some((selector) =>
+    document.querySelector(`${selector}[data-state="open"]`)
   )
 }
 
@@ -78,14 +88,14 @@ function DialogContent({
           className,
         )}
         onInteractOutside={(e) => {
-          if (isNestedOverlayTarget(e.target)) {
+          if (hasOpenNestedOverlay() || isNestedOverlayTarget(e.target)) {
             e.preventDefault()
             return
           }
           onInteractOutside?.(e)
         }}
         onPointerDownOutside={(e) => {
-          if (isNestedOverlayTarget(e.target)) {
+          if (hasOpenNestedOverlay() || isNestedOverlayTarget(e.target)) {
             e.preventDefault()
             return
           }

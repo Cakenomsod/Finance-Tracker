@@ -68,7 +68,7 @@ import {
 
 } from '@/lib/transaction-debt';
 
-
+import { reverseDebtPaymentOnDelete } from '@/lib/reverse-debt-payment';
 
 const PAGE_SIZE = 50;
 
@@ -551,6 +551,12 @@ export function useWindowedTransactions(userId: string | undefined) {
         if (ids.length > 0) {
 
           await requestDeleteImmichAssets(ids);
+
+        }
+
+        if (tx) {
+
+          await reverseDebtPaymentOnDelete(user.uid, tx);
 
         }
 

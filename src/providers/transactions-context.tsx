@@ -28,6 +28,7 @@ import {
   deleteTransactionDebts,
   syncTransactionDebts,
 } from '@/lib/transaction-debt';
+import { reverseDebtPaymentOnDelete } from '@/lib/reverse-debt-payment';
 
 export interface TransactionsContextValue {
   transactions: Transaction[];
@@ -131,6 +132,9 @@ export function TransactionsProvider({ children }: { children: ReactNode }) {
       });
       if (ids.length > 0) {
         await requestDeleteImmichAssets(ids);
+      }
+      if (tx) {
+        await reverseDebtPaymentOnDelete(user.uid, tx);
       }
       await deleteTransactionDebts(id);
       return deleteTransaction(id);

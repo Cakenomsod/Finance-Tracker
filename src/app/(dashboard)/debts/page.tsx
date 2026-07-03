@@ -67,6 +67,11 @@ import {
 } from '@/components/transactions/date-group-divider'
 import { createTripSettlement } from '@/lib/firestore'
 import { createDebtSettlementTransaction } from '@/lib/debt-payment'
+import {
+  findDebtPaymentTransaction,
+  findTripBatchDebtPaymentTransaction,
+  reverseDebtPaymentFromSettlement,
+} from '@/lib/reverse-debt-payment'
 import { Timestamp } from 'firebase/firestore'
 import {
   formatTransactionDisplayTime,
@@ -123,6 +128,7 @@ function resolveSettledDebtDate(
 
 interface PaymentHistoryItem {
   id: string
+  settlementId?: string
   label: string
   person: string
   isReceived: boolean
@@ -453,8 +459,8 @@ export default function DebtsPage() {
   const { user } = useAuth()
   const { debts, loading, addDebt, settleDebt, removeDebt } = useDebts()
   const { tripDebts, tripBalanceData, loading: tripLoading } = useTripDebts()
-  const { settlements: paymentSettlements, loading: settlementsLoading } = useTripSettlements()
-  const { transactions, editTransaction } = useTransactions()
+  const { settlements: paymentSettlements, loading: settlementsLoading, removeSettlement } = useTripSettlements()
+  const { transactions, editTransaction, removeTransaction } = useTransactions()
 
   const txById = React.useMemo(() => {
     const map = new Map<string, Transaction>()
@@ -472,6 +478,8 @@ export default function DebtsPage() {
   const [settleDebtData, setSettleDebtData] = React.useState<UIGlobalDebt | null>(null)
   const [isSettleOpen, setIsSettleOpen] = React.useState(false)
   const [settleAmount, setSettleAmount] = React.useState<string>('')
+  const [isSettling, setIsSettling] = React.useState(false)
+  const [deletingPaymentId, setDeletingPaymentId] = React.useState<string | null>(null)
   const [editingTransaction, setEditingTransaction] = React.useState<Transaction | null>(null)
   const [isTxDetailOpen, setIsTxDetailOpen] = React.useState(false)
 
@@ -502,6 +510,7 @@ export default function DebtsPage() {
 
       return {
         id: settlement.id || `${settlement.fromUserId}-${settlement.date?.seconds}`,
+        settlementId: settlement.id,
         label,
         person,
         isReceived,
@@ -612,7 +621,7 @@ export default function DebtsPage() {
   }
 
   const handleConfirmSettle = async () => {
-    if (!settleDebtData) return
+    if (!settleDebtData || isSettling) return
 
     const payAmount = parseFloat(settleAmount)
     if (!payAmount || payAmount <= 0) {
@@ -624,6 +633,7 @@ export default function DebtsPage() {
       return
     }
 
+    setIsSettling(true)
     try {
       if (settleDebtData.isTripDebt) {
         const tripIds = settleDebtData.tripIds || []
@@ -661,6 +671,7 @@ export default function DebtsPage() {
           amount: payAmount,
           isPayer: settleDebtData.fromUserId === user!.uid,
           counterpartyName,
+          debtId: settleDebtData.id,
           note: 'trip-debt',
           date: Timestamp.now(),
         })
@@ -674,6 +685,8 @@ export default function DebtsPage() {
       setSettleDebtData(null)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'บันทึกการชำระไม่สำเร็จ')
+    } finally {
+      setIsSettling(false)
     }
   }
 
@@ -682,6 +695,44 @@ export default function DebtsPage() {
     if (!tx) return
     setEditingTransaction(tx)
     setIsTxDetailOpen(true)
+  }
+
+  const handleDeletePayment = async (payment: PaymentHistoryItem) => {
+    if (!payment.settlementId || deletingPaymentId) return
+
+    const settlement = paymentSettlements.find((s) => s.id === payment.settlementId)
+    if (!settlement) {
+      toast.error('ไม่พบรายการชำระ')
+      return
+    }
+
+    setDeletingPaymentId(payment.id)
+    try {
+      const linkedTx =
+        findDebtPaymentTransaction(transactions, settlement) ??
+        findTripBatchDebtPaymentTransaction(transactions, settlement)
+
+      if (linkedTx?.id) {
+        await removeTransaction(linkedTx.id)
+        toast.success('ลบการจ่ายคืนแล้ว')
+        return
+      }
+
+      if (settlement.note?.startsWith('debt:')) {
+        await reverseDebtPaymentFromSettlement(settlement)
+        toast.success('ลบการจ่ายคืนแล้ว')
+        return
+      }
+
+      if (settlement.id) {
+        await removeSettlement(settlement.id)
+        toast.success('ลบรายการชำระแล้ว')
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'ลบรายการไม่สำเร็จ')
+    } finally {
+      setDeletingPaymentId(null)
+    }
   }
 
   const handleAddDebt = async () => {
@@ -920,6 +971,19 @@ export default function DebtsPage() {
                               })}
                             </p>
                           </div>
+                          {payment.settlementId && (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              className="mt-2 text-destructive hover:text-destructive"
+                              disabled={deletingPaymentId === payment.id}
+                              onClick={() => handleDeletePayment(payment)}
+                            >
+                              <Trash2 className="mr-1.5 size-3.5" />
+                              {deletingPaymentId === payment.id ? 'กำลังลบ...' : 'ลบ'}
+                            </Button>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -932,12 +996,13 @@ export default function DebtsPage() {
                       <TableHead>คู่รายการ</TableHead>
                       <TableHead className="w-[90px]">แหล่ง</TableHead>
                       <TableHead className="pr-6 text-right">จำนวนเงิน</TableHead>
+                      <TableHead className="w-[80px]" />
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {groupedPaymentHistory.map((group) => (
                       <React.Fragment key={group.dateKey}>
-                        <DateGroupDividerRow label={group.label} colSpan={4} />
+                        <DateGroupDividerRow label={group.label} colSpan={5} />
                         {group.items.map((payment) => (
                         <TableRow key={payment.id}>
                           <TableCell className="max-w-[240px] pl-6 truncate font-medium" title={payment.label}>
@@ -981,6 +1046,21 @@ export default function DebtsPage() {
                             )}
                           >
                             {payment.isReceived ? '+' : '-'}฿{payment.amount.toLocaleString()}
+                          </TableCell>
+                          <TableCell className="pr-4 text-right">
+                            {payment.settlementId && (
+                              <Button
+                                type="button"
+                                size="icon"
+                                variant="ghost"
+                                className="size-8 text-destructive hover:text-destructive"
+                                disabled={deletingPaymentId === payment.id}
+                                aria-label="ลบการจ่ายคืน"
+                                onClick={() => handleDeletePayment(payment)}
+                              >
+                                <Trash2 className="size-4" />
+                              </Button>
+                            )}
                           </TableCell>
                         </TableRow>
                         ))}
@@ -1096,10 +1176,16 @@ export default function DebtsPage() {
                 </Button>
               </div>
               <DialogFooter>
-                <Button variant="outline" onClick={() => setIsSettleOpen(false)}>
+                <Button
+                  variant="outline"
+                  onClick={() => setIsSettleOpen(false)}
+                  disabled={isSettling}
+                >
                   ยกเลิก
                 </Button>
-                <Button onClick={handleConfirmSettle}>ยืนยัน</Button>
+                <Button onClick={handleConfirmSettle} disabled={isSettling}>
+                  {isSettling ? 'กำลังบันทึก...' : 'ยืนยัน'}
+                </Button>
               </DialogFooter>
             </div>
           )}
