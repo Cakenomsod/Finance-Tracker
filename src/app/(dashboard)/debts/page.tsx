@@ -70,7 +70,9 @@ import { createDebtSettlementTransaction } from '@/lib/debt-payment'
 import {
   findDebtPaymentTransaction,
   findTripBatchDebtPaymentTransaction,
+  resolveDebtPaymentDebtId,
   reverseDebtPaymentFromSettlement,
+  reverseManualDebtPayment,
 } from '@/lib/reverse-debt-payment'
 import { Timestamp } from 'firebase/firestore'
 import {
@@ -129,6 +131,7 @@ function resolveSettledDebtDate(
 interface PaymentHistoryItem {
   id: string
   settlementId?: string
+  debtId?: string
   label: string
   person: string
   isReceived: boolean
@@ -535,6 +538,7 @@ export default function DebtsPage() {
       const isReceived = debt.toUserId === user?.uid
       items.push({
         id: `debt-${debt.id}`,
+        debtId: debt.id,
         label: resolveDebtDescription(debt as UIGlobalDebt, txById),
         person: isReceived
           ? debt.fromDisplayName || debt.fromUserId
@@ -698,35 +702,51 @@ export default function DebtsPage() {
   }
 
   const handleDeletePayment = async (payment: PaymentHistoryItem) => {
-    if (!payment.settlementId || deletingPaymentId) return
-
-    const settlement = paymentSettlements.find((s) => s.id === payment.settlementId)
-    if (!settlement) {
-      toast.error('ไม่พบรายการชำระ')
-      return
-    }
+    if (deletingPaymentId) return
 
     setDeletingPaymentId(payment.id)
     try {
-      const linkedTx =
-        findDebtPaymentTransaction(transactions, settlement) ??
-        findTripBatchDebtPaymentTransaction(transactions, settlement)
+      if (payment.settlementId) {
+        const settlement = paymentSettlements.find((s) => s.id === payment.settlementId)
+        if (!settlement) {
+          toast.error('ไม่พบรายการชำระ')
+          return
+        }
 
-      if (linkedTx?.id) {
-        await removeTransaction(linkedTx.id)
-        toast.success('ลบการจ่ายคืนแล้ว')
-        return
-      }
+        const linkedTx =
+          findDebtPaymentTransaction(transactions, settlement) ??
+          findTripBatchDebtPaymentTransaction(transactions, settlement)
 
-      if (settlement.note?.startsWith('debt:')) {
-        await reverseDebtPaymentFromSettlement(settlement)
-        toast.success('ลบการจ่ายคืนแล้ว')
-        return
-      }
+        if (linkedTx?.id) {
+          await removeTransaction(linkedTx.id)
+          toast.success('ลบการจ่ายคืนแล้ว')
+          return
+        }
 
-      if (settlement.id) {
-        await removeSettlement(settlement.id)
+        if (settlement.note?.startsWith('debt:')) {
+          await reverseDebtPaymentFromSettlement(settlement)
+          toast.success('ลบการจ่ายคืนแล้ว')
+          return
+        }
+
+        await removeSettlement(settlement.id!)
         toast.success('ลบรายการชำระแล้ว')
+        return
+      }
+
+      if (payment.debtId) {
+        const linkedTx = transactions.find((tx) => {
+          const debtId = resolveDebtPaymentDebtId(tx)
+          if (debtId !== payment.debtId) return false
+          return Math.abs(Math.abs(tx.amount) - payment.amount) < 0.01
+        })
+
+        if (linkedTx?.id) {
+          await removeTransaction(linkedTx.id)
+        } else {
+          await reverseManualDebtPayment(payment.debtId, payment.amount)
+        }
+        toast.success('ลบการจ่ายคืนแล้ว')
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'ลบรายการไม่สำเร็จ')
@@ -971,19 +991,17 @@ export default function DebtsPage() {
                               })}
                             </p>
                           </div>
-                          {payment.settlementId && (
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="ghost"
-                              className="mt-2 text-destructive hover:text-destructive"
-                              disabled={deletingPaymentId === payment.id}
-                              onClick={() => handleDeletePayment(payment)}
-                            >
-                              <Trash2 className="mr-1.5 size-3.5" />
-                              {deletingPaymentId === payment.id ? 'กำลังลบ...' : 'ลบ'}
-                            </Button>
-                          )}
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="mt-3 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                            disabled={deletingPaymentId === payment.id}
+                            onClick={() => handleDeletePayment(payment)}
+                          >
+                            <Trash2 className="mr-1.5 size-3.5" />
+                            {deletingPaymentId === payment.id ? 'กำลังลบ...' : 'ลบการจ่ายคืน'}
+                          </Button>
                         </div>
                       ))}
                     </div>
@@ -996,7 +1014,7 @@ export default function DebtsPage() {
                       <TableHead>คู่รายการ</TableHead>
                       <TableHead className="w-[90px]">แหล่ง</TableHead>
                       <TableHead className="pr-6 text-right">จำนวนเงิน</TableHead>
-                      <TableHead className="w-[80px]" />
+                      <TableHead className="w-[100px] text-right">การดำเนินการ</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -1048,19 +1066,17 @@ export default function DebtsPage() {
                             {payment.isReceived ? '+' : '-'}฿{payment.amount.toLocaleString()}
                           </TableCell>
                           <TableCell className="pr-4 text-right">
-                            {payment.settlementId && (
-                              <Button
-                                type="button"
-                                size="icon"
-                                variant="ghost"
-                                className="size-8 text-destructive hover:text-destructive"
-                                disabled={deletingPaymentId === payment.id}
-                                aria-label="ลบการจ่ายคืน"
-                                onClick={() => handleDeletePayment(payment)}
-                              >
-                                <Trash2 className="size-4" />
-                              </Button>
-                            )}
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                              disabled={deletingPaymentId === payment.id}
+                              onClick={() => handleDeletePayment(payment)}
+                            >
+                              <Trash2 className="mr-1.5 size-3.5" />
+                              {deletingPaymentId === payment.id ? 'กำลังลบ...' : 'ลบ'}
+                            </Button>
                           </TableCell>
                         </TableRow>
                         ))}

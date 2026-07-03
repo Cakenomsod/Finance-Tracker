@@ -223,6 +223,14 @@ export function findTripBatchDebtPaymentTransaction(
   return matches[0];
 }
 
+/** Re-open a manual debt after removing a payment record. */
+export async function reverseManualDebtPayment(
+  debtId: string,
+  amount: number
+): Promise<void> {
+  await reverseManualDebt(debtId, amount);
+}
+
 /** Delete a payment-history row when no linked transaction exists (orphan settlement). */
 export async function reverseDebtPaymentFromSettlement(
   settlement: TripSettlement
