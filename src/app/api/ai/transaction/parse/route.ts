@@ -2,13 +2,18 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifySession, getUserAiSettings, resolveLocalAiBaseUrl, resolveRequestedAiProvider } from '@/lib/api-auth';
 import { parseReceiptImageWithProvider } from '@/lib/ai';
 import { getGoogleAiApiKey } from '@/lib/ai/env';
+import { formatAiParseError } from '@/lib/ai/format-error';
 import { AiTextProvider } from '@/lib/firestore-types';
 
 /** Receipt vision can take several minutes with Local AI. */
 export const maxDuration = 180;
 
 const MAX_SIZE = 8 * 1024 * 1024;
-const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+const ALLOWED_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'];
+
+function normalizeImageMime(mimeType: string): string {
+  return mimeType === 'image/jpg' ? 'image/jpeg' : mimeType;
+}
 
 export async function POST(request: NextRequest) {
   const session = await verifySession();
@@ -30,10 +35,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Image too large (max 8MB)' }, { status: 400 });
     }
 
-    const mimeType = image.type || 'image/jpeg';
-    if (!ALLOWED_TYPES.includes(mimeType)) {
+    const rawType = image.type || 'image/jpeg';
+    if (!ALLOWED_TYPES.includes(rawType)) {
       return NextResponse.json({ error: 'Unsupported image type' }, { status: 400 });
     }
+    const mimeType = normalizeImageMime(rawType);
 
     const { provider: savedProvider } = await getUserAiSettings(session.uid);
     const provider: AiTextProvider = resolveRequestedAiProvider(providerRaw, savedProvider);
@@ -74,7 +80,6 @@ export async function POST(request: NextRequest) {
       message: error instanceof Error ? error.message : String(error),
       stack: error instanceof Error ? error.stack : undefined,
     });
-    const message = error instanceof Error ? error.message : 'Parse failed';
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: formatAiParseError(error) }, { status: 500 });
   }
 }

@@ -10,6 +10,7 @@ import { parseJsonFromAiContent } from '@/lib/ai/parse-json';
 import { extractLocalAiMessageContent } from '@/lib/ai/local-response';
 import { envTrim } from '@/lib/ai/env';
 import { tryParseExpenseTextStrictFormat } from '@/lib/ai/expense-text-heuristic';
+import { buildAiDateContext, aiTimeZoneFromContext } from '@/lib/ai/ai-datetime';
 
 export interface LocalAiConfig {
   baseUrl: string;
@@ -92,7 +93,10 @@ export async function parseReceiptImageLocal(
             content: [
               {
                 type: 'text',
-                text: RECEIPT_PARSE_PROMPT + contextHint,
+                text:
+                  RECEIPT_PARSE_PROMPT +
+                  buildAiDateContext(aiTimeZoneFromContext(context)) +
+                  contextHint,
               },
               {
                 type: 'image_url',

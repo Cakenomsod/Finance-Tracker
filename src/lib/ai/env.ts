@@ -5,12 +5,16 @@ export const GEMINI_FLASH_DEFAULT = 'gemini-2.5-flash';
 export const GEMINI_2_FLASH = GEMINI_FLASH_DEFAULT;
 
 const DEPRECATED_GEMINI_IDS = new Set([
-  'gemini-2.5-flash',
+  'gemini-2.0-flash',
+  'gemini-1.5-flash',
+  'gemini-1.5-flash-8b',
 ]);
 
 /** Fallback order when the primary model is unavailable. */
 export const GEMINI_MODEL_FALLBACKS = [
   'gemini-2.5-flash',
+  'gemini-2.0-flash-lite',
+  'gemini-flash-latest',
 ] as const;
 
 /** Trim env values (handles `.env` entries like `KEY = value`). */

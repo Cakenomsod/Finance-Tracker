@@ -1,45 +1,164 @@
 import { z } from 'zod';
 
+/** Parse messy AI number values ("1,250.00", "฿120", 120). */
+function toAiNumber(val: unknown): number | undefined {
+  if (val === null || val === undefined || val === '') return undefined;
+  if (typeof val === 'number') return Number.isFinite(val) ? val : undefined;
+  if (typeof val === 'string') {
+    const cleaned = val.replace(/,/g, '').replace(/[^\d.-]/g, '').trim();
+    if (!cleaned || cleaned === '-' || cleaned === '.') return undefined;
+    const n = Number(cleaned);
+    return Number.isFinite(n) ? n : undefined;
+  }
+  return undefined;
+}
+
+const aiNumberRequired = z.preprocess((val) => {
+  const n = toAiNumber(val);
+  return n === undefined ? val : n;
+}, z.number());
+
+const aiNumberOptional = z.preprocess((val) => {
+  if (val === null || val === undefined || val === '') return undefined;
+  const n = toAiNumber(val);
+  return n === undefined ? undefined : n;
+}, z.number().optional());
+
+const aiPositive = z.preprocess((val) => {
+  const n = toAiNumber(val);
+  return n === undefined ? val : n;
+}, z.number().positive());
+
+const aiNonNegative = z.preprocess((val) => {
+  const n = toAiNumber(val);
+  return n === undefined ? val : n;
+}, z.number().nonnegative());
+
+const aiNonNegativeOptional = z.preprocess((val) => {
+  if (val === null || val === undefined || val === '') return undefined;
+  const n = toAiNumber(val);
+  return n === undefined ? undefined : n;
+}, z.number().nonnegative().optional());
+
+const documentTypeSchema = z.preprocess((val) => {
+  if (val == null || val === '') return 'receipt';
+  const s = String(val).toLowerCase().replace(/[\s-]+/g, '_');
+  if (s.includes('transfer') || s.includes('slip') || s.includes('bank')) return 'transfer_slip';
+  return 'receipt';
+}, z.enum(['receipt', 'transfer_slip']));
+
+const currencySchema = z.preprocess((val) => {
+  if (val == null || val === '') return undefined;
+  const s = String(val).toUpperCase();
+  if (s.includes('JPY') || s.includes('YEN') || s.includes('¥') || s === '円') return 'JPY';
+  if (s.includes('THB') || s.includes('BAHT') || s.includes('฿') || s.includes('บาท')) return 'THB';
+  if (s === 'THB' || s === 'JPY') return s;
+  return undefined;
+}, z.enum(['THB', 'JPY']).optional());
+
+const taxModeSchema = z.preprocess((val) => {
+  if (val == null || val === '') return undefined;
+  const s = String(val).toLowerCase();
+  if (s.includes('exclu') || s === 'added' || s === 'vat_exclusive') return 'exclusive';
+  if (s.includes('inclu') || s === 'vat_inclusive') return 'inclusive';
+  return undefined;
+}, z.enum(['exclusive', 'inclusive']).optional());
+
 export const receiptItemSchema = z.object({
-  name: z.string(),
-  category: z.string(),
-  price: z.number(),
-  tax: z.number().optional(),
-  taxCategoryId: z.enum(['food', 'goods', 'standard', 'exempt']).optional(),
+  name: z.preprocess((v) => (v == null ? '' : String(v)), z.string()),
+  category: z.preprocess((v) => (v == null || v === '' ? 'Others' : String(v)), z.string()),
+  price: aiNumberRequired,
+  tax: aiNumberOptional,
+  taxCategoryId: z.preprocess((val) => {
+    if (val == null || val === '') return undefined;
+    const s = String(val).toLowerCase();
+    if (['food', 'goods', 'standard', 'exempt'].includes(s)) return s;
+    return undefined;
+  }, z.enum(['food', 'goods', 'standard', 'exempt']).optional()),
 });
 
 export const expenseSplitPersonSchema = z.object({
-  name: z.string(),
-  amount: z.number().nonnegative(),
+  name: z.preprocess((v) => (v == null ? '' : String(v)), z.string()),
+  amount: aiNonNegative,
 });
 
-export const receiptParseSchema = z.object({
-  documentType: z.enum(['receipt', 'transfer_slip']),
-  description: z.string(),
-  category: z.string(),
-  date: z.string(),
+const receiptParseObjectSchema = z.object({
+  documentType: documentTypeSchema,
+  description: z.preprocess((v) => (v == null ? '' : String(v).trim() || 'Receipt'), z.string()),
+  category: z.preprocess((v) => (v == null || v === '' ? 'Others' : String(v)), z.string()),
+  date: z.preprocess((v) => (v == null ? '' : String(v)), z.string()),
   /** Transaction time HH:mm (24-hour), when visible on receipt/slip */
-  time: z.string().optional(),
-  totalAmount: z.number().positive(),
-  currency: z.enum(['THB', 'JPY']).optional(),
-  taxMode: z.enum(['exclusive', 'inclusive']).optional(),
+  time: z.preprocess((v) => {
+    if (v == null || v === '') return undefined;
+    return String(v);
+  }, z.string().optional()),
+  totalAmount: aiPositive,
+  currency: currencySchema,
+  taxMode: taxModeSchema,
   items: z.array(receiptItemSchema).optional(),
-  baseAmount: z.number().optional(),
-  taxAmount: z.number().optional(),
-  discount: z.number().nonnegative().optional(),
+  baseAmount: aiNumberOptional,
+  taxAmount: aiNumberOptional,
+  discount: aiNonNegativeOptional,
   /** Expense text only — how the bill was paid */
-  paymentMethod: z.enum(['normal', 'paotang']).optional(),
+  paymentMethod: z.preprocess((val) => {
+    if (val == null || val === '') return undefined;
+    const s = String(val).toLowerCase();
+    if (s.includes('paotang') || s.includes('เป๋าตัง')) return 'paotang';
+    if (s === 'normal') return 'normal';
+    return undefined;
+  }, z.enum(['normal', 'paotang']).optional()),
   /** Expense text only — track friend debts from split */
-  debtTracking: z.boolean().optional(),
+  debtTracking: z.preprocess((val) => {
+    if (val == null || val === '') return undefined;
+    if (typeof val === 'boolean') return val;
+    if (typeof val === 'string') {
+      const s = val.toLowerCase();
+      if (s === 'true' || s === '1' || s === 'yes') return true;
+      if (s === 'false' || s === '0' || s === 'no') return false;
+    }
+    return undefined;
+  }, z.boolean().optional()),
   /** Expense text only — equal / custom / solo split */
-  splitMode: z.enum(['equal', 'custom', 'solo']).optional(),
+  splitMode: z.preprocess((val) => {
+    if (val == null || val === '') return undefined;
+    const s = String(val).toLowerCase();
+    if (s === 'equal' || s === 'custom' || s === 'solo') return s;
+    return undefined;
+  }, z.enum(['equal', 'custom', 'solo']).optional()),
   /** Who paid (names as spoken; resolved server-side) */
   payers: z.array(expenseSplitPersonSchema).optional(),
   /** Who owes shares of the bill */
   shares: z.array(expenseSplitPersonSchema).optional(),
 });
 
-export type ReceiptParseResult = z.infer<typeof receiptParseSchema>;
+/**
+ * Soften common OCR omissions before strict Zod checks:
+ * - sum item prices into totalAmount when total is missing/0
+ */
+function softenReceiptPayload(raw: unknown): unknown {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return raw;
+  const obj = { ...(raw as Record<string, unknown>) };
+
+  const items = Array.isArray(obj.items) ? obj.items : undefined;
+  if (items?.length) {
+    const sum = items.reduce((acc: number, item) => {
+      if (!item || typeof item !== 'object') return acc;
+      const n = toAiNumber((item as Record<string, unknown>).price);
+      return acc + (n ?? 0);
+    }, 0);
+
+    const totalN = toAiNumber(obj.totalAmount);
+    if ((totalN === undefined || totalN <= 0) && sum > 0) {
+      obj.totalAmount = Math.round(sum * 100) / 100;
+    }
+  }
+
+  return obj;
+}
+
+export const receiptParseSchema = z.preprocess(softenReceiptPayload, receiptParseObjectSchema);
+
+export type ReceiptParseResult = z.infer<typeof receiptParseObjectSchema>;
 
 /** Shared context for receipt image + text AI (trip defaults + optional user hints). */
 export interface ReceiptAiContext {
