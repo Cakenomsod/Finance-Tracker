@@ -11,11 +11,33 @@ const VALID_CATEGORIES = [
   'Bills & Utilities', 'Health & Fitness', 'Accommodation', 'Activities', 'Others',
 ];
 
-function normalizeCategory(cat: string): string {
+function normalizeCategory(cat: string, fallback = 'Shopping'): string {
+  const trimmed = cat.trim();
+  if (!trimmed) return fallback;
   const match = VALID_CATEGORIES.find(
-    (c) => c.toLowerCase() === cat.toLowerCase() || c.includes(cat) || cat.includes(c.split(' ')[0])
+    (c) =>
+      c.toLowerCase() === trimmed.toLowerCase() ||
+      c.includes(trimmed) ||
+      trimmed.includes(c.split(' ')[0])
   );
-  return match || 'Others';
+  return match || fallback;
+}
+
+/** Main + line-item categories for receipt drafts (Shopping soft-default; items inherit main). */
+function resolveDraftCategories(parsed: ReceiptParseResult): {
+  category: string;
+  itemCategory: (raw: string | undefined) => string;
+} {
+  const mainFallback = parsed.documentType === 'transfer_slip' ? 'Others' : 'Shopping';
+  const category = normalizeCategory(parsed.category ?? '', mainFallback);
+  return {
+    category,
+    itemCategory: (raw) => {
+      const trimmed = (raw ?? '').trim();
+      if (!trimmed) return category;
+      return normalizeCategory(trimmed, category);
+    },
+  };
 }
 
 function roundMoney(value: number): number {
@@ -145,6 +167,7 @@ export function receiptParseToTripExpenseDraft(
   const primaryMember = tripMembers[0];
   const currency = parsed.currency || defaultCurrency || 'THB';
   const hasItems = parsed.items && parsed.items.length > 0;
+  const { category, itemCategory } = resolveDraftCategories(parsed);
 
   const parsedSplit = buildSplitFromParsed(parsed);
   const split = parsedSplit
@@ -154,7 +177,7 @@ export function receiptParseToTripExpenseDraft(
   const items = hasItems
     ? parsed.items!.map((item) => ({
         name: item.name,
-        category: normalizeCategory(item.category),
+        category: itemCategory(item.category),
         price: item.price,
         tax: item.tax ?? 0,
         splitWith: memberKeys,
@@ -178,7 +201,7 @@ export function receiptParseToTripExpenseDraft(
   return {
     description: parsed.description,
     totalAmount: parsed.totalAmount,
-    category: normalizeCategory(parsed.category),
+    category,
     date: Timestamp.fromDate(toFirestoreDate(parsed, timeZone)),
     splitMode: split?.splitMode ?? (hasItems ? 'item' : 'equal'),
     payers: split?.payers ?? defaultPayers,
@@ -199,11 +222,12 @@ export function receiptParseToTransactionDraft(
   const currency = parsed.currency || defaultCurrency;
   const hasItems = parsed.items && parsed.items.length > 0;
   const split = buildSplitFromParsed(parsed);
+  const { category, itemCategory } = resolveDraftCategories(parsed);
 
   const items = hasItems
     ? parsed.items!.map((item) => ({
         name: item.name,
-        category: normalizeCategory(item.category),
+        category: itemCategory(item.category),
         price: item.price,
         tax: item.tax ?? 0,
         splitWith: [] as string[],
@@ -222,7 +246,7 @@ export function receiptParseToTransactionDraft(
   return {
     amount: -Math.abs(parsed.totalAmount),
     type: 'expense',
-    category: normalizeCategory(parsed.category),
+    category,
     description: parsed.description,
     date: Timestamp.fromDate(toFirestoreDate(parsed)),
     items,

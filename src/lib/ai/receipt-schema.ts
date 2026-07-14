@@ -66,7 +66,8 @@ const taxModeSchema = z.preprocess((val) => {
 
 export const receiptItemSchema = z.object({
   name: z.preprocess((v) => (v == null ? '' : String(v)), z.string()),
-  category: z.preprocess((v) => (v == null || v === '' ? 'Others' : String(v)), z.string()),
+  /** Soft default Shopping; softenReceiptPayload may override to main category first. */
+  category: z.preprocess((v) => (v == null || v === '' ? 'Shopping' : String(v)), z.string()),
   price: aiNumberRequired,
   tax: aiNumberOptional,
   taxCategoryId: z.preprocess((val) => {
@@ -85,7 +86,8 @@ export const expenseSplitPersonSchema = z.object({
 const receiptParseObjectSchema = z.object({
   documentType: documentTypeSchema,
   description: z.preprocess((v) => (v == null ? '' : String(v).trim() || 'Receipt'), z.string()),
-  category: z.preprocess((v) => (v == null || v === '' ? 'Others' : String(v)), z.string()),
+  /** Soft default Shopping for receipts; transfer slips get Others in softenReceiptPayload. */
+  category: z.preprocess((v) => (v == null || v === '' ? 'Shopping' : String(v)), z.string()),
   date: z.preprocess((v) => (v == null ? '' : String(v)), z.string()),
   /** Transaction time HH:mm (24-hour), when visible on receipt/slip */
   time: z.preprocess((v) => {
@@ -131,13 +133,27 @@ const receiptParseObjectSchema = z.object({
   shares: z.array(expenseSplitPersonSchema).optional(),
 });
 
+function isTransferSlipDocumentType(val: unknown): boolean {
+  if (val == null || val === '') return false;
+  const s = String(val).toLowerCase().replace(/[\s-]+/g, '_');
+  return s.includes('transfer') || s.includes('slip') || s.includes('bank');
+}
+
 /**
  * Soften common OCR omissions before strict Zod checks:
  * - sum item prices into totalAmount when total is missing/0
+ * - default missing main category to Shopping (Others for transfer slips)
+ * - fill missing item categories from the main receipt category
  */
 function softenReceiptPayload(raw: unknown): unknown {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return raw;
   const obj = { ...(raw as Record<string, unknown>) };
+
+  const isTransfer = isTransferSlipDocumentType(obj.documentType);
+  if (obj.category == null || obj.category === '') {
+    obj.category = isTransfer ? 'Others' : 'Shopping';
+  }
+  const mainCategory = String(obj.category);
 
   const items = Array.isArray(obj.items) ? obj.items : undefined;
   if (items?.length) {
@@ -151,6 +167,15 @@ function softenReceiptPayload(raw: unknown): unknown {
     if ((totalN === undefined || totalN <= 0) && sum > 0) {
       obj.totalAmount = Math.round(sum * 100) / 100;
     }
+
+    obj.items = items.map((item) => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) return item;
+      const row = { ...(item as Record<string, unknown>) };
+      if (row.category == null || row.category === '') {
+        row.category = mainCategory;
+      }
+      return row;
+    });
   }
 
   return obj;
@@ -201,6 +226,7 @@ Extraction rules:
 - documentType: "receipt" for store/restaurant receipts; "transfer_slip" for bank or payment app transfer screenshots
 - description: short label — store name, merchant, or transfer memo (Thai or English)
 - category: exactly one of: Food & Dining, Transport, Shopping, Entertainment, Bills & Utilities, Health & Fitness, Accommodation, Activities, Others
+- category default for documentType "receipt": when unsure or merchant type is ambiguous, use "Shopping" (do NOT default to Food & Dining or Others). Use Food & Dining only when the receipt clearly is a restaurant/cafe/food vendor
 - date: transaction date as YYYY-MM-DD from the receipt or slip; use today's date only if truly unreadable
 - time: transaction time as HH:mm (24-hour) — look for printed time near the date, payment timestamp, "เวลา", "Time", or POS clock; convert 12h AM/PM to 24h; omit only if no time is visible anywhere on the image
 - totalAmount: final paid amount as a plain number (no symbols, no commas)
@@ -208,7 +234,7 @@ Extraction rules:
 - taxMode: "exclusive" if tax is added on top, "inclusive" if tax is included in prices
 - baseAmount / taxAmount: fill when subtotal and tax are visible on the receipt
 - discount: fill when a discount, promotion, or coupon reduction is visible (non-negative number)
-- items: each visible line item with name, best-matching category, and line price as number
+- items: each visible line item with name, category, and line price as number; when an item's category is unclear, use the same category as the main receipt category
 - transfer_slip: category usually "Others"; items may be omitted; description = payee or transfer note
 
 Accuracy:

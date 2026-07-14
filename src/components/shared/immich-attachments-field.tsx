@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { ImagePlus, X, Maximize2 } from 'lucide-react'
+import { ImagePlus, X, Maximize2, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -10,6 +10,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { requestDeleteImmichAssets } from '@/lib/immich/delete-from-browser'
+import { useImmichUploadDelivery } from '@/providers/immich-upload-context'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 
@@ -17,40 +18,99 @@ interface ImmichAttachmentsFieldProps {
   value: string[]
   onChange: (ids: string[]) => void
   tripId?: string | null
+  /** Stable key so late uploads still attach after remount/navigation */
+  deliveryKey?: string
   emptyHint?: string
   className?: string
+}
+
+type LocalPreview = {
+  jobId: string
+  url: string
+  name: string
 }
 
 export function ImmichAttachmentsField({
   value,
   onChange,
   tripId,
+  deliveryKey: deliveryKeyProp,
   emptyHint = 'ไม่มีรูป — กด เพิ่มรูป หรือใช้ AI แนบโน้ต',
   className,
 }: ImmichAttachmentsFieldProps) {
+  const reactId = React.useId()
+  const deliveryKey = deliveryKeyProp ?? `attachments:${reactId}`
+  const valueRef = React.useRef(value)
+  valueRef.current = value
+
   const [lightboxAssetId, setLightboxAssetId] = React.useState<string | null>(null)
-  const [uploadingAttach, setUploadingAttach] = React.useState(false)
+  const [localPreviews, setLocalPreviews] = React.useState<LocalPreview[]>([])
   const attachInputRef = React.useRef<HTMLInputElement>(null)
+
+  const { enqueue, jobs, uploadingCount } = useImmichUploadDelivery(
+    deliveryKey,
+    (assetId) => {
+      onChange([...new Set([...valueRef.current, assetId])])
+    }
+  )
+
+  // Drop local previews only after their upload job finishes (not while the job is still enqueueing).
+  React.useEffect(() => {
+    if (localPreviews.length === 0) return
+    setLocalPreviews((prev) => {
+      const next: LocalPreview[] = []
+      for (const p of prev) {
+        const job = jobs.find((j) => j.id === p.jobId)
+        if (job && (job.status === 'done' || job.status === 'error')) {
+          URL.revokeObjectURL(p.url)
+          continue
+        }
+        next.push(p)
+      }
+      return next.length === prev.length ? prev : next
+    })
+  }, [jobs, localPreviews.length])
+
+  const previewUrlsOnUnmount = React.useRef(localPreviews)
+  previewUrlsOnUnmount.current = localPreviews
+  React.useEffect(() => {
+    return () => {
+      for (const p of previewUrlsOnUnmount.current) {
+        URL.revokeObjectURL(p.url)
+      }
+    }
+  }, [])
 
   const uniqueIds = React.useMemo(() => [...new Set(value)], [value])
 
-  const handleAddAttachment = async (file: File) => {
-    if (!file.type.startsWith('image/')) return
-    setUploadingAttach(true)
-    try {
-      const form = new FormData()
-      form.append('file', file)
-      form.append('filename', file.name)
-      if (tripId && tripId !== 'none') form.append('tripId', tripId)
-      const res = await fetch('/api/immich/upload', { method: 'POST', body: form, credentials: 'same-origin' })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Upload failed')
-      onChange([...new Set([...value, data.assetId as string])])
-      toast.success('เพิ่มรูปโน้ตแล้ว')
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'อัปโหลดรูปไม่สำเร็จ')
-    } finally {
-      setUploadingAttach(false)
+  const handleAddFiles = (files: FileList | File[]) => {
+    const list = Array.from(files).filter((f) => f.type.startsWith('image/'))
+    if (list.length === 0) {
+      toast.error('กรุณาเลือกไฟล์รูปภาพ')
+      return
+    }
+
+    for (const file of list) {
+      const url = URL.createObjectURL(file)
+      const jobId = enqueue(file, {
+        tripId,
+        label: file.name,
+        successToast: 'เพิ่มรูปโน้ตแล้ว',
+      })
+      if (jobId) {
+        setLocalPreviews((prev) => [...prev, { jobId, url, name: file.name }])
+      } else {
+        // Fallback path without provider — no job id; keep short-lived preview.
+        const fallbackId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+        setLocalPreviews((prev) => [...prev, { jobId: fallbackId, url, name: file.name }])
+        window.setTimeout(() => {
+          setLocalPreviews((prev) => {
+            const target = prev.find((p) => p.jobId === fallbackId)
+            if (target) URL.revokeObjectURL(target.url)
+            return prev.filter((p) => p.jobId !== fallbackId)
+          })
+        }, 15_000)
+      }
     }
   }
 
@@ -59,19 +119,24 @@ export function ImmichAttachmentsField({
     onChange(value.filter((x) => x !== id))
   }
 
+  const showEmpty = uniqueIds.length === 0 && localPreviews.length === 0
+
   return (
     <>
       <div className={cn('rounded-lg border bg-muted/40 p-3 space-y-3', className)}>
         <div className="flex items-center justify-between gap-2">
-          <p className="text-xs font-medium text-muted-foreground">รูปโน้ต (Immich)</p>
+          <p className="text-xs font-medium text-muted-foreground">
+            รูปโน้ต (Immich)
+            {uploadingCount > 0 ? ` · กำลังอัปโหลด ${uploadingCount}` : ''}
+          </p>
           <input
             ref={attachInputRef}
             type="file"
             accept="image/*"
+            multiple
             className="hidden"
             onChange={(e) => {
-              const f = e.target.files?.[0]
-              if (f) handleAddAttachment(f)
+              if (e.target.files?.length) handleAddFiles(e.target.files)
               e.target.value = ''
             }}
           />
@@ -80,16 +145,27 @@ export function ImmichAttachmentsField({
             variant="outline"
             size="sm"
             className="h-7 gap-1 text-xs"
-            disabled={uploadingAttach}
             onClick={() => attachInputRef.current?.click()}
           >
-            {uploadingAttach ? '...' : <><ImagePlus className="size-3.5" /> เพิ่มรูป</>}
+            <ImagePlus className="size-3.5" /> เพิ่มรูป
           </Button>
         </div>
-        {uniqueIds.length === 0 ? (
+        {showEmpty ? (
           <p className="text-[11px] text-muted-foreground">{emptyHint}</p>
         ) : (
           <div className="flex flex-wrap gap-2">
+            {localPreviews.map((p) => (
+              <div
+                key={p.jobId}
+                className="relative w-20 h-20 rounded-md border bg-background overflow-hidden shrink-0"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={p.url} alt={p.name} className="w-full h-full object-cover opacity-70" />
+                <div className="absolute inset-0 flex items-center justify-center bg-background/40">
+                  <Loader2 className="size-5 animate-spin text-primary" />
+                </div>
+              </div>
+            ))}
             {uniqueIds.map((id) => (
               <div
                 key={id}

@@ -501,6 +501,11 @@ export function TransactionForm({
           value={attachmentIds}
           onChange={setAttachmentIds}
           tripId={selectedTripId}
+          deliveryKey={
+            initialData?.id
+              ? `attachments:transaction:${initialData.id}`
+              : 'attachments:transaction:new'
+          }
         />
         {/* Input Mode Selector */}
         <div className="flex gap-1 p-1 bg-muted rounded-lg">

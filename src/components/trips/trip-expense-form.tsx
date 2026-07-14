@@ -443,6 +443,11 @@ export function TripExpenseFormV2({
         value={attachmentIds}
         onChange={setAttachmentIds}
         tripId={tripId}
+        deliveryKey={
+          initialData?.id
+            ? `attachments:trip-expense:${initialData.id}`
+            : `attachments:trip-expense:new:${tripId ?? 'unknown'}`
+        }
       />
       {/* Input Mode Selector */}
       <div className="flex gap-1 p-1 bg-muted rounded-lg">

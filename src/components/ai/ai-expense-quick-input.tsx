@@ -14,6 +14,7 @@ import {
   saveAiParseJobs,
 } from '@/lib/ai/parse-jobs-storage'
 import { readApiJson } from '@/lib/api-json'
+import { useImmichUploadDelivery } from '@/providers/immich-upload-context'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 
@@ -51,7 +52,6 @@ export const AiExpenseQuickInput = React.forwardRef<
   ref
 ) {
   const [input, setInput] = React.useState('')
-  const [uploadingNote, setUploadingNote] = React.useState(false)
   const [jobs, setJobs] = React.useState<AiParseJob[]>(() => loadAiParseJobs(storageScope))
   const skipSaveRef = React.useRef(true)
 
@@ -63,6 +63,14 @@ export const AiExpenseQuickInput = React.forwardRef<
   const noteImageInputRef = React.useRef<HTMLInputElement>(null)
   const pendingImmichRef = React.useRef(pendingImmichIds)
   pendingImmichRef.current = pendingImmichIds
+  const onImmichNoteReadyRef = React.useRef(onImmichNoteReady)
+  onImmichNoteReadyRef.current = onImmichNoteReady
+
+  const noteDeliveryKey = `ai-notes:${storageScope}`
+  const { enqueue: enqueueNoteUpload, uploadingCount: uploadingNoteCount } =
+    useImmichUploadDelivery(noteDeliveryKey, (assetId) => {
+      onImmichNoteReadyRef.current?.(assetId)
+    })
 
   const receiptMode = !!pendingReceiptFile
   const activeJobCount = jobs.filter((j) => j.status === 'processing').length
@@ -200,38 +208,20 @@ export const AiExpenseQuickInput = React.forwardRef<
     }
   }
 
-  const handleNoteImage = async (file: File) => {
+  const handleNoteImage = (file: File) => {
     if (!file.type.startsWith('image/')) {
       toast.error('กรุณาเลือกไฟล์รูปภาพ')
       return
     }
 
-    setUploadingNote(true)
-    try {
-      const form = new FormData()
-      form.append('file', file)
-      form.append('filename', file.name)
-      if (tripId) form.append('tripId', tripId)
-
-      const res = await fetch('/api/immich/upload', { method: 'POST', body: form, credentials: 'same-origin' })
-      const data = await readApiJson<{ error?: string; assetId?: string }>(res)
-      if (!res.ok) throw new Error(data.error || 'Upload failed')
-      if (!data.assetId) throw new Error('Upload succeeded but no asset ID returned')
-
-      if (onImmichNoteReady) {
-        onImmichNoteReady(data.assetId)
-      }
-      toast.success('เก็บรูปโน้ตแล้ว — จะแนบเมื่อบันทึก')
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'อัปโหลดไม่สำเร็จ')
-    } finally {
-      setUploadingNote(false)
-    }
+    enqueueNoteUpload(file, {
+      tripId,
+      label: file.name || 'รูปโน้ต',
+      successToast: 'เก็บรูปโน้ตแล้ว — จะแนบเมื่อบันทึก',
+    })
   }
 
-  const primaryDisabled = receiptMode
-    ? !pendingReceiptFile || uploadingNote
-    : !input.trim() || uploadingNote
+  const primaryDisabled = receiptMode ? !pendingReceiptFile : !input.trim()
 
   return (
     <div className="rounded-lg border bg-card p-4 space-y-3">
@@ -344,11 +334,14 @@ export const AiExpenseQuickInput = React.forwardRef<
           ref={noteImageInputRef}
           type="file"
           accept="image/*"
+          multiple
           className="hidden"
           aria-label="เก็บรูปโน้ต Immich"
           onChange={(e) => {
-            const f = e.target.files?.[0]
-            if (f) void handleNoteImage(f)
+            const files = e.target.files
+            if (files?.length) {
+              Array.from(files).forEach((f) => handleNoteImage(f))
+            }
             e.target.value = ''
           }}
         />
@@ -357,13 +350,23 @@ export const AiExpenseQuickInput = React.forwardRef<
           variant="outline"
           size="sm"
           className="gap-1 h-8"
-          disabled={uploadingNote}
           onClick={() => noteImageInputRef.current?.click()}
         >
-          {uploadingNote ? <Loader2 className="size-3.5 animate-spin" /> : <Paperclip className="size-3.5" />}
+          {uploadingNoteCount > 0 ? (
+            <Loader2 className="size-3.5 animate-spin" />
+          ) : (
+            <Paperclip className="size-3.5" />
+          )}
           เก็บโน้ต (Immich)
+          {uploadingNoteCount > 0 ? ` · ${uploadingNoteCount}` : ''}
         </Button>
       </div>
+
+      {uploadingNoteCount > 0 && (
+        <p className="text-[11px] text-muted-foreground">
+          กำลังอัปโหลดรูปโน้ตเบื้องหลัง — ส่งข้อความหรือเลื่อนไปทำอย่างอื่นได้
+        </p>
+      )}
 
       {pendingImmichIds.length > 0 && (
         <Badge variant="outline" className="text-xs gap-1 w-fit">
