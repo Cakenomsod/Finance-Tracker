@@ -185,15 +185,19 @@ export async function testImmichConnection(config: ImmichConfig): Promise<boolea
   }
 }
 
-// 2. แก้ไข Endpoint เป็น /api/assets และเพิ่มฟิลด์บังคับ (isFavorite, duration)
+/**
+ * POST /api/assets (Immich v3 AssetMediaCreateDto).
+ * - duration: number | null (milliseconds). Omit for images; never send legacy "HH:MM:SS" strings.
+ * - deviceId / deviceAssetId: removed in Immich v3 — do not send.
+ */
 export async function uploadToImmich(
   config: ImmichConfig,
   file: Buffer,
   filename: string,
-  mimeType: string
+  mimeType: string,
+  options?: { durationMs?: number }
 ): Promise<{ id: string }> {
   const now = new Date().toISOString();
-  const deviceAssetId = `finance-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
   const form = new FormData();
 
@@ -203,12 +207,15 @@ export async function uploadToImmich(
     filename
   );
 
-  form.append('deviceAssetId', deviceAssetId);
-  form.append('deviceId', 'finance-tracker-web');
   form.append('fileCreatedAt', now);
   form.append('fileModifiedAt', now);
   form.append('isFavorite', 'false');
-  form.append('duration', '00:00:00.000000');
+
+  // Immich v3: duration is ms (number). Legacy "00:00:00.000000" coerces to NaN → 400.
+  const durationMs = options?.durationMs;
+  if (typeof durationMs === 'number' && Number.isFinite(durationMs) && durationMs >= 0) {
+    form.append('duration', String(Math.round(durationMs)));
+  }
 
   const res = await immichFetch(
     config,
