@@ -1,0 +1,94 @@
+# AI Insights scheduled generation (cron → Next.js API)
+#
+# Times are UTC. Thailand (ICT) is UTC+7:
+# - Weekly:  Mon 01:00 UTC = Mon 08:00 ICT → previous ISO week
+# - Monthly: 1st 01:00 UTC = 1st 08:00 ICT → previous calendar month
+#
+# Required repo secrets:
+# - CRON_SECRET  — must match server env CRON_SECRET
+# - APP_URL      — production base URL (no trailing slash), e.g. https://financetracker-pk.web.app
+#                 Firebase Hosting projectId is financetracker-pk (see firebase-hosting-merge.yml);
+#                 set APP_URL explicitly — do not assume the URL without confirming the live site.
+
+name: AI Insights Cron
+
+on:
+  schedule:
+    # Monday 01:00 UTC (= Monday 08:00 ICT) — previous ISO week
+    - cron: '0 1 * * 1'
+    # 1st of month 01:00 UTC (= 08:00 ICT) — previous calendar month
+    - cron: '0 1 1 * *'
+  workflow_dispatch:
+    inputs:
+      periodType:
+        description: 'week or month'
+        required: true
+        type: choice
+        options:
+          - week
+          - month
+      periodKey:
+        description: 'Optional period key (YYYY-Www or YYYY-MM). Leave empty for previous complete period.'
+        required: false
+        type: string
+
+jobs:
+  generate-insights:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve period type
+        id: period
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "periodType=${{ inputs.periodType }}" >> "$GITHUB_OUTPUT"
+            echo "periodKey=${{ inputs.periodKey }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event.schedule }}" = "0 1 1 * *" ]; then
+            echo "periodType=month" >> "$GITHUB_OUTPUT"
+            echo "periodKey=" >> "$GITHUB_OUTPUT"
+          else
+            # Weekly schedule (Mon 01:00 UTC)
+            echo "periodType=week" >> "$GITHUB_OUTPUT"
+            echo "periodKey=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Call insights cron API
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          PERIOD_TYPE: ${{ steps.period.outputs.periodType }}
+          PERIOD_KEY: ${{ steps.period.outputs.periodKey }}
+        run: |
+          set -euo pipefail
+          if [ -z "${APP_URL:-}" ]; then
+            echo "Missing secret APP_URL (production base URL, no trailing slash)"
+            exit 1
+          fi
+          if [ -z "${CRON_SECRET:-}" ]; then
+            echo "Missing secret CRON_SECRET"
+            exit 1
+          fi
+
+          BASE="${APP_URL%/}"
+          BODY="{\"periodType\":\"${PERIOD_TYPE}\""
+          if [ -n "${PERIOD_KEY:-}" ]; then
+            BODY="${BODY},\"periodKey\":\"${PERIOD_KEY}\""
+          fi
+          BODY="${BODY}}"
+
+          echo "POST ${BASE}/api/ai/insights/cron periodType=${PERIOD_TYPE} periodKey=${PERIOD_KEY:-<default>}"
+
+          HTTP_CODE=$(curl -sS -o /tmp/cron-response.json -w "%{http_code}" \
+            -X POST "${BASE}/api/ai/insights/cron" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            -H "x-cron-secret: ${CRON_SECRET}" \
+            -d "${BODY}")
+
+          echo "HTTP ${HTTP_CODE}"
+          cat /tmp/cron-response.json
+          echo
+
+          if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
+            echo "Cron request failed"
+            exit 1
+          fi

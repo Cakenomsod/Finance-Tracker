@@ -37,16 +37,21 @@ const notificationSettings = [
   { id: 'daily_summary', title: 'Daily Summary', description: 'Receive daily spending summary', enabled: true },
   { id: 'budget_alert', title: 'Budget Alerts', description: 'Alert when nearing budget limits', enabled: true },
   { id: 'unusual_activity', title: 'Unusual Activity', description: 'Alert for unusual spending patterns', enabled: true },
-  { id: 'weekly_report', title: 'Weekly Reports', description: 'Detailed weekly analysis', enabled: false },
   { id: 'debt_reminder', title: 'Debt Reminders', description: 'Remind about pending debts', enabled: true },
 ]
 
 export default function SettingsPage() {
   const { theme, setTheme, resolvedTheme } = useTheme()
-  const { immich } = useUserSettings()
+  const {
+    immich,
+    aiInsightsWeekly,
+    aiInsightsMonthly,
+    saveAiInsightsSettings,
+  } = useUserSettings()
   const { t } = useLocale()
   const [mounted, setMounted] = React.useState(false)
   const [notifications, setNotifications] = React.useState(notificationSettings)
+  const [savingInsights, setSavingInsights] = React.useState<'weekly' | 'monthly' | null>(null)
   const [testingImmich, setTestingImmich] = React.useState(false)
   const [testingLocalAi, setTestingLocalAi] = React.useState(false)
 
@@ -60,6 +65,21 @@ export default function SettingsPage() {
     setNotifications((prev) =>
       prev.map((n) => (n.id === id ? { ...n, enabled: !n.enabled } : n))
     )
+  }
+
+  const handleAiInsightsToggle = async (
+    field: 'aiInsightsWeekly' | 'aiInsightsMonthly',
+    enabled: boolean
+  ) => {
+    setSavingInsights(field === 'aiInsightsWeekly' ? 'weekly' : 'monthly')
+    try {
+      await saveAiInsightsSettings({ [field]: enabled })
+      toast.success(t('settings.saved'))
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to save')
+    } finally {
+      setSavingInsights(null)
+    }
   }
 
   const handleTestImmich = async () => {
@@ -130,6 +150,37 @@ export default function SettingsPage() {
           <CardDescription>Configure how you receive alerts</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-medium">Weekly AI Insights</p>
+              <p className="text-sm text-muted-foreground">
+                Auto-generate a weekly spending report each Monday
+              </p>
+            </div>
+            <Switch
+              checked={aiInsightsWeekly}
+              disabled={savingInsights === 'weekly'}
+              onCheckedChange={(checked) =>
+                handleAiInsightsToggle('aiInsightsWeekly', checked)
+              }
+            />
+          </div>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-medium">Monthly AI Insights</p>
+              <p className="text-sm text-muted-foreground">
+                Auto-generate a monthly spending report on the 1st
+              </p>
+            </div>
+            <Switch
+              checked={aiInsightsMonthly}
+              disabled={savingInsights === 'monthly'}
+              onCheckedChange={(checked) =>
+                handleAiInsightsToggle('aiInsightsMonthly', checked)
+              }
+            />
+          </div>
+          <Separator />
           {notifications.map((notification) => (
             <div
               key={notification.id}

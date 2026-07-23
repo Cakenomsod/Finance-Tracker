@@ -1,14 +1,17 @@
 import { AiTextProvider } from '@/lib/firestore-types';
 import type { ReceiptAiContext, ExpenseTextAiContext, ReceiptParseResult } from '@/lib/ai/receipt-schema';
+import type { AiInsightLlmResult } from '@/lib/ai/insight-schema';
 import {
   parseReceiptImage,
   parseExpenseText,
   sendChatMessage as sendChatMessageGemma,
+  generateInsights as generateInsightsGemma,
 } from '@/lib/ai/gemma';
 import {
   parseReceiptImageLocal,
   parseExpenseTextLocal,
   sendChatMessageLocal,
+  generateInsightsLocal,
   type LocalAiConfig,
 } from '@/lib/ai/local';
 import { buildContactsPromptHint, resolveSplitPeople } from '@/lib/ai/contact-resolve';
@@ -127,6 +130,25 @@ export async function sendChatWithProvider(
   }
 
   return sendChatMessageGemma(message, history);
+}
+
+/**
+ * Generate structured financial insights using the specified AI provider.
+ */
+export async function generateInsightsWithProvider(
+  prompt: string,
+  config: AiProviderConfig
+): Promise<{ result: AiInsightLlmResult; model: string; provider: AiTextProvider }> {
+  if (config.provider === 'local') {
+    if (!config.localAiConfig?.baseUrl) {
+      throw new Error('Local AI is not configured. Please set up Local AI URL in Settings.');
+    }
+    const { result, model } = await generateInsightsLocal(prompt, config.localAiConfig);
+    return { result, model, provider: 'local' };
+  }
+
+  const { result, model } = await generateInsightsGemma(prompt);
+  return { result, model, provider: 'gemma' };
 }
 
 export { testLocalAiConnection } from '@/lib/ai/local';

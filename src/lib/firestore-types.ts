@@ -24,6 +24,10 @@ export interface UserProfile {
   immich?: ImmichSettings;
   aiTextProvider?: AiTextProvider;
   localAiBaseUrl?: string;
+  /** Prefer weekly AI insights generation */
+  aiInsightsWeekly?: boolean;
+  /** Prefer monthly AI insights generation */
+  aiInsightsMonthly?: boolean;
   /** Immich album for non-trip receipt attachments */
   immichGeneralAlbumId?: string | null;
   /** User-defined display order for friends & custom contacts (uid or custom:{id}) */
@@ -31,6 +35,64 @@ export interface UserProfile {
   /** Nicknames per app-friend uid for AI matching and display */
   friendAliases?: Record<string, string[]>;
   createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+export type AiInsightPeriodType = 'week' | 'month';
+
+export interface AiInsightHighlight {
+  type: 'warning' | 'insight' | 'positive';
+  title: string;
+  description: string;
+  impact: 'high' | 'medium' | 'low';
+  amount?: number;
+  change?: string;
+}
+
+export interface AiInsightTip {
+  title: string;
+  description: string;
+  potentialSavings?: number;
+  difficulty: 'Easy' | 'Medium' | 'Hard';
+}
+
+export interface AiInsightAnomaly {
+  title: string;
+  description: string;
+  severity: 'high' | 'medium' | 'low';
+}
+
+export interface AiInsightStats {
+  totalIncome: number;
+  totalExpense: number;
+  net: number;
+  transactionCount: number;
+  topCategories: { name: string; amount: number; percent: number }[];
+  vsPriorExpenseChangePercent?: number | null;
+  savingsRate?: number | null;
+}
+
+/** users/{uid}/ai_insights/{periodKey} */
+export interface AiInsightReport {
+  id: string; // same as periodKey
+  userId: string;
+  periodType: AiInsightPeriodType;
+  periodKey: string;
+  year: number;
+  month?: number; // 1-12 for month
+  weekStart?: string; // YYYY-MM-DD for week
+  weekEnd?: string;
+  summary: string;
+  highlights: AiInsightHighlight[];
+  tips: AiInsightTip[];
+  anomalies: AiInsightAnomaly[];
+  stats: AiInsightStats;
+  status: 'ready' | 'generating' | 'failed';
+  errorMessage?: string | null;
+  provider?: string;
+  model?: string;
+  locale?: string;
+  generatedAt: Timestamp;
   updatedAt: Timestamp;
 }
 

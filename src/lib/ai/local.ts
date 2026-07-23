@@ -6,6 +6,10 @@ import {
   type ReceiptAiContext,
   type ExpenseTextAiContext,
 } from '@/lib/ai/receipt-schema';
+import {
+  aiInsightLlmSchema,
+  type AiInsightLlmResult,
+} from '@/lib/ai/insight-schema';
 import { parseJsonFromAiContent } from '@/lib/ai/parse-json';
 import { extractLocalAiMessageContent } from '@/lib/ai/local-response';
 import { envTrim } from '@/lib/ai/env';
@@ -224,6 +228,69 @@ export async function parseExpenseTextLocal(
     const fallback = tryParseExpenseTextStrictFormat(text, currency);
     if (fallback) return fallback;
     throw wrapLocalAiError(error, 'Failed to parse expense text with local AI');
+  }
+}
+
+/**
+ * Generate structured financial insights JSON via local AI.
+ */
+export async function generateInsightsLocal(
+  prompt: string,
+  config: LocalAiConfig
+): Promise<{ result: AiInsightLlmResult; model: string }> {
+  if (!config.baseUrl) {
+    throw new Error('Local AI baseUrl is not configured');
+  }
+
+  const baseUrl = normalizeUrl(config.baseUrl);
+  const model = config.model || DEFAULT_MODEL;
+
+  try {
+    const response = await fetch(`${baseUrl}/v1/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model,
+        messages: [
+          {
+            role: 'system',
+            content:
+              'You are a JSON API. Reply with a single valid JSON object only in the message content field. ' +
+              'Do not use chain-of-thought or reasoning — no markdown, no explanation, no preamble.',
+          },
+          { role: 'user', content: prompt },
+        ],
+        temperature: 0.4,
+        max_tokens: 4096,
+        stream: false,
+      }),
+      signal: AbortSignal.timeout(getLocalAiTimeoutMs()),
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      console.error('[Local AI] insights HTTP error', {
+        base: redactLocalAiBaseForLog(baseUrl),
+        model,
+        status: response.status,
+        bodyPreview: error.slice(0, 600),
+      });
+      throw new Error(`Local AI error: ${response.status} - ${error}`);
+    }
+
+    const data = await parseLocalAiResponseJson(response);
+    const content = extractLocalAiMessageContent(
+      data as Parameters<typeof extractLocalAiMessageContent>[0]
+    );
+
+    if (!content) {
+      throw new Error('No response from local AI');
+    }
+
+    const result = aiInsightLlmSchema.parse(parseJsonFromAiContent(content));
+    return { result, model };
+  } catch (error) {
+    throw wrapLocalAiError(error, 'Failed to generate insights with local AI');
   }
 }
 

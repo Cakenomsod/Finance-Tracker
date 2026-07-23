@@ -7,6 +7,10 @@ import {
   type ReceiptAiContext,
   type ExpenseTextAiContext,
 } from '@/lib/ai/receipt-schema';
+import {
+  aiInsightLlmSchema,
+  type AiInsightLlmResult,
+} from '@/lib/ai/insight-schema';
 import { parseJsonFromAiContent } from '@/lib/ai/parse-json';
 import { buildAiDateContext, aiTimeZoneFromContext } from '@/lib/ai/ai-datetime';
 import {
@@ -14,6 +18,7 @@ import {
   getChatModel,
   getGoogleAiApiKey,
   getReceiptModel,
+  normalizeGeminiModel,
 } from '@/lib/ai/env';
 
 function getClient() {
@@ -136,4 +141,49 @@ export async function sendChatMessage(
   const chat = model.startChat({ history: geminiHistory });
   const result = await chat.sendMessage(message);
   return result.response.text();
+}
+
+async function generateInsightJsonWithModels(
+  modelNames: string[],
+  prompt: string
+): Promise<AiInsightLlmResult> {
+  const genAI = getClient();
+  let lastError: Error | null = null;
+
+  for (const modelName of modelNames) {
+    try {
+      const model = genAI.getGenerativeModel({
+        model: modelName,
+        generationConfig: {
+          responseMimeType: 'application/json',
+          temperature: 0.4,
+        },
+      });
+
+      const result = await model.generateContent([{ text: prompt }]);
+      const text = result.response.text();
+      if (!text?.trim()) {
+        throw new Error('Empty response from Google AI');
+      }
+
+      const parsed = parseJsonFromAiContent(text);
+      return aiInsightLlmSchema.parse(parsed);
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      console.error('[Gemini] generateInsightJsonWithModels failed', {
+        model: modelName,
+        message: lastError.message,
+      });
+    }
+  }
+
+  throw lastError ?? new Error('All Google AI models failed');
+}
+
+export async function generateInsights(
+  prompt: string
+): Promise<{ result: AiInsightLlmResult; model: string }> {
+  const model = getChatModel();
+  const result = await generateInsightJsonWithModels(geminiModelCandidates(model), prompt);
+  return { result, model: normalizeGeminiModel(model) };
 }

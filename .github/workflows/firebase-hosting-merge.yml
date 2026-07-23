@@ -49,6 +49,7 @@ jobs:
           echo "AI_RECEIPT_MODEL=${{ secrets.AI_RECEIPT_MODEL }}" >> .env
           echo "AI_CHAT_MODEL=${{ secrets.AI_CHAT_MODEL }}" >> .env
           echo "IMMICH_API_KEY=${{ secrets.IMMICH_API_KEY }}" >> .env
+          echo "CRON_SECRET=${{ secrets.CRON_SECRET }}" >> .env
 
       - name: Deploy to Firebase
         uses: FirebaseExtended/action-hosting-deploy@v0
@@ -70,3 +71,4 @@ jobs:
           AI_RECEIPT_MODEL: ${{ secrets.AI_RECEIPT_MODEL }}
           AI_CHAT_MODEL: ${{ secrets.AI_CHAT_MODEL }}
           IMMICH_API_KEY: ${{ secrets.IMMICH_API_KEY }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}

@@ -94,6 +94,17 @@ export function useUserSettings() {
     [user]
   );
 
+  const saveAiInsightsSettings = useCallback(
+    async (settings: { aiInsightsWeekly?: boolean; aiInsightsMonthly?: boolean }) => {
+      if (!user) throw new Error('Not logged in');
+      await updateDoc(doc(db, 'users', user.uid), {
+        ...settings,
+        updatedAt: serverTimestamp(),
+      });
+    },
+    [user]
+  );
+
   return {
     profile,
     loading,
@@ -102,8 +113,11 @@ export function useUserSettings() {
     immich: profile?.immich,
     aiTextProvider: profile?.aiTextProvider ?? 'gemma',
     localAiBaseUrl: profile?.localAiBaseUrl,
+    aiInsightsWeekly: profile?.aiInsightsWeekly === true,
+    aiInsightsMonthly: profile?.aiInsightsMonthly === true,
     saveImmichSettings,
     saveAiSettings,
+    saveAiInsightsSettings,
     saveProfile,
     saveCurrency,
     saveLocale,

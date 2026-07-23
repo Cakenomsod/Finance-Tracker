@@ -1,0 +1,2 @@
+# Keep LF on all platforms (Windows + Linux on shared NTFS)
+* text=auto eol=lf
