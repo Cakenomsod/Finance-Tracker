@@ -1,5 +1,4 @@
 import { PaymentMethod, Transaction, TripExpensePayer } from './firestore-types';
-import { isDebtPaymentTransaction } from './debt-payment';
 
 /** Fixed Paotang co-payment split (government wallet subsidy programs) */
 export const PAOTANG_GOV_PERCENT = 60;
@@ -249,7 +248,8 @@ export function toEffectivePayersForDebt(
 
 /** Cash-flow amount used for display, debt split, and expense totals */
 export function getTransactionEffectiveAmount(tx: PaymentFields): number {
-  if (isDebtPaymentTransaction(tx)) {
+  // Inline check — avoid importing debt-payment (pulls client Firestore) from server API routes
+  if (tx.debtPaymentDebtId) {
     return tx.amount;
   }
 

@@ -1,5 +1,4 @@
 import { Timestamp } from 'firebase/firestore';
-import { createTransaction } from './firestore';
 import { Debt, Transaction } from './firestore-types';
 
 export const DEBT_PAYMENT_CATEGORY = 'หนี้';
@@ -39,6 +38,11 @@ export async function createDebtSettlementTransaction(
     date?: Timestamp;
   }
 ) {
+  // Lazy-load client Firestore helpers so server API routes can import pure
+  // helpers from this module without initializing the browser Firebase SDK
+  // during Next.js "Collecting page data".
+  const { createTransaction } = await import('./firestore');
+
   const {
     amount,
     isPayer,

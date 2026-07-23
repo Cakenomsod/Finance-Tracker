@@ -20,6 +20,7 @@ import {
 import type { AiInsightPeriodType } from '@/lib/firestore-types';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
 
 const CONCURRENCY = 3;
