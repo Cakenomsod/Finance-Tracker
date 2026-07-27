@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
@@ -31,6 +32,55 @@ type LocalPreview = {
   name: string
 }
 
+function ImmichThumb({
+  assetId,
+  onOpen,
+  onRemove,
+}: {
+  assetId: string
+  onOpen: () => void
+  onRemove: () => void
+}) {
+  const [loaded, setLoaded] = React.useState(false)
+
+  return (
+    <div className="relative group w-20 h-20 rounded-md border bg-muted overflow-hidden shrink-0">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={`/api/immich/asset/${assetId}?type=thumbnail`}
+        alt=""
+        loading="lazy"
+        decoding="async"
+        className={cn(
+          'w-full h-full object-cover cursor-pointer transition-opacity duration-200 ease-out motion-reduce:transition-none',
+          loaded ? 'opacity-100' : 'opacity-0'
+        )}
+        onLoad={() => setLoaded(true)}
+        onClick={onOpen}
+      />
+      <button
+        type="button"
+        className="absolute top-0.5 right-0.5 size-6 rounded-full bg-background/90 border flex items-center justify-center opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
+        onClick={(e) => {
+          e.stopPropagation()
+          onRemove()
+        }}
+        aria-label="ลบรูป"
+      >
+        <X className="size-3.5" />
+      </button>
+      <button
+        type="button"
+        className="absolute bottom-0.5 right-0.5 size-6 rounded-full bg-background/90 border flex items-center justify-center opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
+        onClick={onOpen}
+        aria-label="ขยาย"
+      >
+        <Maximize2 className="size-3" />
+      </button>
+    </div>
+  )
+}
+
 export function ImmichAttachmentsField({
   value,
   onChange,
@@ -45,6 +95,10 @@ export function ImmichAttachmentsField({
   valueRef.current = value
 
   const [lightboxAssetId, setLightboxAssetId] = React.useState<string | null>(null)
+  const [lightboxQuality, setLightboxQuality] = React.useState<'preview' | 'original'>(
+    'preview'
+  )
+  const [lightboxLoaded, setLightboxLoaded] = React.useState(false)
   const [localPreviews, setLocalPreviews] = React.useState<LocalPreview[]>([])
   const attachInputRef = React.useRef<HTMLInputElement>(null)
 
@@ -81,6 +135,12 @@ export function ImmichAttachmentsField({
       }
     }
   }, [])
+
+  React.useEffect(() => {
+    if (!lightboxAssetId) return
+    setLightboxQuality('preview')
+    setLightboxLoaded(false)
+  }, [lightboxAssetId])
 
   const uniqueIds = React.useMemo(() => [...new Set(value)], [value])
 
@@ -158,50 +218,43 @@ export function ImmichAttachmentsField({
             {localPreviews.map((p) => (
               <div
                 key={p.jobId}
-                className="relative w-20 h-20 rounded-md border bg-background overflow-hidden shrink-0"
+                className="relative w-20 h-20 rounded-md border bg-muted overflow-hidden shrink-0"
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={p.url} alt={p.name} className="w-full h-full object-cover opacity-70" />
+                <img
+                  src={p.url}
+                  alt={p.name}
+                  className="w-full h-full object-cover opacity-70"
+                />
                 <div className="absolute inset-0 flex items-center justify-center bg-background/40">
                   <Loader2 className="size-5 animate-spin text-primary" />
                 </div>
               </div>
             ))}
             {uniqueIds.map((id) => (
-              <div
+              <ImmichThumb
                 key={id}
-                className="relative group w-20 h-20 rounded-md border bg-background overflow-hidden shrink-0"
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={`/api/immich/asset/${id}?type=thumbnail`}
-                  alt=""
-                  className="w-full h-full object-cover cursor-pointer"
-                  onClick={() => setLightboxAssetId(id)}
-                />
-                <button
-                  type="button"
-                  className="absolute top-0.5 right-0.5 size-6 rounded-full bg-background/90 border flex items-center justify-center opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
-                  onClick={() => handleRemoveAttachment(id)}
-                  aria-label="ลบรูป"
-                >
-                  <X className="size-3.5" />
-                </button>
-                <button
-                  type="button"
-                  className="absolute bottom-0.5 right-0.5 size-6 rounded-full bg-background/90 border flex items-center justify-center opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
-                  onClick={() => setLightboxAssetId(id)}
-                  aria-label="ขยาย"
-                >
-                  <Maximize2 className="size-3" />
-                </button>
-              </div>
+                assetId={id}
+                onOpen={() => setLightboxAssetId(id)}
+                onRemove={() => {
+                  void handleRemoveAttachment(id)
+                }}
+              />
             ))}
           </div>
         )}
       </div>
 
-      <Dialog open={!!lightboxAssetId} onOpenChange={(o) => !o && setLightboxAssetId(null)}>
+      <Dialog
+        open={!!lightboxAssetId}
+        onOpenChange={(o) => {
+          if (!o) {
+            setLightboxAssetId(null)
+            setLightboxQuality('preview')
+            setLightboxLoaded(false)
+          }
+        }}
+      >
         <DialogContent
           className="max-w-[min(96vw,900px)] p-2 sm:p-4"
           disableOutsideClose
@@ -210,13 +263,51 @@ export function ImmichAttachmentsField({
             <DialogTitle>ดูรูปโน้ต</DialogTitle>
           </DialogHeader>
           {lightboxAssetId && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={`/api/immich/asset/${lightboxAssetId}?type=original`}
-              alt="รูปโน้ตขนาดใหญ่"
-              className="w-full max-h-[80vh] object-contain rounded-md"
-            />
+            <div className="relative min-h-[12rem] rounded-md bg-muted">
+              {!lightboxLoaded && (
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <Loader2 className="size-6 animate-spin text-muted-foreground" />
+                </div>
+              )}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                key={`${lightboxAssetId}-${lightboxQuality}`}
+                src={`/api/immich/asset/${lightboxAssetId}?type=${lightboxQuality}`}
+                alt="รูปโน้ตขนาดใหญ่"
+                decoding="async"
+                className={cn(
+                  'w-full max-h-[80vh] object-contain rounded-md transition-opacity duration-200 ease-out motion-reduce:transition-none',
+                  lightboxLoaded ? 'opacity-100' : 'opacity-0'
+                )}
+                onLoad={() => setLightboxLoaded(true)}
+              />
+            </div>
           )}
+          <DialogFooter className="gap-2 sm:justify-between">
+            {lightboxQuality === 'preview' ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setLightboxLoaded(false)
+                  setLightboxQuality('original')
+                }}
+              >
+                ดูต้นฉบับ
+              </Button>
+            ) : (
+              <p className="text-xs text-muted-foreground self-center">กำลังแสดงต้นฉบับ</p>
+            )}
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => setLightboxAssetId(null)}
+            >
+              ปิด
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </>
