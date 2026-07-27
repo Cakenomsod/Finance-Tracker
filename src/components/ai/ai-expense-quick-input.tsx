@@ -224,14 +224,16 @@ export const AiExpenseQuickInput = React.forwardRef<
   const primaryDisabled = receiptMode ? !pendingReceiptFile : !input.trim()
 
   return (
-    <div className="rounded-lg border bg-card p-4 space-y-3">
+    <div className="rounded-xl border bg-card p-4 shadow-sm space-y-3">
       <div className="flex items-center gap-2">
-        <Sparkles className="size-4 text-primary shrink-0" />
-        <div className="min-w-0">
-          <p className="text-sm font-medium">เพิ่มรายจ่ายด้วย AI</p>
-
+        <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-primary/10">
+          <Sparkles className="size-4 text-primary" aria-hidden />
         </div>
-        <div className="flex items-center gap-1.5 shrink-0 ml-auto">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold tracking-tight">Add with AI</p>
+          <p className="text-xs text-muted-foreground">Type an expense or attach a receipt</p>
+        </div>
+        <div className="ml-auto flex shrink-0 items-center gap-1.5">
           <Badge variant="secondary" className="text-[10px]">
             Gemini
           </Badge>
@@ -273,8 +275,8 @@ export const AiExpenseQuickInput = React.forwardRef<
         </Button>
       </div>
 
-      <div className="space-y-2 rounded-md border bg-muted/30 p-2">
-        <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">รูปใบเสร็จ</p>
+      <div className="space-y-2 rounded-lg border bg-muted/30 p-3">
+        <p className="text-xs font-medium text-muted-foreground">Receipt photo</p>
         <div className="flex flex-wrap gap-2 items-center">
           <input
             ref={aiImageInputRef}
@@ -377,41 +379,43 @@ export const AiExpenseQuickInput = React.forwardRef<
 
       {jobs.length > 0 && (
         <div className="space-y-2 border-t pt-3">
-          <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
-            สถานะการแยกรายการ
-            {activeJobCount > 0 && ` (${activeJobCount} กำลังทำ)`}
+          <p className="text-xs font-medium text-muted-foreground">
+            Parse status
+            {activeJobCount > 0 && (
+              <span className="tabular-nums"> ({activeJobCount} running)</span>
+            )}
           </p>
-          <div className="space-y-2 max-h-64 overflow-y-auto">
+          <div className="max-h-64 space-y-2 overflow-y-auto">
             {jobs.map((job) => (
               <div
                 key={job.id}
                 className={cn(
-                  'rounded-md border px-3 py-2 text-xs space-y-2',
+                  'space-y-2 rounded-md border px-3 py-2 text-xs transition-colors duration-200',
                   job.status === 'error' && 'border-destructive/40 bg-destructive/5',
                   job.status === 'done' && 'border-primary/30 bg-primary/5'
                 )}
               >
                 <div className="flex items-start gap-2">
                   {job.status === 'processing' && (
-                    <Loader2 className="size-3.5 shrink-0 animate-spin text-primary mt-0.5" />
+                    <Loader2 className="mt-0.5 size-3.5 shrink-0 animate-spin text-primary motion-reduce:animate-none" />
                   )}
                   {job.status === 'done' && (
-                    <CheckCircle2 className="size-3.5 shrink-0 text-primary mt-0.5" />
+                    <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-primary" />
                   )}
                   {job.status === 'error' && (
-                    <AlertCircle className="size-3.5 shrink-0 text-destructive mt-0.5" />
+                    <AlertCircle className="mt-0.5 size-3.5 shrink-0 text-destructive" />
                   )}
                   <div className="min-w-0 flex-1">
-                    <p className="font-medium truncate">{job.inputLabel}</p>
+                    <p className="truncate font-medium">{job.inputLabel}</p>
                     <p className="text-muted-foreground">
-                      {job.kind === 'receipt' ? 'รูปใบเสร็จ' : 'ข้อความ'} · Gemini · {statusLabel(job)}
+                      {job.kind === 'receipt' ? 'Receipt' : 'Text'} · Gemini · {statusLabel(job)}
                     </p>
                   </div>
                   <button
                     type="button"
-                    className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-foreground"
+                    className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors duration-200 hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
                     onClick={() => removeJob(job.id)}
-                    aria-label="ลบรายการสถานะ"
+                    aria-label="Dismiss parse job"
                   >
                     <X className="size-3.5" />
                   </button>

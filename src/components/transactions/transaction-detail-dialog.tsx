@@ -16,6 +16,7 @@ import { TransactionForm } from '@/components/transactions/transaction-form'
 import { Transaction, TripExpense } from '@/lib/firestore-types'
 import { formatTransactionDisplayTime, toDateFromFirestore } from '@/lib/datetime'
 import { formatCurrencySymbol } from '@/lib/trip-currency'
+import { cn } from '@/lib/utils'
 
 interface TransactionDetailDialogProps {
   open: boolean
@@ -32,18 +33,31 @@ function DetailRow({
   label,
   value,
   highlight,
+  className,
 }: {
   label: string
   value: React.ReactNode
   highlight?: boolean
+  className?: string
 }) {
   return (
-    <div className="flex justify-between gap-4">
+    <div className={cn('flex justify-between gap-4 text-sm', className)}>
       <span className="shrink-0 text-muted-foreground">{label}</span>
-      <span className={highlight ? 'text-right font-semibold' : 'text-right'}>
+      <span
+        className={cn(
+          'min-w-0 text-right',
+          highlight && 'font-semibold tabular-nums'
+        )}
+      >
         {value}
       </span>
     </div>
+  )
+}
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="text-xs font-medium text-muted-foreground">{children}</p>
   )
 }
 
@@ -54,13 +68,17 @@ function TripExpenseDetailView({ expense }: { expense: TripExpense }) {
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-3 rounded-lg border p-4 text-sm">
+      <div className="space-y-3 rounded-lg border p-4">
         <DetailRow label="รายละเอียด" value={expense.description} />
         <DetailRow label="หมวดหมู่" value={expense.category || 'Other'} />
         {txDate && (
           <DetailRow
             label="วันที่"
-            value={formatTransactionDisplayTime(txDate)}
+            value={
+              <span className="tabular-nums">
+                {formatTransactionDisplayTime(txDate)}
+              </span>
+            }
           />
         )}
         <DetailRow
@@ -73,29 +91,27 @@ function TripExpenseDetailView({ expense }: { expense: TripExpense }) {
           label="แบ่งจ่าย"
           value={
             expense.splitMode === 'solo'
-              ? 'Solo'
+              ? 'คนเดียว'
               : expense.splitMode === 'equal'
-                ? 'Equal'
+                ? 'หารเท่ากัน'
                 : expense.splitMode === 'item'
-                  ? 'By item'
-                  : 'Custom'
+                  ? 'ตามรายการ'
+                  : 'กำหนดเอง'
           }
         />
       </div>
 
       {expense.payers.length > 0 && (
         <div className="space-y-2">
-          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            ผู้จ่าย
-          </p>
+          <SectionLabel>ผู้จ่าย</SectionLabel>
           <div className="space-y-1.5">
             {expense.payers.map((payer, index) => (
               <div
                 key={`${payer.userId}-${index}`}
                 className="flex items-center justify-between rounded-md border px-3 py-2 text-sm"
               >
-                <span>{payer.displayName}</span>
-                <span className="font-medium tabular-nums">
+                <span className="min-w-0 truncate">{payer.displayName}</span>
+                <span className="ml-2 shrink-0 font-medium tabular-nums">
                   {symbol}{payer.amount.toLocaleString()}
                 </span>
               </div>
@@ -106,17 +122,15 @@ function TripExpenseDetailView({ expense }: { expense: TripExpense }) {
 
       {expense.shares.length > 0 && (
         <div className="space-y-2">
-          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            ส่วนแบ่ง
-          </p>
+          <SectionLabel>ส่วนแบ่ง</SectionLabel>
           <div className="space-y-1.5">
             {expense.shares.map((share, index) => (
               <div
                 key={`${share.userId}-${index}`}
                 className="flex items-center justify-between rounded-md border px-3 py-2 text-sm"
               >
-                <span>{share.displayName}</span>
-                <span className="font-medium tabular-nums">
+                <span className="min-w-0 truncate">{share.displayName}</span>
+                <span className="ml-2 shrink-0 font-medium tabular-nums">
                   {symbol}{share.amount.toLocaleString()}
                 </span>
               </div>
@@ -127,9 +141,7 @@ function TripExpenseDetailView({ expense }: { expense: TripExpense }) {
 
       {expense.items && expense.items.length > 0 && (
         <div className="space-y-2">
-          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            รายการสินค้า ({expense.items.length})
-          </p>
+          <SectionLabel>รายการสินค้า ({expense.items.length})</SectionLabel>
           <div className="max-h-40 space-y-2 overflow-y-auto">
             {expense.items.map((item, index) => (
               <div
@@ -137,7 +149,7 @@ function TripExpenseDetailView({ expense }: { expense: TripExpense }) {
                 className="flex items-center justify-between rounded-md border px-3 py-2 text-sm"
               >
                 <div className="flex min-w-0 items-center gap-2">
-                  <Receipt className="size-3.5 shrink-0 text-muted-foreground" />
+                  <Receipt className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
                   <div className="min-w-0">
                     <p className="truncate font-medium">{item.name}</p>
                     <p className="text-xs text-muted-foreground">{item.category}</p>
@@ -176,7 +188,9 @@ export function TransactionDetailDialog({
         onOpenChange(next)
       }}
     >
-      <DialogContent className="max-h-[min(90vh,90dvh)] w-[calc(100vw-1rem)] overflow-y-auto overflow-x-hidden p-4 max-sm:top-[4vh] max-sm:translate-y-0 sm:max-w-[680px] sm:p-6">
+      <DialogContent
+        className="max-h-[min(90vh,90dvh)] w-[calc(100vw-1rem)] overflow-y-auto overflow-x-hidden p-4 max-sm:top-[4vh] max-sm:translate-y-0 sm:max-w-[680px] sm:p-6"
+      >
         <DialogHeader>
           <DialogTitle>รายละเอียดธุรกรรม</DialogTitle>
           <DialogDescription>
@@ -201,7 +215,7 @@ export function TransactionDetailDialog({
         ) : isTripExpense && tripExpense ? (
           <div className="space-y-3">
             <Badge variant="outline" className="text-[10px]">
-              Trip Expense
+              รายจ่ายทริป
             </Badge>
             <TripExpenseDetailView expense={tripExpense} />
           </div>

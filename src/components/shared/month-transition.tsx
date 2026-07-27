@@ -50,7 +50,7 @@ export function MonthContentTransition({
     <div
       key={monthKey}
       className={cn(
-        'min-w-0 animate-in fade-in-0 duration-300 ease-out fill-mode-both motion-reduce:animate-none',
+        'min-w-0 animate-in fade-in-0 duration-200 ease-out fill-mode-both motion-reduce:animate-none',
         SLIDE_IN[direction],
         className
       )}
@@ -74,7 +74,7 @@ export function MonthAnimatedValue({
     <span
       key={valueKey}
       className={cn(
-        'inline-block animate-in fade-in-0 zoom-in-95 duration-300 ease-out fill-mode-both motion-reduce:animate-none',
+        'inline-block animate-in fade-in-0 zoom-in-95 duration-200 ease-out fill-mode-both motion-reduce:animate-none',
         className
       )}
     >
@@ -113,7 +113,7 @@ export function MonthTransition({
     <div
       key={monthKey}
       className={cn(
-        'min-w-0 animate-in fade-in-0 duration-300 ease-out fill-mode-both motion-reduce:animate-none',
+        'min-w-0 animate-in fade-in-0 duration-200 ease-out fill-mode-both motion-reduce:animate-none',
         SLIDE_IN[direction],
         className
       )}

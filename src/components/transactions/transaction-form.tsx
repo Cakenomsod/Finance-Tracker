@@ -5,6 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { useForm } from 'react-hook-form'
 import * as z from 'zod'
 import { Button } from '@/components/ui/button'
+import { DialogFooter } from '@/components/ui/dialog'
 import {
   Form,
   FormControl,
@@ -617,7 +618,7 @@ export function TransactionForm({
         {inputMode === 'receipt' && (
           <div className="space-y-3 rounded-lg border bg-muted/20 p-3">
             <div className="flex items-center justify-between gap-2">
-              <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Receipt Items</h4>
+              <h4 className="text-xs font-medium text-muted-foreground">รายการสินค้า</h4>
               <Button
                 type="button"
                 variant="outline"
@@ -1216,14 +1217,14 @@ export function TransactionForm({
 
         <OptionalNoteField value={note} onChange={setNote} />
 
-        <div className="flex gap-2 pt-2 sm:justify-end">
+        <DialogFooter className="pt-2">
           <Button type="button" variant="outline" className="flex-1 sm:flex-none" onClick={onCancel}>
             Cancel
           </Button>
           <Button type="submit" className="flex-1 sm:flex-none" disabled={isSubmitting || categoriesLoading}>
             {isSubmitting ? 'Saving...' : 'Save Transaction'}
           </Button>
-        </div>
+        </DialogFooter>
       </form>
     </Form>
   )

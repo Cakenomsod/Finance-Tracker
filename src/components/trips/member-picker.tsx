@@ -57,14 +57,20 @@ export function MemberPicker({ value, onChange, selfUid, className }: MemberPick
     <div className={cn('space-y-3', className)}>
       {/* Selected members */}
       {value.length > 0 && (
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2" aria-label="Selected members">
           {value.map((m) => (
-            <Badge key={m.key} variant="secondary" className="flex items-center gap-1 pl-2 pr-1 py-1">
+            <Badge key={m.key} variant="secondary" className="flex items-center gap-1 py-1 pl-2 pr-1">
               <span className="text-xs font-medium">{m.displayName}</span>
               <button
                 type="button"
                 onClick={() => remove(m.key)}
-                className="ml-1 rounded-full p-0.5 hover:bg-muted-foreground/20"
+                aria-label={`Remove ${m.displayName}`}
+                className={cn(
+                  'ml-1 rounded-full p-0.5',
+                  'transition-colors duration-150 ease-out motion-reduce:transition-none',
+                  'hover:bg-muted-foreground/20',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50'
+                )}
               >
                 <X className="size-3" />
               </button>
@@ -76,14 +82,15 @@ export function MemberPicker({ value, onChange, selfUid, className }: MemberPick
       {/* Friends list */}
       {availableContacts.length > 0 && (
         <div>
-          <p className="text-xs text-muted-foreground mb-2">รายชื่อของคุณ</p>
-          <div className="flex flex-wrap gap-2">
+          <p className="mb-2 text-xs text-muted-foreground">รายชื่อของคุณ · Your contacts</p>
+          <div className="flex flex-wrap gap-2" role="group" aria-label="Pick members from contacts">
             {availableContacts.map((item) => {
               const isSelected = selectedKeys.has(item.key)
               return (
                 <button
                   key={item.key}
                   type="button"
+                  aria-pressed={isSelected}
                   onClick={() => toggle({
                     key: item.key,
                     displayName: item.displayName,
@@ -91,10 +98,13 @@ export function MemberPicker({ value, onChange, selfUid, className }: MemberPick
                     isManual: item.type === 'custom',
                   })}
                   className={cn(
-                    'flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-medium transition-all',
+                    'flex min-h-9 items-center gap-2 rounded-md border px-3 py-1.5 text-sm font-medium',
+                    'transition-[background-color,border-color,color] duration-150 ease-out',
+                    'motion-reduce:transition-none',
+                    'focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50',
                     isSelected
-                      ? 'bg-primary text-primary-foreground border-primary'
-                      : 'bg-background border-border hover:border-primary/50'
+                      ? 'border-primary bg-primary text-primary-foreground'
+                      : 'border-border bg-background hover:border-primary/40'
                   )}
                 >
                   <Avatar className="size-5">
@@ -103,7 +113,7 @@ export function MemberPicker({ value, onChange, selfUid, className }: MemberPick
                     </AvatarFallback>
                   </Avatar>
                   {item.displayName}
-                  {isSelected && <UserCheck className="size-3" />}
+                  {isSelected && <UserCheck className="size-3" aria-hidden />}
                 </button>
               )
             })}
@@ -113,16 +123,25 @@ export function MemberPicker({ value, onChange, selfUid, className }: MemberPick
 
       {/* Manual name entry */}
       <div>
-        <p className="text-xs text-muted-foreground mb-2">เพิ่มชื่อเอง</p>
+        <p className="mb-2 text-xs text-muted-foreground">เพิ่มชื่อเอง · Add a name</p>
         <div className="flex gap-2">
           <Input
-            placeholder="พิมพ์ชื่อแล้วกด Enter..."
+            placeholder="Type a name, then Enter…"
             value={manualName}
             onChange={(e) => setManualName(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addManual() } }}
             className="flex-1"
+            aria-label="Add member by name"
           />
-          <Button type="button" variant="outline" size="sm" onClick={addManual} disabled={!manualName.trim()}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="min-h-9"
+            onClick={addManual}
+            disabled={!manualName.trim()}
+            aria-label="Add named member"
+          >
             <Plus className="size-4" />
           </Button>
         </div>

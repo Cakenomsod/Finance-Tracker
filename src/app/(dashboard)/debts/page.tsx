@@ -7,7 +7,6 @@ import {
   ArrowRight,
   Check,
   History,
-  AlertCircle,
   Wallet,
   MoreHorizontal,
   Send,
@@ -26,7 +25,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -45,6 +43,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { Skeleton } from '@/components/ui/skeleton'
 import { toast } from 'sonner'
 import {
   DropdownMenu,
@@ -52,7 +51,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { cn } from '@/lib/utils'
+import { amountColorClass, cn } from '@/lib/utils'
 import { useDebts } from '@/hooks/use-debts'
 import { useTripDebts } from '@/hooks/use-trip-debts'
 import { useTripSettlements } from '@/hooks/use-trip-settlements'
@@ -146,6 +145,92 @@ function resolveSettlementSource(settlement: TripSettlement): PaymentHistoryItem
   return 'บันทึกเอง'
 }
 
+function formatDebtAmount(amount: number, options?: { sign?: 'plus' | 'minus' | 'none' }) {
+  const sign = options?.sign ?? 'none'
+  const prefix = sign === 'plus' ? '+' : sign === 'minus' ? '-' : ''
+  return `${prefix}฿${amount.toLocaleString(undefined, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  })}`
+}
+
+function DebtsSkeleton() {
+  return (
+    <div className="flex flex-col gap-6 p-4 sm:p-6" aria-busy="true" aria-label="กำลังโหลดหนี้">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="space-y-2">
+          <Skeleton className="h-7 w-48" />
+          <Skeleton className="h-4 w-72 max-w-full" />
+        </div>
+        <Skeleton className="h-9 w-36 shrink-0" />
+      </div>
+      <div className="grid gap-4 sm:grid-cols-3">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <Card key={i} className="shadow-sm">
+            <CardContent className="pt-6">
+              <Skeleton className="h-4 w-24" />
+              <Skeleton className="mt-3 h-8 w-32" />
+              <Skeleton className="mt-2 h-4 w-20" />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+      <Skeleton className="h-10 w-full max-w-md rounded-lg" />
+      <Card className="shadow-sm">
+        <CardContent className="space-y-3 p-6">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-14 w-full rounded-lg" />
+          ))}
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+function DebtEmptyState({
+  type,
+  onAdd,
+}: {
+  type: 'owe' | 'owed' | 'history'
+  onAdd?: () => void
+}) {
+  const copy =
+    type === 'owe'
+      ? {
+          title: 'คุณยังไม่ติดใคร',
+          body: 'เมื่อมีค่าใช้จ่ายร่วมกัน หนี้จะโผล่ที่นี่ — หรือบันทึกหนี้เองได้เลย',
+          icon: Send,
+        }
+      : type === 'owed'
+        ? {
+            title: 'ยังไม่มีใครติดเงินคุณ',
+            body: 'ยอดที่เพื่อนหรือทริปค้างชำระจะแสดงที่นี่เมื่อมีรายการ',
+            icon: Wallet,
+          }
+        : {
+            title: 'ยังไม่มีประวัติการจ่ายคืน',
+            body: 'เมื่อจ่ายหรือรับเงินคืน รายการจะถูกบันทึกที่นี่',
+            icon: History,
+          }
+  const Icon = copy.icon
+
+  return (
+    <div className="flex flex-col items-center justify-center px-4 py-12 text-center animate-in fade-in-0 duration-200 motion-reduce:animate-none">
+      <div className="flex size-12 items-center justify-center rounded-xl bg-muted">
+        <Icon className="size-6 text-muted-foreground" aria-hidden />
+      </div>
+      <p className="mt-4 text-base font-semibold text-balance">{copy.title}</p>
+      <p className="mt-1 max-w-sm text-sm text-muted-foreground text-pretty">{copy.body}</p>
+      {onAdd && (
+        <Button size="sm" className="mt-4 gap-2" onClick={onAdd}>
+          <Plus className="size-4" />
+          บันทึกหนี้
+        </Button>
+      )}
+    </div>
+  )
+}
+
 function DebtTable({
   debts,
   type,
@@ -165,12 +250,19 @@ function DebtTable({
     () => groupItemsByDate(debts, (debt) => resolveDebtDate(debt, txById)),
     [debts, txById]
   )
+  const personRole = type === 'owe' ? 'เจ้าหนี้' : 'ลูกหนี้'
+  const amountTone = type === 'owe' ? 'text-destructive' : 'text-success'
+  const avatarTone =
+    type === 'owe' ? 'bg-destructive/15 text-destructive' : 'bg-success/15 text-success'
 
   return (
     <>
       <div className="space-y-3 md:hidden">
         {groupedDebts.map((group) => (
-          <div key={group.dateKey} className="overflow-hidden rounded-lg border bg-card">
+          <div
+            key={group.dateKey}
+            className="overflow-hidden rounded-xl border bg-card shadow-sm"
+          >
             <DateGroupDividerMobile label={group.label} />
             <div className="divide-y">
               {group.items.map((debt) => {
@@ -187,50 +279,54 @@ function DebtTable({
                 return (
                   <div
                     key={debt.id}
-                    className={cn('p-4', canViewTx && 'cursor-pointer')}
+                    role={canViewTx ? 'button' : undefined}
+                    tabIndex={canViewTx ? 0 : undefined}
+                    className={cn(
+                      'p-4 transition-colors duration-200 motion-reduce:transition-none',
+                      canViewTx &&
+                        'cursor-pointer hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50'
+                    )}
                     onClick={() => {
                       if (canViewTx) onViewTransaction(relatedTxId)
+                    }}
+                    onKeyDown={(e) => {
+                      if (!canViewTx) return
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        onViewTransaction(relatedTxId)
+                      }
                     }}
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0 flex-1">
-                        <p className="font-medium leading-snug">{itemLabel}</p>
+                        <p className="font-medium leading-snug text-balance">{itemLabel}</p>
                         {debtDate && (
                           <p className="mt-0.5 text-xs text-muted-foreground tabular-nums">
                             {formatTransactionDisplayTime(debtDate)}
                           </p>
                         )}
                         <div className="mt-2 flex items-center gap-2">
-                          <Avatar className="size-7 shrink-0">
-                            <AvatarFallback
-                              className={cn(
-                                'text-[10px] font-medium',
-                                type === 'owe'
-                                  ? 'bg-destructive/20 text-destructive'
-                                  : 'bg-success/20 text-success'
-                              )}
-                            >
+                          <Avatar className="size-8 shrink-0">
+                            <AvatarFallback className={cn('text-[10px] font-medium', avatarTone)}>
                               {initials}
                             </AvatarFallback>
                           </Avatar>
-                          <span className="text-sm text-muted-foreground truncate">
-                            {type === 'owe' ? 'เจ้าหนี้' : 'ลูกหนี้'}: {person}
+                          <span className="truncate text-sm text-muted-foreground">
+                            {personRole}: <span className="text-foreground">{person}</span>
                           </span>
                         </div>
                         <Badge variant="outline" className="mt-2 text-xs font-normal">
                           {debtSourceLabel(debt)}
                         </Badge>
-                      </div>
-                      <p
-                        className={cn(
-                          'shrink-0 text-lg font-semibold tabular-nums',
-                          type === 'owe' ? 'text-destructive' : 'text-success'
+                        {debt.paidAmount != null && debt.paidAmount > 0 && (
+                          <p className="mt-1.5 text-xs text-muted-foreground tabular-nums">
+                            จ่ายแล้ว {formatDebtAmount(debt.paidAmount)}
+                          </p>
                         )}
-                      >
-                        {type === 'owe' ? '-' : '+'}฿
-                        {debt.amount.toLocaleString(undefined, {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 2,
+                      </div>
+                      <p className={cn('shrink-0 text-lg font-semibold tabular-nums', amountTone)}>
+                        {formatDebtAmount(debt.amount, {
+                          sign: type === 'owe' ? 'minus' : 'plus',
                         })}
                       </p>
                     </div>
@@ -239,7 +335,7 @@ function DebtTable({
                         <Button
                           size="sm"
                           variant="outline"
-                          className="flex-1"
+                          className="h-10 min-h-10 flex-1 transition-colors duration-200"
                           onClick={(e) => {
                             e.stopPropagation()
                             onSettle(debt.id!)
@@ -247,12 +343,12 @@ function DebtTable({
                         >
                           {type === 'owe' ? (
                             <>
-                              <Send className="mr-1.5 size-3" />
+                              <Send className="mr-1.5 size-3.5" aria-hidden />
                               จ่ายคืน
                             </>
                           ) : (
                             <>
-                              <Check className="mr-1.5 size-3" />
+                              <Check className="mr-1.5 size-3.5" aria-hidden />
                               รับเงิน
                             </>
                           )}
@@ -262,7 +358,8 @@ function DebtTable({
                             <Button
                               size="icon"
                               variant="ghost"
-                              className="size-8 shrink-0"
+                              className="size-10 shrink-0"
+                              aria-label={`ตัวเลือกเพิ่มเติมสำหรับ ${itemLabel}`}
                               onClick={(e) => e.stopPropagation()}
                             >
                               <MoreHorizontal className="size-4" />
@@ -278,7 +375,9 @@ function DebtTable({
                             )}
                             {debt.isTripDebt || debt.isTransactionDebt ? (
                               <DropdownMenuItem disabled>
-                                {debt.isTripDebt ? 'สร้างอัตโนมัติจากทริป' : 'สร้างอัตโนมัติจากธุรกรรม'}
+                                {debt.isTripDebt
+                                  ? 'สร้างอัตโนมัติจากทริป'
+                                  : 'สร้างอัตโนมัติจากธุรกรรม'}
                               </DropdownMenuItem>
                             ) : (
                               <DropdownMenuItem
@@ -301,159 +400,159 @@ function DebtTable({
         ))}
       </div>
 
-      <Card className="hidden md:block">
-      <CardContent className="p-0">
-        <Table>
-          <TableHeader>
-            <TableRow className="hover:bg-transparent">
-              <TableHead>รายการ</TableHead>
-              <TableHead className="w-[140px]">{type === 'owe' ? 'เจ้าหนี้' : 'ลูกหนี้'}</TableHead>
-              <TableHead className="w-[90px]">แหล่ง</TableHead>
-              <TableHead className="w-[120px] text-right">จำนวนเงิน</TableHead>
-              <TableHead className="w-[140px] text-right">การดำเนินการ</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {groupedDebts.map((group) => (
-              <React.Fragment key={group.dateKey}>
-                <DateGroupDividerRow label={group.label} colSpan={5} />
-                {group.items.map((debt) => {
-              const person =
-                type === 'owe'
-                  ? debt.toDisplayName || debt.toUserId
-                  : debt.fromDisplayName || debt.fromUserId
-              const itemLabel = resolveDebtDescription(debt, txById)
-              const initials = person.substring(0, 2).toUpperCase()
-              const relatedTxId = debt.relatedTxIds?.[0]
-              const canViewTx = !!relatedTxId && txById.has(relatedTxId)
-              const debtDate = resolveDebtDate(debt, txById)
+      <Card className="hidden shadow-sm md:block">
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead>รายการ</TableHead>
+                <TableHead className="w-[140px]">{personRole}</TableHead>
+                <TableHead className="w-[90px]">แหล่ง</TableHead>
+                <TableHead className="w-[120px] text-right">จำนวนเงิน</TableHead>
+                <TableHead className="w-[140px] text-right">การดำเนินการ</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {groupedDebts.map((group) => (
+                <React.Fragment key={group.dateKey}>
+                  <DateGroupDividerRow label={group.label} colSpan={5} />
+                  {group.items.map((debt) => {
+                    const person =
+                      type === 'owe'
+                        ? debt.toDisplayName || debt.toUserId
+                        : debt.fromDisplayName || debt.fromUserId
+                    const itemLabel = resolveDebtDescription(debt, txById)
+                    const initials = person.substring(0, 2).toUpperCase()
+                    const relatedTxId = debt.relatedTxIds?.[0]
+                    const canViewTx = !!relatedTxId && txById.has(relatedTxId)
+                    const debtDate = resolveDebtDate(debt, txById)
 
-              return (
-                <TableRow
-                  key={debt.id}
-                  className={cn('group', canViewTx && 'cursor-pointer')}
-                  onClick={() => {
-                    if (canViewTx) onViewTransaction(relatedTxId)
-                  }}
-                >
-                  <TableCell>
-                    <p className="max-w-[280px] truncate font-medium" title={itemLabel}>
-                      {itemLabel}
-                    </p>
-                    {debtDate && (
-                      <p className="text-xs text-muted-foreground tabular-nums">
-                        {formatTransactionDisplayTime(debtDate)}
-                      </p>
-                    )}
-                    {debt.paidAmount && debt.paidAmount > 0 && (
-                      <p className="text-xs text-muted-foreground">
-                        จ่ายแล้ว ฿{debt.paidAmount.toLocaleString()}
-                      </p>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      <Avatar className="size-7 shrink-0">
-                        <AvatarFallback
-                          className={cn(
-                            'text-[10px] font-medium',
-                            type === 'owe'
-                              ? 'bg-destructive/20 text-destructive'
-                              : 'bg-success/20 text-success'
-                          )}
-                        >
-                          {initials}
-                        </AvatarFallback>
-                      </Avatar>
-                      <span className="truncate">{person}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="outline" className="text-xs font-normal">
-                      {debtSourceLabel(debt)}
-                    </Badge>
-                  </TableCell>
-                  <TableCell
-                    className={cn(
-                      'text-right font-semibold tabular-nums',
-                      type === 'owe' ? 'text-destructive' : 'text-success'
-                    )}
-                  >
-                    {type === 'owe' ? '-' : '+'}฿
-                    {debt.amount.toLocaleString(undefined, {
-                      minimumFractionDigits: 0,
-                      maximumFractionDigits: 2,
-                    })}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex items-center justify-end gap-1">
-                      {debt.status === 'pending' && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            onSettle(debt.id!)
-                          }}
-                        >
-                          {type === 'owe' ? (
-                            <>
-                              <Send className="mr-1.5 size-3" />
-                              จ่ายคืน
-                            </>
-                          ) : (
-                            <>
-                              <Check className="mr-1.5 size-3" />
-                              รับเงิน
-                            </>
-                          )}
-                        </Button>
-                      )}
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            className="size-8"
-                            onClick={(e) => e.stopPropagation()}
+                    return (
+                      <TableRow
+                        key={debt.id}
+                        className={cn(
+                          'group transition-colors duration-200 motion-reduce:transition-none',
+                          canViewTx && 'cursor-pointer'
+                        )}
+                        onClick={() => {
+                          if (canViewTx) onViewTransaction(relatedTxId)
+                        }}
+                      >
+                        <TableCell>
+                          <p
+                            className="max-w-[280px] truncate font-medium"
+                            title={itemLabel}
                           >
-                            <MoreHorizontal className="size-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          {canViewTx && (
-                            <DropdownMenuItem
-                              onClick={() => onViewTransaction(relatedTxId!)}
-                            >
-                              ดูรายละเอียดธุรกรรม
-                            </DropdownMenuItem>
+                            {itemLabel}
+                          </p>
+                          {debtDate && (
+                            <p className="text-xs text-muted-foreground tabular-nums">
+                              {formatTransactionDisplayTime(debtDate)}
+                            </p>
                           )}
-                          {debt.isTripDebt || debt.isTransactionDebt ? (
-                            <DropdownMenuItem disabled>
-                              {debt.isTripDebt ? 'สร้างอัตโนมัติจากทริป' : 'สร้างอัตโนมัติจากธุรกรรม'}
-                            </DropdownMenuItem>
-                          ) : (
-                            <DropdownMenuItem
-                              className="text-destructive"
-                              onClick={() => onDelete(debt.id!)}
-                            >
-                              <Trash2 className="mr-2 size-4" />
-                              ลบ
-                            </DropdownMenuItem>
+                          {debt.paidAmount != null && debt.paidAmount > 0 && (
+                            <p className="text-xs text-muted-foreground tabular-nums">
+                              จ่ายแล้ว {formatDebtAmount(debt.paidAmount)}
+                            </p>
                           )}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              )
-                })}
-              </React.Fragment>
-            ))}
-          </TableBody>
-        </Table>
-      </CardContent>
-    </Card>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <Avatar className="size-7 shrink-0">
+                              <AvatarFallback
+                                className={cn('text-[10px] font-medium', avatarTone)}
+                              >
+                                {initials}
+                              </AvatarFallback>
+                            </Avatar>
+                            <span className="truncate">{person}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="text-xs font-normal">
+                            {debtSourceLabel(debt)}
+                          </Badge>
+                        </TableCell>
+                        <TableCell
+                          className={cn('text-right font-semibold tabular-nums', amountTone)}
+                        >
+                          {formatDebtAmount(debt.amount, {
+                            sign: type === 'owe' ? 'minus' : 'plus',
+                          })}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            {debt.status === 'pending' && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="transition-colors duration-200"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  onSettle(debt.id!)
+                                }}
+                              >
+                                {type === 'owe' ? (
+                                  <>
+                                    <Send className="mr-1.5 size-3.5" aria-hidden />
+                                    จ่ายคืน
+                                  </>
+                                ) : (
+                                  <>
+                                    <Check className="mr-1.5 size-3.5" aria-hidden />
+                                    รับเงิน
+                                  </>
+                                )}
+                              </Button>
+                            )}
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="size-9"
+                                  aria-label={`ตัวเลือกเพิ่มเติมสำหรับ ${itemLabel}`}
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <MoreHorizontal className="size-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                {canViewTx && (
+                                  <DropdownMenuItem
+                                    onClick={() => onViewTransaction(relatedTxId!)}
+                                  >
+                                    ดูรายละเอียดธุรกรรม
+                                  </DropdownMenuItem>
+                                )}
+                                {debt.isTripDebt || debt.isTransactionDebt ? (
+                                  <DropdownMenuItem disabled>
+                                    {debt.isTripDebt
+                                      ? 'สร้างอัตโนมัติจากทริป'
+                                      : 'สร้างอัตโนมัติจากธุรกรรม'}
+                                  </DropdownMenuItem>
+                                ) : (
+                                  <DropdownMenuItem
+                                    className="text-destructive"
+                                    onClick={() => onDelete(debt.id!)}
+                                  >
+                                    <Trash2 className="mr-2 size-4" />
+                                    ลบ
+                                  </DropdownMenuItem>
+                                )}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
+                </React.Fragment>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
     </>
   )
 }
@@ -559,7 +658,7 @@ export default function DebtsPage() {
   )
 
   if (loading || tripLoading || settlementsLoading) {
-    return <div className="p-6">Loading debts...</div>
+    return <DebtsSkeleton />
   }
 
   // Map manual debts (includes auto-synced transaction debts)
@@ -770,155 +869,146 @@ export default function DebtsPage() {
     setNewDebtAmount('')
   }
 
+  const settleIsPayer = settleDebtData?.fromUserId === user?.uid
+  const settlePerson = settleDebtData
+    ? settleIsPayer
+      ? settleDebtData.toDisplayName || settleDebtData.toUserId
+      : settleDebtData.fromDisplayName || settleDebtData.fromUserId
+    : ''
+  const canSaveDebt =
+    Boolean(newDebtPerson.trim()) &&
+    Boolean(newDebtAmount) &&
+    !Number.isNaN(parseFloat(newDebtAmount)) &&
+    parseFloat(newDebtAmount) > 0
+
   return (
-    <div className="flex flex-col gap-6 p-6">
-      {/* Page Header */}
-      <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Debts & Shared Expenses</h1>
-        <p className="text-muted-foreground">
-          Track money you owe and money owed to you.
-        </p>
+    <div className="flex flex-col gap-6 p-4 sm:p-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex flex-col gap-1">
+          <h1 className="text-2xl font-semibold tracking-tight text-balance">Debts</h1>
+          <p className="max-w-prose text-sm text-muted-foreground text-pretty">
+            ดูชัดว่าใครติดใคร แล้วจ่ายคืนได้ในไม่กี่คลิก
+          </p>
+        </div>
+        <Button
+          className="w-full gap-2 sm:w-auto"
+          onClick={() => setIsAddOpen(true)}
+        >
+          <Plus className="size-4" aria-hidden />
+          Record Debt
+        </Button>
       </div>
 
-      {/* Summary Cards */}
       <div className="grid gap-4 sm:grid-cols-3">
-        <Card className="border-destructive/20 bg-gradient-to-br from-destructive/5 to-transparent">
+        <Card className="shadow-sm animate-in fade-in-0 slide-in-from-bottom-1 duration-200 fill-mode-both motion-reduce:animate-none">
           <CardContent className="pt-6">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <AlertCircle className="size-4 text-destructive" />
-              You Owe
+              <Send className="size-4 text-destructive" aria-hidden />
+              You owe
             </div>
-            <p className="mt-2 text-3xl font-bold text-destructive">
-              ฿{totalOwed.toLocaleString()}
+            <p className="mt-2 text-2xl font-bold tabular-nums text-destructive sm:text-3xl">
+              {formatDebtAmount(totalOwed)}
             </p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {youOwe.length} active debts
+            <p className="mt-1 text-sm text-muted-foreground tabular-nums">
+              {youOwe.length} active
             </p>
           </CardContent>
         </Card>
 
-        <Card className="border-primary/20 bg-gradient-to-br from-primary/5 to-transparent">
+        <Card
+          className="shadow-sm animate-in fade-in-0 slide-in-from-bottom-1 duration-200 fill-mode-both motion-reduce:animate-none"
+          style={{ animationDelay: '40ms' }}
+        >
           <CardContent className="pt-6">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Wallet className="size-4 text-primary" />
-              Owed to You
+              <Wallet className="size-4 text-success" aria-hidden />
+              Owed to you
             </div>
-            <p className="mt-2 text-3xl font-bold text-primary">
-              ฿{totalOwedToYou.toLocaleString()}
+            <p className="mt-2 text-2xl font-bold tabular-nums text-success sm:text-3xl">
+              {formatDebtAmount(totalOwedToYou)}
             </p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {owedToYou.length} active debts
+            <p className="mt-1 text-sm text-muted-foreground tabular-nums">
+              {owedToYou.length} active
             </p>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card
+          className="shadow-sm animate-in fade-in-0 slide-in-from-bottom-1 duration-200 fill-mode-both motion-reduce:animate-none"
+          style={{ animationDelay: '80ms' }}
+        >
           <CardContent className="pt-6">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Users className="size-4" />
-              Net Balance
+              <Users className="size-4" aria-hidden />
+              Net balance
             </div>
             <p
               className={cn(
-                'mt-2 text-3xl font-bold',
-                netBalance >= 0 ? 'text-primary' : 'text-destructive'
+                'mt-2 text-2xl font-bold tabular-nums sm:text-3xl',
+                amountColorClass(netBalance, 'text-foreground')
               )}
             >
-              {netBalance >= 0 ? '+' : ''}฿{netBalance.toLocaleString()}
+              {netBalance >= 0 ? '+' : '-'}
+              {formatDebtAmount(Math.abs(netBalance))}
             </p>
             <p className="mt-1 text-sm text-muted-foreground">
-              {netBalance >= 0 ? 'In your favor' : 'In their favor'}
+              {netBalance > 0
+                ? 'In your favor'
+                : netBalance < 0
+                  ? 'You settle more'
+                  : 'All settled'}
             </p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Quick Add Debt */}
-      <Card className="border-dashed">
-        <CardContent className="flex items-center justify-center py-6">
-          <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-            <DialogTrigger asChild>
-              <Button variant="outline" className="gap-2">
-                <Plus className="size-4" />
-                Record New Debt
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Record Debt</DialogTitle>
-                <DialogDescription>
-                  Enter the details of the manual loan.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="grid gap-4 py-4">
-                <div className="grid gap-2">
-                  <Label>Type</Label>
-                  <Select value={newDebtType} onValueChange={(v: 'owe' | 'owed') => setNewDebtType(v)}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="owe">I owe someone</SelectItem>
-                      <SelectItem value="owed">Someone owes me</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="grid gap-2">
-                  <Label>Person Name</Label>
-                  <Input 
-                    placeholder="Enter name" 
-                    value={newDebtPerson} 
-                    onChange={e => setNewDebtPerson(e.target.value)} 
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label>Amount (฿)</Label>
-                  <Input 
-                    type="number" 
-                    placeholder="0" 
-                    value={newDebtAmount} 
-                    onChange={e => setNewDebtAmount(e.target.value)} 
-                  />
-                </div>
-              </div>
-              <DialogFooter>
-                <Button onClick={handleAddDebt}>Save</Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        </CardContent>
-      </Card>
-
-      {/* Debts Tabs */}
       <Tabs defaultValue="you-owe" className="w-full">
-        <TabsList className="w-full justify-start overflow-x-auto">
-          <TabsTrigger value="you-owe" className="gap-2">
-              <AlertCircle className="size-4" />
-              You Owe
-              <Badge variant="secondary" className="ml-1 rounded-full">
-                {youOwe.length}
-              </Badge>
-            </TabsTrigger>
-          <TabsTrigger value="owed-to-you" className="gap-2">
-            <Wallet className="size-4" />
-            Owed to You
-            <Badge variant="secondary" className="ml-1 rounded-full">
+        <TabsList className="h-auto w-full flex-wrap justify-start gap-1 p-1">
+          <TabsTrigger value="you-owe" className="gap-2 px-3 py-2">
+            <Send className="size-4 shrink-0" aria-hidden />
+            <span>You Owe</span>
+            <Badge
+              variant="secondary"
+              className="rounded-md tabular-nums"
+              aria-label={`${youOwe.length} debts you owe`}
+            >
+              {youOwe.length}
+            </Badge>
+          </TabsTrigger>
+          <TabsTrigger value="owed-to-you" className="gap-2 px-3 py-2">
+            <Wallet className="size-4 shrink-0" aria-hidden />
+            <span>Owed to You</span>
+            <Badge
+              variant="secondary"
+              className="rounded-md tabular-nums"
+              aria-label={`${owedToYou.length} debts owed to you`}
+            >
               {owedToYou.length}
             </Badge>
           </TabsTrigger>
-
-          <TabsTrigger value="history" className="gap-2">
-            <History className="size-4" />
-            ประวัติการจ่ายคืน
-            <Badge variant="secondary" className="ml-1 rounded-full">
+          <TabsTrigger value="history" className="gap-2 px-3 py-2">
+            <History className="size-4 shrink-0" aria-hidden />
+            <span>History</span>
+            <Badge
+              variant="secondary"
+              className="rounded-md tabular-nums"
+              aria-label={`${paymentHistory.length} settlements`}
+            >
               {paymentHistory.length}
             </Badge>
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="you-owe" className="mt-4">
+        <TabsContent
+          value="you-owe"
+          className="mt-4 animate-in fade-in-0 duration-200 motion-reduce:animate-none"
+        >
           {youOwe.length === 0 ? (
-            <div className="py-8 text-center text-muted-foreground">คุณยังไม่ติดใคร</div>
+            <Card className="shadow-sm">
+              <CardContent className="p-0">
+                <DebtEmptyState type="owe" onAdd={() => setIsAddOpen(true)} />
+              </CardContent>
+            </Card>
           ) : (
             <DebtTable
               debts={youOwe}
@@ -931,9 +1021,16 @@ export default function DebtsPage() {
           )}
         </TabsContent>
 
-        <TabsContent value="owed-to-you" className="mt-4">
+        <TabsContent
+          value="owed-to-you"
+          className="mt-4 animate-in fade-in-0 duration-200 motion-reduce:animate-none"
+        >
           {owedToYou.length === 0 ? (
-            <div className="py-8 text-center text-muted-foreground">ยังไม่มีใครติดเงินคุณ</div>
+            <Card className="shadow-sm">
+              <CardContent className="p-0">
+                <DebtEmptyState type="owed" onAdd={() => setIsAddOpen(true)} />
+              </CardContent>
+            </Card>
           ) : (
             <DebtTable
               debts={owedToYou}
@@ -946,150 +1043,230 @@ export default function DebtsPage() {
           )}
         </TabsContent>
 
-        <TabsContent value="history" className="mt-4">
-          <Card>
+        <TabsContent
+          value="history"
+          className="mt-4 animate-in fade-in-0 duration-200 motion-reduce:animate-none"
+        >
+          <Card className="shadow-sm">
             <CardHeader>
-              <CardTitle>ประวัติการจ่ายคืน</CardTitle>
-              <CardDescription>รายการจ่ายคืนทั้งหมด รวมทริปและหนี้ทั่วไป</CardDescription>
+              <CardTitle>Settlement history</CardTitle>
+              <CardDescription>
+                การจ่ายคืนทั้งหมด รวมทริป ธุรกรรม และหนี้ที่บันทึกเอง
+              </CardDescription>
             </CardHeader>
             <CardContent className="p-0 pb-4">
               {paymentHistory.length === 0 ? (
-                <div className="px-6 py-8 text-center text-muted-foreground">ยังไม่มีประวัติการจ่ายคืน</div>
+                <DebtEmptyState type="history" />
               ) : (
                 <>
-                <div className="divide-y md:hidden">
-                  {groupedPaymentHistory.map((group) => (
-                    <div key={group.dateKey}>
-                      <DateGroupDividerMobile label={group.label} />
-                      {group.items.map((payment) => (
-                        <div key={payment.id} className="px-4 py-4">
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <p className="font-medium">{payment.label}</p>
-                              {payment.date && (
-                                <p className="mt-0.5 text-xs text-muted-foreground tabular-nums">
-                                  {formatTransactionDisplayTime(payment.date)}
-                                </p>
-                              )}
-                              <p className="mt-2 text-sm text-muted-foreground">
-                                {payment.isReceived ? 'รับจาก' : 'จ่ายให้'} {payment.person}
-                              </p>
-                              <Badge variant="outline" className="mt-2 text-xs font-normal">
-                                {payment.source}
-                              </Badge>
-                            </div>
-                            <p
-                              className={cn(
-                                'shrink-0 font-semibold tabular-nums',
-                                payment.isReceived ? 'text-primary' : 'text-muted-foreground'
-                              )}
-                            >
-                              {payment.isReceived ? '+' : '-'}฿
-                              {payment.amount.toLocaleString(undefined, {
-                                minimumFractionDigits: 0,
-                                maximumFractionDigits: 2,
-                              })}
-                            </p>
-                          </div>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            className="mt-3 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                            disabled={deletingPaymentId === payment.id}
-                            onClick={() => handleDeletePayment(payment)}
-                          >
-                            <Trash2 className="mr-1.5 size-3.5" />
-                            {deletingPaymentId === payment.id ? 'กำลังลบ...' : 'ลบการจ่ายคืน'}
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-                  ))}
-                </div>
-                <Table className="hidden md:table">
-                  <TableHeader>
-                    <TableRow className="hover:bg-transparent">
-                      <TableHead className="pl-6">รายการ</TableHead>
-                      <TableHead>คู่รายการ</TableHead>
-                      <TableHead className="w-[90px]">แหล่ง</TableHead>
-                      <TableHead className="pr-6 text-right">จำนวนเงิน</TableHead>
-                      <TableHead className="w-[100px] text-right">การดำเนินการ</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
+                  <div className="divide-y md:hidden">
                     {groupedPaymentHistory.map((group) => (
-                      <React.Fragment key={group.dateKey}>
-                        <DateGroupDividerRow label={group.label} colSpan={5} />
+                      <div key={group.dateKey}>
+                        <DateGroupDividerMobile label={group.label} />
                         {group.items.map((payment) => (
-                        <TableRow key={payment.id}>
-                          <TableCell className="max-w-[240px] pl-6 truncate font-medium" title={payment.label}>
-                            {payment.label}
-                            {payment.date && (
-                              <p className="text-xs font-normal text-muted-foreground tabular-nums">
-                                {formatTransactionDisplayTime(payment.date)}
-                              </p>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              <div
+                          <div key={payment.id} className="px-4 py-4">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="font-medium text-balance">{payment.label}</p>
+                                {payment.date && (
+                                  <p className="mt-0.5 text-xs text-muted-foreground tabular-nums">
+                                    {formatTransactionDisplayTime(payment.date)}
+                                  </p>
+                                )}
+                                <p className="mt-2 text-sm text-muted-foreground">
+                                  {payment.isReceived ? 'รับจาก' : 'จ่ายให้'}{' '}
+                                  <span className="text-foreground">{payment.person}</span>
+                                </p>
+                                <Badge variant="outline" className="mt-2 text-xs font-normal">
+                                  {payment.source}
+                                </Badge>
+                              </div>
+                              <p
                                 className={cn(
-                                  'flex size-7 items-center justify-center rounded-full',
-                                  payment.isReceived
-                                    ? 'bg-primary/20 text-primary'
-                                    : 'bg-muted text-muted-foreground'
+                                  'shrink-0 font-semibold tabular-nums',
+                                  payment.isReceived ? 'text-success' : 'text-destructive'
                                 )}
                               >
-                                {payment.isReceived ? (
-                                  <ArrowRight className="size-3.5 rotate-180" />
-                                ) : (
-                                  <ArrowRight className="size-3.5" />
-                                )}
-                              </div>
-                              <span>
-                                {payment.isReceived ? 'รับจาก' : 'จ่ายให้'} {payment.person}
-                              </span>
+                                {formatDebtAmount(payment.amount, {
+                                  sign: payment.isReceived ? 'plus' : 'minus',
+                                })}
+                              </p>
                             </div>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className="text-xs font-normal">
-                              {payment.source}
-                            </Badge>
-                          </TableCell>
-                          <TableCell
-                            className={cn(
-                              'pr-6 text-right font-semibold tabular-nums',
-                              payment.isReceived ? 'text-success' : 'text-destructive'
-                            )}
-                          >
-                            {payment.isReceived ? '+' : '-'}฿{payment.amount.toLocaleString()}
-                          </TableCell>
-                          <TableCell className="pr-4 text-right">
                             <Button
                               type="button"
                               size="sm"
                               variant="outline"
-                              className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                              className="mt-3 h-10 min-h-10 text-destructive transition-colors duration-200 hover:bg-destructive/10 hover:text-destructive"
                               disabled={deletingPaymentId === payment.id}
                               onClick={() => handleDeletePayment(payment)}
                             >
-                              <Trash2 className="mr-1.5 size-3.5" />
-                              {deletingPaymentId === payment.id ? 'กำลังลบ...' : 'ลบ'}
+                              <Trash2 className="mr-1.5 size-3.5" aria-hidden />
+                              {deletingPaymentId === payment.id
+                                ? 'กำลังลบ...'
+                                : 'ลบการจ่ายคืน'}
                             </Button>
-                          </TableCell>
-                        </TableRow>
+                          </div>
                         ))}
-                      </React.Fragment>
+                      </div>
                     ))}
-                  </TableBody>
-                </Table>
+                  </div>
+                  <Table className="hidden md:table">
+                    <TableHeader>
+                      <TableRow className="hover:bg-transparent">
+                        <TableHead className="pl-6">รายการ</TableHead>
+                        <TableHead>คู่รายการ</TableHead>
+                        <TableHead className="w-[90px]">แหล่ง</TableHead>
+                        <TableHead className="pr-6 text-right">จำนวนเงิน</TableHead>
+                        <TableHead className="w-[100px] text-right">การดำเนินการ</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {groupedPaymentHistory.map((group) => (
+                        <React.Fragment key={group.dateKey}>
+                          <DateGroupDividerRow label={group.label} colSpan={5} />
+                          {group.items.map((payment) => (
+                            <TableRow
+                              key={payment.id}
+                              className="transition-colors duration-200 motion-reduce:transition-none"
+                            >
+                              <TableCell
+                                className="max-w-[240px] truncate pl-6 font-medium"
+                                title={payment.label}
+                              >
+                                {payment.label}
+                                {payment.date && (
+                                  <p className="text-xs font-normal text-muted-foreground tabular-nums">
+                                    {formatTransactionDisplayTime(payment.date)}
+                                  </p>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex items-center gap-2">
+                                  <div
+                                    className={cn(
+                                      'flex size-7 items-center justify-center rounded-full',
+                                      payment.isReceived
+                                        ? 'bg-success/15 text-success'
+                                        : 'bg-destructive/15 text-destructive'
+                                    )}
+                                    aria-hidden
+                                  >
+                                    {payment.isReceived ? (
+                                      <ArrowRight className="size-3.5 rotate-180" />
+                                    ) : (
+                                      <ArrowRight className="size-3.5" />
+                                    )}
+                                  </div>
+                                  <span>
+                                    {payment.isReceived ? 'รับจาก' : 'จ่ายให้'}{' '}
+                                    {payment.person}
+                                  </span>
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="outline" className="text-xs font-normal">
+                                  {payment.source}
+                                </Badge>
+                              </TableCell>
+                              <TableCell
+                                className={cn(
+                                  'pr-6 text-right font-semibold tabular-nums',
+                                  payment.isReceived
+                                    ? 'text-success'
+                                    : 'text-destructive'
+                                )}
+                              >
+                                {formatDebtAmount(payment.amount, {
+                                  sign: payment.isReceived ? 'plus' : 'minus',
+                                })}
+                              </TableCell>
+                              <TableCell className="pr-4 text-right">
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  className="text-destructive transition-colors duration-200 hover:bg-destructive/10 hover:text-destructive"
+                                  disabled={deletingPaymentId === payment.id}
+                                  onClick={() => handleDeletePayment(payment)}
+                                >
+                                  <Trash2 className="mr-1.5 size-3.5" aria-hidden />
+                                  {deletingPaymentId === payment.id ? 'กำลังลบ...' : 'ลบ'}
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </React.Fragment>
+                      ))}
+                    </TableBody>
+                  </Table>
                 </>
               )}
             </CardContent>
           </Card>
         </TabsContent>
       </Tabs>
+
+      <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Record debt</DialogTitle>
+            <DialogDescription>
+              บันทึกใครติดใคร — ชัดเจน ไม่ต้องตามทวงเอง
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="grid gap-2">
+              <Label htmlFor="debt-type">Direction</Label>
+              <Select
+                value={newDebtType}
+                onValueChange={(v: 'owe' | 'owed') => setNewDebtType(v)}
+              >
+                <SelectTrigger id="debt-type">
+                  <SelectValue placeholder="Select type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="owe">I owe someone</SelectItem>
+                  <SelectItem value="owed">Someone owes me</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="debt-person">
+                {newDebtType === 'owe' ? 'Pay to' : 'Receive from'}
+              </Label>
+              <Input
+                id="debt-person"
+                placeholder="ชื่อเพื่อน"
+                value={newDebtPerson}
+                onChange={(e) => setNewDebtPerson(e.target.value)}
+                autoComplete="name"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="debt-amount">Amount (฿)</Label>
+              <Input
+                id="debt-amount"
+                type="number"
+                inputMode="decimal"
+                min="0"
+                step="0.01"
+                placeholder="0"
+                className="tabular-nums"
+                value={newDebtAmount}
+                onChange={(e) => setNewDebtAmount(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsAddOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleAddDebt} disabled={!canSaveDebt}>
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={isTxDetailOpen}
@@ -1098,7 +1275,9 @@ export default function DebtsPage() {
           if (!open) setEditingTransaction(null)
         }}
       >
-        <DialogContent className="max-h-[min(90vh,90dvh)] w-[calc(100vw-1rem)] overflow-y-auto overflow-x-hidden p-4 max-sm:top-[4vh] max-sm:translate-y-0 sm:max-w-[680px] sm:p-6">
+        <DialogContent
+          className="max-h-[min(90vh,90dvh)] w-[calc(100vw-1rem)] overflow-y-auto overflow-x-hidden p-4 max-sm:top-[4vh] max-sm:translate-y-0 sm:max-w-[680px] sm:p-6"
+        >
           <DialogHeader>
             <DialogTitle>รายละเอียดธุรกรรม</DialogTitle>
             <DialogDescription>
@@ -1123,21 +1302,21 @@ export default function DebtsPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={isSettleOpen} onOpenChange={setIsSettleOpen}>
+      <Dialog
+        open={isSettleOpen}
+        onOpenChange={(open) => {
+          setIsSettleOpen(open)
+          if (!open) setSettleDebtData(null)
+        }}
+      >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>
-              {settleDebtData?.fromUserId === user?.uid ? 'จ่ายคืน' : 'รับเงินคืน'}
-            </DialogTitle>
+            <DialogTitle>{settleIsPayer ? 'จ่ายคืน' : 'รับเงินคืน'}</DialogTitle>
             <DialogDescription>
               {settleDebtData && (
                 <>
-                  {settleDebtData.fromUserId === user?.uid ? 'จ่ายให้' : 'รับจาก'}{' '}
-                  <span className="font-medium text-foreground">
-                    {settleDebtData.fromUserId === user?.uid
-                      ? settleDebtData.toDisplayName || settleDebtData.toUserId
-                      : settleDebtData.fromDisplayName || settleDebtData.fromUserId}
-                  </span>
+                  {settleIsPayer ? 'จ่ายให้' : 'รับจาก'}{' '}
+                  <span className="font-medium text-foreground">{settlePerson}</span>
                   {' — '}
                   {resolveDebtDescription(settleDebtData, txById)}
                 </>
@@ -1146,26 +1325,50 @@ export default function DebtsPage() {
           </DialogHeader>
           {settleDebtData && (
             <div className="space-y-4 pt-2">
+              <div
+                className={cn(
+                  'rounded-xl border px-4 py-3',
+                  settleIsPayer
+                    ? 'border-destructive/20 bg-destructive/5'
+                    : 'border-success/20 bg-success/5'
+                )}
+              >
+                <p className="text-xs text-muted-foreground">ยอดคงเหลือ</p>
+                <p
+                  className={cn(
+                    'mt-1 text-xl font-semibold tabular-nums',
+                    settleIsPayer ? 'text-destructive' : 'text-success'
+                  )}
+                >
+                  {formatDebtAmount(settleDebtData.amount)}
+                </p>
+              </div>
               <div className="space-y-2">
-                <Label>จำนวนที่จ่าย (฿)</Label>
+                <Label htmlFor="settle-amount">จำนวนที่จ่าย (฿)</Label>
                 <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+                  <span
+                    className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+                    aria-hidden
+                  >
                     ฿
                   </span>
                   <Input
+                    id="settle-amount"
                     type="number"
+                    inputMode="decimal"
                     step="0.01"
                     min="0"
                     max={settleDebtData.amount}
-                    className="pl-8 text-lg font-bold"
+                    className="pl-8 text-lg font-semibold tabular-nums"
                     value={settleAmount}
                     onChange={(e) => setSettleAmount(e.target.value)}
+                    autoFocus
                   />
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  ยอดคงเหลือ ฿{settleDebtData.amount.toLocaleString()} — สามารถจ่ายบางส่วนได้
-                  {settleDebtData.fromUserId === user?.uid && (
-                    <span className="block mt-1">
+                <p className="text-xs text-muted-foreground text-pretty">
+                  สามารถจ่ายบางส่วนได้
+                  {settleIsPayer && (
+                    <span className="mt-1 block">
                       จะสร้างธุรกรรม &quot;จ่ายหนี้ให้...&quot; ในรายการของคุณโดยอัตโนมัติ
                     </span>
                   )}
@@ -1176,6 +1379,7 @@ export default function DebtsPage() {
                   type="button"
                   size="sm"
                   variant="outline"
+                  className="transition-colors duration-200"
                   onClick={() => setSettleAmount(settleDebtData.amount.toString())}
                 >
                   จ่ายเต็มจำนวน
@@ -1184,6 +1388,7 @@ export default function DebtsPage() {
                   type="button"
                   size="sm"
                   variant="outline"
+                  className="transition-colors duration-200"
                   onClick={() =>
                     setSettleAmount((settleDebtData.amount / 2).toFixed(2))
                   }

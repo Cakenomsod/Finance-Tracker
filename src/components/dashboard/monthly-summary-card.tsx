@@ -30,15 +30,15 @@ function ChangeBadge({
       <Badge
         variant="secondary"
         className={cn(
-          'text-xs font-medium',
+          'text-xs font-medium tabular-nums',
           changeType === 'positive' && 'bg-primary/10 text-primary',
           changeType === 'negative' && 'bg-destructive/10 text-destructive'
         )}
       >
         {changeType === 'positive' ? (
-          <TrendingUp className="mr-1 size-3" />
+          <TrendingUp className="mr-1 size-3" aria-hidden />
         ) : changeType === 'negative' ? (
-          <TrendingDown className="mr-1 size-3" />
+          <TrendingDown className="mr-1 size-3" aria-hidden />
         ) : null}
         {change}
       </Badge>
@@ -60,11 +60,11 @@ function SecondaryStat({
   changeType: 'positive' | 'negative' | 'neutral'
 }) {
   return (
-    <div className="min-w-0 space-y-1">
+    <div className="min-w-0 space-y-1.5">
       <p className="text-xs font-medium text-muted-foreground">{label}</p>
       <MonthAnimatedValue
         valueKey={valueKey}
-        className="truncate text-lg font-semibold tabular-nums sm:text-xl"
+        className="block truncate text-lg font-semibold tabular-nums sm:text-xl"
       >
         {value}
       </MonthAnimatedValue>
@@ -102,20 +102,23 @@ export function MonthlySummaryCard({
         <CardContent className="p-4 sm:p-6">
           <div className="space-y-1">
             <p className="text-sm font-medium text-muted-foreground">
-              Total Balance
-              <span className="font-normal text-muted-foreground/80"> · through {selectedMonthLabel}</span>
+              Balance
+              <span className="font-normal text-muted-foreground">
+                {' '}
+                · through {selectedMonthLabel}
+              </span>
             </p>
             <MonthAnimatedValue
               valueKey={`${monthKey}-balance`}
               className={cn(
-                'truncate text-3xl font-bold tabular-nums tracking-tight sm:text-4xl',
+                'block truncate text-3xl font-semibold tracking-tight tabular-nums sm:text-4xl',
                 cumulativeBalance >= 0 ? 'text-foreground' : 'text-destructive'
               )}
             >
               {formatMoney(cumulativeBalance, currency)}
             </MonthAnimatedValue>
             <p className="pt-1 text-xs text-muted-foreground">
-              Net cash flow this month:{' '}
+              Net this month:{' '}
               <MonthAnimatedValue
                 valueKey={`${monthKey}-net-inline`}
                 className={cn(
@@ -132,11 +135,15 @@ export function MonthlySummaryCard({
                 changeType={netChange.type}
                 valueKey={`${monthKey}-net-change`}
               />
-              <span className="text-xs text-muted-foreground">monthly net vs last month</span>
+              <span className="text-xs text-muted-foreground">vs last month</span>
             </div>
           </div>
 
-          <div className="mt-6 grid grid-cols-1 gap-4 border-t pt-6 sm:grid-cols-3 sm:gap-6">
+          <div
+            className="mt-6 grid grid-cols-1 gap-4 border-t pt-6 sm:grid-cols-3 sm:gap-6"
+            role="group"
+            aria-label="Month income, expenses, and savings"
+          >
             <SecondaryStat
               label="Income"
               valueKey={`${monthKey}-income`}
@@ -158,7 +165,7 @@ export function MonthlySummaryCard({
               }
             />
             <SecondaryStat
-              label="Savings Rate"
+              label="Savings rate"
               valueKey={`${monthKey}-savings`}
               value={`${currentTotals.savingsRate}%`}
               change={savingsChange.value}

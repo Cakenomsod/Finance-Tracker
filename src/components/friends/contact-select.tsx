@@ -64,7 +64,7 @@ export function ContactSelect({
 
   return (
     <Select value={selectValue} onValueChange={handleChange} disabled={loading}>
-      <SelectTrigger>
+      <SelectTrigger aria-busy={loading} aria-label={placeholder}>
         <SelectValue placeholder={loading ? 'กำลังโหลด...' : placeholder} />
       </SelectTrigger>
       <SelectContent>
@@ -74,7 +74,11 @@ export function ContactSelect({
         {allOptions.map((c) => (
           <SelectItem key={c.key} value={c.key}>
             {c.displayName}
-            {'isSelf' in c && c.isSelf ? ' (ฉัน)' : 'isCustom' in c && c.isCustom ? ' (รายชื่อส่วนตัว)' : ''}
+            {'isSelf' in c && c.isSelf
+              ? ' (ฉัน)'
+              : 'isCustom' in c && c.isCustom
+                ? ' (รายชื่อส่วนตัว)'
+                : ''}
           </SelectItem>
         ))}
       </SelectContent>

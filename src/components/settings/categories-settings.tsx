@@ -1,12 +1,13 @@
 'use client';
 
 import * as React from 'react';
-import { CreditCard, Plus, Edit2, Trash2, Loader2, Tag } from 'lucide-react';
+import { Tags, Plus, Edit2, Trash2, Loader2, Tag } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   Select,
   SelectContent,
@@ -38,6 +39,7 @@ import { useLocale } from '@/components/locale-provider';
 import { Category } from '@/lib/firestore-types';
 import { DEFAULT_CATEGORY_COLORS } from '@/lib/default-categories';
 import { formatMoney } from '@/lib/aggregate-transactions';
+import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
 interface CategoryFormState {
@@ -66,6 +68,24 @@ function categoryToForm(category: Category): CategoryFormState {
   };
 }
 
+function CategoriesSkeleton() {
+  return (
+    <div className="space-y-3" aria-busy="true" aria-live="polite">
+      {[0, 1, 2].map((i) => (
+        <div key={i} className="flex items-center gap-3 rounded-lg border p-3">
+          <Skeleton className="size-10 shrink-0 rounded-lg" />
+          <div className="flex-1 space-y-2 min-w-0">
+            <Skeleton className="h-4 w-32 max-w-full" />
+            <Skeleton className="h-3 w-40 max-w-full" />
+          </div>
+          <Skeleton className="size-8 shrink-0 rounded-md" />
+          <Skeleton className="size-8 shrink-0 rounded-md" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function CategoryRow({
   category,
   currency,
@@ -80,17 +100,18 @@ function CategoryRow({
   t: (key: Parameters<ReturnType<typeof useLocale>['t']>[0], vars?: Record<string, string>) => string;
 }) {
   return (
-    <div className="flex items-center justify-between rounded-lg border p-3">
+    <div className="flex items-center justify-between gap-3 rounded-lg border p-3 transition-colors duration-200 motion-reduce:transition-none hover:bg-muted/40">
       <div className="flex items-center gap-3 min-w-0">
         <div
           className="flex size-10 shrink-0 items-center justify-center rounded-lg text-lg"
           style={{ backgroundColor: `${category.color}20` }}
+          aria-hidden
         >
           {category.icon}
         </div>
         <div className="min-w-0">
           <p className="font-medium truncate">{category.name}</p>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-muted-foreground tabular-nums">
             {category.monthlyBudget != null
               ? t('settings.budgetPerMonth', {
                   amount: formatMoney(category.monthlyBudget, currency),
@@ -101,21 +122,24 @@ function CategoryRow({
       </div>
       <div className="flex items-center gap-1 shrink-0">
         <Button
+          type="button"
           variant="ghost"
           size="icon"
+          className="size-9"
           aria-label={t('settings.editCategory')}
           onClick={() => onEdit(category)}
         >
-          <Edit2 className="size-4" />
+          <Edit2 className="size-4" aria-hidden />
         </Button>
         <Button
+          type="button"
           variant="ghost"
           size="icon"
-          className="text-destructive hover:text-destructive"
+          className="size-9 text-destructive hover:text-destructive"
           aria-label={t('settings.deleteCategory')}
           onClick={() => onDelete(category)}
         >
-          <Trash2 className="size-4" />
+          <Trash2 className="size-4" aria-hidden />
         </Button>
       </div>
     </div>
@@ -214,30 +238,47 @@ export function CategoriesSettings() {
     type: 'income' | 'expense'
   ) => (
     <div className="space-y-2">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <h4 className="text-sm font-medium text-muted-foreground">{title}</h4>
-        <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs" onClick={() => openCreate(type)}>
-          <Plus className="size-3" />
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-8 gap-1 text-xs"
+          onClick={() => openCreate(type)}
+        >
+          <Plus className="size-3" aria-hidden />
           {t('settings.addCategory')}
         </Button>
       </div>
       {items.length === 0 ? (
-        <p className="rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground">
-          {t('settings.noCategories')}
-        </p>
-      ) : (
-        <div className="space-y-2">
-          {items.map((category) => (
-            <CategoryRow
-              key={category.id}
-              category={category}
-              currency={currency}
-              onEdit={openEdit}
-              onDelete={setDeleteTarget}
-              t={t}
-            />
-          ))}
+        <div className="rounded-lg border border-dashed px-4 py-6 text-center">
+          <p className="text-sm text-muted-foreground text-pretty">{t('settings.noCategories')}</p>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="mt-3 gap-2"
+            onClick={() => openCreate(type)}
+          >
+            <Plus className="size-4" aria-hidden />
+            {t('settings.addCategory')}
+          </Button>
         </div>
+      ) : (
+        <ul className="space-y-2 list-none p-0 m-0">
+          {items.map((category) => (
+            <li key={category.id}>
+              <CategoryRow
+                category={category}
+                currency={currency}
+                onEdit={openEdit}
+                onDelete={setDeleteTarget}
+                t={t}
+              />
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );
@@ -245,32 +286,37 @@ export function CategoriesSettings() {
   return (
     <>
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-4">
-          <div>
-            <CardTitle className="flex items-center gap-2">
-              <CreditCard className="size-5" />
+        <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0 space-y-1.5">
+            <CardTitle className="flex items-center gap-2 text-xl tracking-tight">
+              <Tags className="size-5 shrink-0 text-muted-foreground" aria-hidden />
               {t('settings.categories')}
             </CardTitle>
             <CardDescription>{t('settings.categoriesDesc')}</CardDescription>
           </div>
-          <Button size="sm" className="gap-2 shrink-0" onClick={() => openCreate()}>
-            <Plus className="size-4" />
+          <Button
+            type="button"
+            size="sm"
+            className="gap-2 shrink-0 w-full sm:w-auto"
+            onClick={() => openCreate()}
+          >
+            <Plus className="size-4" aria-hidden />
             {t('settings.addCategory')}
           </Button>
         </CardHeader>
         <CardContent>
           {loading ? (
-            <div className="flex justify-center py-8">
-              <Loader2 className="size-6 animate-spin text-muted-foreground" />
-            </div>
+            <CategoriesSkeleton />
           ) : categories.length === 0 ? (
-            <div className="flex flex-col items-center gap-3 py-8 text-center">
-              <div className="flex size-12 items-center justify-center rounded-full bg-muted">
-                <Tag className="size-6 text-muted-foreground" />
+            <div className="flex flex-col items-center gap-3 py-10 text-center">
+              <div className="flex size-12 items-center justify-center rounded-lg bg-muted">
+                <Tag className="size-6 text-muted-foreground" aria-hidden />
               </div>
-              <p className="text-sm text-muted-foreground">{t('settings.noCategories')}</p>
-              <Button size="sm" className="gap-2" onClick={() => openCreate()}>
-                <Plus className="size-4" />
+              <p className="text-sm text-muted-foreground text-pretty max-w-prose">
+                {t('settings.noCategories')}
+              </p>
+              <Button type="button" size="sm" className="gap-2" onClick={() => openCreate()}>
+                <Plus className="size-4" aria-hidden />
                 {t('settings.addCategory')}
               </Button>
             </div>
@@ -296,6 +342,7 @@ export function CategoriesSettings() {
               <div
                 className="flex size-12 items-center justify-center rounded-lg text-xl"
                 style={{ backgroundColor: `${form.color}20` }}
+                aria-hidden
               >
                 {form.icon || '📋'}
               </div>
@@ -331,12 +378,12 @@ export function CategoriesSettings() {
                 />
               </div>
               <div className="grid gap-2">
-                <Label>{t('settings.type')}</Label>
+                <Label htmlFor="category-type">{t('settings.type')}</Label>
                 <Select
                   value={form.type}
                   onValueChange={(v) => setForm((f) => ({ ...f, type: v as 'income' | 'expense' }))}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger id="category-type">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -348,21 +395,34 @@ export function CategoriesSettings() {
             </div>
 
             <div className="grid gap-2">
-              <Label>{t('settings.color')}</Label>
-              <div className="flex flex-wrap gap-2">
-                {DEFAULT_CATEGORY_COLORS.map((color) => (
-                  <button
-                    key={color}
-                    type="button"
-                    aria-label={color}
-                    className="size-8 rounded-full border-2 transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    style={{
-                      backgroundColor: color,
-                      borderColor: form.color === color ? 'var(--primary)' : 'transparent',
-                    }}
-                    onClick={() => setForm((f) => ({ ...f, color }))}
-                  />
-                ))}
+              <Label id="category-color-label">{t('settings.color')}</Label>
+              <div
+                className="flex flex-wrap gap-2"
+                role="radiogroup"
+                aria-labelledby="category-color-label"
+              >
+                {DEFAULT_CATEGORY_COLORS.map((color) => {
+                  const selected = form.color === color;
+                  return (
+                    <button
+                      key={color}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      aria-label={
+                        selected
+                          ? t('settings.colorSelected', { color })
+                          : t('settings.colorSwatch', { color })
+                      }
+                      className={cn(
+                        'size-8 rounded-full border-2 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 transition-[box-shadow,border-color] duration-200 motion-reduce:transition-none',
+                        selected ? 'border-primary shadow-sm' : 'border-transparent'
+                      )}
+                      style={{ backgroundColor: color }}
+                      onClick={() => setForm((f) => ({ ...f, color }))}
+                    />
+                  );
+                })}
               </div>
             </div>
 
@@ -373,21 +433,35 @@ export function CategoriesSettings() {
                 type="number"
                 min={0}
                 step="1"
+                inputMode="decimal"
                 value={form.monthlyBudget}
                 onChange={(e) => setForm((f) => ({ ...f, monthlyBudget: e.target.value }))}
                 placeholder="5000"
+                aria-describedby="category-budget-hint"
+                className="tabular-nums"
               />
-              <p className="text-xs text-muted-foreground">{t('settings.noBudget')}</p>
+              <p id="category-budget-hint" className="text-xs text-muted-foreground">
+                {t('settings.budgetOptional')}
+              </p>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setDialogOpen(false)}
+              disabled={saving}
+            >
               {t('settings.cancel')}
             </Button>
-            <Button onClick={handleSave} disabled={saving || !form.name.trim()}>
+            <Button
+              type="button"
+              onClick={handleSave}
+              disabled={saving || !form.name.trim()}
+            >
               {saving ? (
                 <>
-                  <Loader2 className="size-4 animate-spin" />
+                  <Loader2 className="size-4 animate-spin" aria-hidden />
                   {t('settings.saving')}
                 </>
               ) : (
@@ -420,7 +494,7 @@ export function CategoriesSettings() {
             >
               {deleting ? (
                 <>
-                  <Loader2 className="size-4 animate-spin" />
+                  <Loader2 className="size-4 animate-spin" aria-hidden />
                   {t('settings.deleting')}
                 </>
               ) : (

@@ -132,44 +132,54 @@ export function IncomeExpensesScrollChart({
         onScroll={checkLeftEdge}
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
+        role="region"
+        aria-label="Income versus expenses by month. Scroll left for older months."
+        tabIndex={0}
       >
         <ChartContainer
           config={chartConfig}
           className="aspect-auto h-[280px] w-full max-w-full min-w-0"
           style={{ minWidth: chartMinWidth }}
         >
-          <BarChart data={data} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" className="stroke-muted" vertical={false} />
+          <BarChart data={data} margin={{ top: 12, right: 8, left: 4, bottom: 4 }}>
+            <CartesianGrid strokeDasharray="3 3" className="stroke-border" vertical={false} />
             <XAxis
               dataKey="month"
               tickLine={false}
               axisLine={false}
+              tickMargin={8}
               className="text-xs fill-muted-foreground"
             />
             <YAxis
               tickLine={false}
               axisLine={false}
-              tickFormatter={(value) => `฿${value / 1000}k`}
+              tickMargin={4}
+              width={48}
+              tickFormatter={(value) =>
+                value >= 1000 ? `฿${Math.round(value / 1000)}k` : `฿${value}`
+              }
               className="text-xs fill-muted-foreground"
             />
             <ChartTooltip content={<ChartTooltipContent />} />
-            <Bar dataKey="income" fill="var(--chart-1)" radius={[4, 4, 0, 0]} />
-            <Bar dataKey="expenses" fill="var(--chart-3)" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="income" fill="var(--chart-1)" radius={[4, 4, 0, 0]} name="Income" />
+            <Bar dataKey="expenses" fill="var(--chart-3)" radius={[4, 4, 0, 0]} name="Expenses" />
           </BarChart>
         </ChartContainer>
       </div>
       {(loadingOlder || hasOlderData) && (
         <div
           className={cn(
-            'pointer-events-none absolute left-0 top-0 flex h-8 max-w-[min(100%,14rem)] items-center gap-1.5 rounded-r-md bg-background/80 px-2 text-xs text-muted-foreground backdrop-blur-sm',
-            !loadingOlder && 'opacity-60'
+            'pointer-events-none absolute left-0 top-0 flex h-8 max-w-[min(100%,14rem)] items-center gap-1.5 rounded-r-md border border-border bg-background px-2 text-xs text-muted-foreground transition-opacity duration-200 ease-out motion-reduce:transition-none',
+            !loadingOlder && 'opacity-70'
           )}
-          aria-hidden={!loadingOlder}
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
         >
           {loadingOlder ? (
             <>
-              <Loader2 className="size-3.5 animate-spin" />
-              <span>Loading older data...</span>
+              <Loader2 className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden />
+              <span>Loading older months…</span>
             </>
           ) : (
             <span>Scroll left for older months</span>

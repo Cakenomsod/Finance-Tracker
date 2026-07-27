@@ -1,7 +1,6 @@
 'use client'
 
 import Link from 'next/link'
-import { Sparkles } from 'lucide-react'
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -15,11 +14,11 @@ import type { DashboardInsight } from '@/lib/aggregate-transactions'
 function insightLabel(type: DashboardInsight['type']) {
   switch (type) {
     case 'alert':
-      return 'Spending Alert:'
+      return 'Spending alert'
     case 'pattern':
-      return 'Pattern Detected:'
+      return 'Pattern'
     case 'tip':
-      return 'Savings Tip:'
+      return 'Tip'
   }
 }
 
@@ -35,41 +34,43 @@ export function InsightsPanel({
   return (
     <Card className="min-w-0 overflow-hidden">
       <CardHeader className="px-4 sm:px-6">
-        <div className="flex items-center gap-2">
-          <div className="rounded-lg bg-muted p-2">
-            <Sparkles className="size-4 text-primary" />
-          </div>
-          <CardTitle>Insights</CardTitle>
-        </div>
-        <CardDescription>Observations from your spending data</CardDescription>
+        <CardTitle className="text-balance">Insights</CardTitle>
+        <CardDescription className="text-pretty">
+          What stands out in this month&apos;s spending
+        </CardDescription>
       </CardHeader>
-      <CardContent className="min-w-0 space-y-4 px-4 sm:px-6">
+      <CardContent className="flex min-w-0 flex-col gap-4 px-4 sm:px-6">
         <MonthContentTransition monthKey={monthKey} direction={monthDirection}>
           {insights.length > 0 ? (
-            <div className="space-y-3">
+            <ul className="space-y-0 divide-y divide-border">
               {insights.map((insight, i) => (
-                <p key={i} className="break-words text-sm">
-                  <span
-                    className={cn(
-                      'font-medium',
-                      insight.type === 'alert' && 'text-warning',
-                      (insight.type === 'pattern' || insight.type === 'tip') && 'text-primary'
-                    )}
-                  >
-                    {insightLabel(insight.type)}
-                  </span>{' '}
-                  {insight.text}
-                </p>
+                <li key={i} className="py-3 first:pt-0 last:pb-0">
+                  <p className="text-xs font-medium text-muted-foreground">
+                    <span
+                      className={cn(
+                        insight.type === 'alert' && 'text-warning',
+                        insight.type === 'pattern' && 'text-foreground',
+                        insight.type === 'tip' && 'text-primary'
+                      )}
+                    >
+                      {insightLabel(insight.type)}
+                    </span>
+                  </p>
+                  <p className="mt-1 break-words text-sm text-pretty">{insight.text}</p>
+                </li>
               ))}
-            </div>
+            </ul>
           ) : (
-            <p className="text-sm text-muted-foreground">
-              Add transactions to see personalized insights.
-            </p>
+            <div className="rounded-lg border border-dashed border-border px-3 py-5 text-center">
+              <p className="text-sm font-medium">No insights yet</p>
+              <p className="mt-1 text-sm text-muted-foreground text-pretty">
+                Add a few transactions and patterns will show up here.
+              </p>
+            </div>
           )}
         </MonthContentTransition>
-        <Button variant="outline" className="w-full" asChild>
-          <Link href="/insights">View All Insights</Link>
+        <Button variant="outline" className="mt-auto w-full" asChild>
+          <Link href="/insights">View all insights</Link>
         </Button>
       </CardContent>
     </Card>

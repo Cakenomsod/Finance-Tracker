@@ -1,12 +1,8 @@
 'use client'
 
 import * as React from 'react'
-import {
-  TrendingUp,
-  TrendingDown,
-  Download,
-  BarChart3,
-} from 'lucide-react'
+import Link from 'next/link'
+import { TrendingUp, TrendingDown } from 'lucide-react'
 import {
   Bar,
   BarChart,
@@ -34,6 +30,7 @@ import { useAllTripExpenses } from '@/hooks/use-all-trip-expenses'
 import { useAuth } from '@/hooks/use-auth'
 import { useTransactions } from '@/hooks/use-transactions'
 import { useUserSettings } from '@/hooks/use-user-settings'
+import { useQuickAdd } from '@/components/quick-add-context'
 import { IncomeExpensesScrollChart } from '@/components/analytics/income-expenses-scroll-chart'
 import { InsightsPanel } from '@/components/analytics/insights-panel'
 import { RecurringDueCard } from '@/components/dashboard/recurring-due-card'
@@ -70,6 +67,7 @@ import {
   computeCumulativeBalanceUpToMonth,
   computePercentChange,
   mergeTransactions,
+  formatMoney,
   type CombinedTransaction,
 } from '@/lib/aggregate-transactions'
 
@@ -91,6 +89,14 @@ const categoryColors = [
   'var(--primary)',
   'var(--muted-foreground)',
 ]
+
+function ChartEmpty({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex h-full min-h-[180px] items-center justify-center px-4 text-center text-sm text-muted-foreground text-pretty">
+      {children}
+    </div>
+  )
+}
 
 function buildDailySpending(transactions: CombinedTransaction[], month: MonthSelection) {
   const dayMap = new Map<number, number>()
@@ -148,14 +154,14 @@ function getFinancialHabits(transactions: CombinedTransaction[], month: MonthSel
     daySums[d.getDay()] += getCountedExpenseThb(tx)
   })
   const highestDayIdx = daySums.indexOf(Math.max(...daySums))
-  const highestDay = daySums[highestDayIdx] > 0 ? dayNames[highestDayIdx] : '-'
+  const highestDay = daySums[highestDayIdx] > 0 ? dayNames[highestDayIdx] : '—'
 
   const catMap = new Map<string, number>()
   expenseTxs.forEach((tx) => {
     const cat = tx.category || 'Others'
     catMap.set(cat, (catMap.get(cat) || 0) + getCountedExpenseThb(tx))
   })
-  let topCategory = '-'
+  let topCategory = '—'
   let topCategoryPct = 0
   if (catMap.size > 0) {
     const sorted = Array.from(catMap.entries()).sort((a, b) => b[1] - a[1])
@@ -171,6 +177,7 @@ function getFinancialHabits(transactions: CombinedTransaction[], month: MonthSel
 export default function DashboardPage() {
   const { user } = useAuth()
   const { profile } = useUserSettings()
+  const { openQuickAdd } = useQuickAdd()
   const [selectedMonth, setSelectedMonth] = React.useState(getCurrentMonthSelection)
   const { monthKey, direction: monthDirection, onMonthChange } = useMonthTransition(selectedMonth)
 
@@ -348,6 +355,26 @@ export default function DashboardPage() {
     return <DashboardSkeleton />
   }
 
+  const pageHeader = (
+    <header className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="min-w-0 flex flex-col gap-1">
+        <h1 className="text-xl font-semibold tracking-tight text-balance sm:text-2xl">
+          Dashboard
+        </h1>
+        <p className="max-w-prose text-sm text-muted-foreground text-pretty">
+          Balance, shared money, and spending patterns for {monthLabel}.
+        </p>
+      </div>
+      <div className="flex shrink-0 items-center gap-2 self-start">
+        <MonthPicker
+          value={selectedMonth}
+          onChange={handleSelectedMonthChange}
+          monthsWithData={monthsWithData}
+        />
+      </div>
+    </header>
+  )
+
   const overviewSection = (
     <>
       <RecurringDueCard />
@@ -379,29 +406,24 @@ export default function DashboardPage() {
   if (combined.length === 0 && !loading) {
     return (
       <div className="flex flex-col gap-6 p-4 sm:p-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex flex-col gap-1">
-            <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">Dashboard</h1>
-            <p className="text-sm text-muted-foreground sm:text-base">
-              Financial overview and spending insights.
-            </p>
-          </div>
-          <MonthPicker
-            value={selectedMonth}
-            onChange={handleSelectedMonthChange}
-            monthsWithData={monthsWithData}
-          />
-        </div>
-
+        {pageHeader}
         {overviewSection}
 
         <Card className="border-dashed">
-          <CardContent className="flex flex-col items-center justify-center py-12">
-            <BarChart3 className="size-12 text-muted-foreground/50" />
-            <p className="mt-4 text-lg font-medium">No transaction data for {monthLabel}</p>
-            <p className="text-sm text-muted-foreground">
-              Try selecting a different month or add some transactions
+          <CardContent className="flex flex-col items-center justify-center px-6 py-12 text-center">
+            <p className="text-base font-medium text-balance">
+              No transactions in {monthLabel}
             </p>
+            <p className="mt-2 max-w-sm text-sm text-muted-foreground text-pretty">
+              Log an expense or income to unlock charts, category breakdowns, and spending habits
+              for this month.
+            </p>
+            <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
+              <Button onClick={openQuickAdd}>Add a transaction</Button>
+              <Button variant="outline" asChild>
+                <Link href="/transactions">View transactions</Link>
+              </Button>
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -410,36 +432,19 @@ export default function DashboardPage() {
 
   return (
     <div className="flex min-w-0 max-w-full flex-col gap-4 overflow-x-hidden p-4 sm:gap-6 sm:p-6">
-      {/* Page Header */}
-      <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0 flex flex-col gap-1">
-          <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">Dashboard</h1>
-          <p className="text-sm text-muted-foreground sm:text-base">
-            Financial overview and spending insights.
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-2 self-start">
-          <MonthPicker
-            value={selectedMonth}
-            onChange={handleSelectedMonthChange}
-            monthsWithData={monthsWithData}
-          />
-          <Button variant="outline" size="icon">
-            <Download className="size-4" />
-          </Button>
-        </div>
-      </div>
+      {pageHeader}
 
       {overviewSection}
 
-      {/* Income vs Expenses & Insights */}
       <div className="grid gap-6 lg:grid-cols-3">
         <Card className="min-w-0 overflow-hidden lg:col-span-2">
-          <CardHeader>
-            <CardTitle>Income vs Expenses</CardTitle>
-            <CardDescription>Monthly comparison from loaded history</CardDescription>
+          <CardHeader className="px-4 sm:px-6">
+            <CardTitle className="text-balance">Income vs expenses</CardTitle>
+            <CardDescription className="text-pretty">
+              Monthly comparison from loaded history
+            </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="px-4 sm:px-6">
             {monthlyOverview.length > 0 ? (
               <IncomeExpensesScrollChart
                 data={monthlyOverview}
@@ -448,9 +453,7 @@ export default function DashboardPage() {
                 onLoadOlder={loadOlderChartData}
               />
             ) : (
-              <div className="flex h-[280px] items-center justify-center text-sm text-muted-foreground">
-                No transaction data yet
-              </div>
+              <ChartEmpty>No monthly history yet. Add transactions to compare months.</ChartEmpty>
             )}
           </CardContent>
         </Card>
@@ -462,17 +465,18 @@ export default function DashboardPage() {
         />
       </div>
 
-      {/* Category breakdown */}
       <Card className="min-w-0 overflow-hidden">
-          <CardHeader>
-            <CardTitle>Spending by Category</CardTitle>
-            <CardDescription>Expense breakdown</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <MonthContentTransition monthKey={monthKey} direction={monthDirection}>
+        <CardHeader className="px-4 sm:px-6">
+          <CardTitle className="text-balance">Spending by category</CardTitle>
+          <CardDescription className="text-pretty">
+            Where {monthLabel} expenses went
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="px-4 sm:px-6">
+          <MonthContentTransition monthKey={monthKey} direction={monthDirection}>
             {categoryBreakdown.length > 0 ? (
-              <>
-                <ChartContainer config={chartConfig} className="mx-auto h-[180px] w-full">
+              <div className="grid gap-6 md:grid-cols-2 md:items-start">
+                <ChartContainer config={chartConfig} className="mx-auto h-[200px] w-full max-w-[280px]">
                   <PieChart>
                     <ChartTooltip content={<ChartTooltipContent />} />
                     <Pie
@@ -481,11 +485,11 @@ export default function DashboardPage() {
                       nameKey="name"
                       cx="50%"
                       cy="50%"
-                      innerRadius={50}
-                      outerRadius={80}
+                      innerRadius={56}
+                      outerRadius={88}
                       paddingAngle={2}
                     >
-                      {categoryBreakdown.map((entry, index) => (
+                      {categoryBreakdown.map((_, index) => (
                         <Cell
                           key={`cell-${index}`}
                           fill={categoryColors[index % categoryColors.length]}
@@ -494,112 +498,90 @@ export default function DashboardPage() {
                     </Pie>
                   </PieChart>
                 </ChartContainer>
-                <div className="mt-4 space-y-2">
-                  {categoryBreakdown.slice(0, 5).map((cat, index) => (
-                    <div key={cat.name} className="flex items-center justify-between text-sm">
-                      <div className="flex items-center gap-2">
-                        <div
-                          className="size-3 rounded-full"
-                          style={{ backgroundColor: categoryColors[index % categoryColors.length] }}
+
+                <div className="space-y-3" role="list" aria-label="Category ranking">
+                  {categoryBreakdown.slice(0, 6).map((category, index) => {
+                    const maxValue = categoryBreakdown[0]?.value || 1
+                    const barWidth = Math.round((category.value / maxValue) * 100)
+                    return (
+                      <div key={category.name} role="listitem">
+                        <div className="mb-1.5 flex items-center justify-between gap-2 text-sm">
+                          <div className="flex min-w-0 items-center gap-2">
+                            <span
+                              className="size-2.5 shrink-0 rounded-full"
+                              style={{
+                                backgroundColor: categoryColors[index % categoryColors.length],
+                              }}
+                              aria-hidden
+                            />
+                            <span className="truncate">{category.name}</span>
+                          </div>
+                          <div className="flex shrink-0 items-center gap-2">
+                            <span className="text-muted-foreground tabular-nums">
+                              {formatMoney(category.value, currency)}
+                            </span>
+                            <Badge variant="secondary" className="tabular-nums text-xs">
+                              {category.percentage}%
+                            </Badge>
+                          </div>
+                        </div>
+                        <Progress
+                          value={barWidth}
+                          className="h-1.5"
+                          aria-label={`${category.name} ${category.percentage}% of expenses`}
                         />
-                        <span className="truncate max-w-[120px]">{cat.name}</span>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-muted-foreground tabular-nums">
-                          ฿{cat.value.toLocaleString()}
-                        </span>
-                        <Badge variant="secondary" className="text-xs">
-                          {cat.percentage}%
-                        </Badge>
-                      </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
-              </>
-            ) : (
-              <div className="flex items-center justify-center h-[180px] text-muted-foreground">
-                No expense data
               </div>
-            )}
-            </MonthContentTransition>
-          </CardContent>
-        </Card>
-
-      {/* Category Details and Patterns */}
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Category Ranking</CardTitle>
-            <CardDescription>Your highest spending categories</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <MonthContentTransition monthKey={monthKey} direction={monthDirection}>
-            {categoryBreakdown.length > 0 ? (
-              categoryBreakdown.slice(0, 6).map((category, index) => {
-                const maxValue = categoryBreakdown[0]?.value || 1
-                const barWidth = Math.round((category.value / maxValue) * 100)
-                return (
-                  <div key={category.name}>
-                    <div className="flex items-center justify-between text-sm mb-1">
-                      <div className="flex items-center gap-2">
-                        <div
-                          className="size-3 rounded-full"
-                          style={{ backgroundColor: categoryColors[index % categoryColors.length] }}
-                        />
-                        <span>{category.name}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-muted-foreground tabular-nums">
-                          ฿{category.value.toLocaleString()}
-                        </span>
-                        <Badge variant="secondary" className="text-xs">
-                          {category.percentage}%
-                        </Badge>
-                      </div>
-                    </div>
-                    <Progress value={barWidth} className="h-2" />
-                  </div>
-                )
-              })
             ) : (
-              <div className="text-center text-muted-foreground py-8">No expense data</div>
+              <ChartEmpty>
+                No expenses this month. Log a purchase to see category breakdown.
+              </ChartEmpty>
             )}
-            </MonthContentTransition>
-          </CardContent>
-        </Card>
+          </MonthContentTransition>
+        </CardContent>
+      </Card>
 
-        <Card>
-          <CardHeader>
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card className="min-w-0 overflow-hidden">
+          <CardHeader className="px-4 sm:px-6">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
-                <CardTitle>
+                <CardTitle className="text-balance">
                   <MonthAnimatedValue valueKey={`${monthKey}-trend-title`} className="inline">
                     {isCurrentMonthSelection(selectedMonth)
-                      ? 'Weekly Spending Trend'
-                      : 'Weekday Spending Pattern'}
+                      ? 'Weekly spending'
+                      : 'Weekday pattern'}
                   </MonthAnimatedValue>
                 </CardTitle>
-                <CardDescription>
+                <CardDescription className="text-pretty">
                   <MonthAnimatedValue valueKey={`${monthKey}-weekday-desc`} className="inline">
                     {isCurrentMonthSelection(selectedMonth)
-                      ? 'Daily spending pattern this week'
-                      : `Spending by day of week in ${monthLabel}`}
+                      ? 'Daily spending this week'
+                      : `By day of week in ${monthLabel}`}
                   </MonthAnimatedValue>
                 </CardDescription>
               </div>
               {weekComparison.value !== 'New' && weekComparison.value !== '0%' && (
-                <MonthAnimatedValue valueKey={`${monthKey}-week-badge`} className="inline-flex w-fit shrink-0">
+                <MonthAnimatedValue
+                  valueKey={`${monthKey}-week-badge`}
+                  className="inline-flex w-fit shrink-0"
+                >
                   <Badge
                     variant="secondary"
                     className={cn(
-                      'w-fit shrink-0',
-                      weekComparison.type === 'negative' ? 'bg-primary/10 text-primary' : 'bg-destructive/10 text-destructive'
+                      'w-fit shrink-0 tabular-nums',
+                      weekComparison.type === 'negative'
+                        ? 'bg-primary/10 text-primary'
+                        : 'bg-destructive/10 text-destructive'
                     )}
                   >
                     {weekComparison.type === 'negative' ? (
-                      <TrendingDown className="mr-1 size-3" />
+                      <TrendingDown className="mr-1 size-3" aria-hidden />
                     ) : (
-                      <TrendingUp className="mr-1 size-3" />
+                      <TrendingUp className="mr-1 size-3" aria-hidden />
                     )}
                     {weekComparison.value}{' '}
                     {isCurrentMonthSelection(selectedMonth) ? 'vs last week' : 'vs last month'}
@@ -608,23 +590,135 @@ export default function DashboardPage() {
               )}
             </div>
           </CardHeader>
-          <CardContent>
+          <CardContent className="px-4 sm:px-6">
             <MonthContentTransition monthKey={monthKey} direction={monthDirection}>
-            {isCurrentMonthSelection(selectedMonth) ? (
-              weeklySpendingTrend.some((d) => d.amount > 0) ? (
+              {isCurrentMonthSelection(selectedMonth) ? (
+                weeklySpendingTrend.some((d) => d.amount > 0) ? (
+                  <ChartContainer config={chartConfig} className="h-[250px] w-full">
+                    <LineChart
+                      data={weeklySpendingTrend}
+                      margin={{ top: 12, right: 8, left: 4, bottom: 4 }}
+                    >
+                      <CartesianGrid
+                        strokeDasharray="3 3"
+                        className="stroke-border"
+                        vertical={false}
+                      />
+                      <XAxis
+                        dataKey="day"
+                        tickLine={false}
+                        axisLine={false}
+                        tickMargin={8}
+                        className="text-xs fill-muted-foreground"
+                      />
+                      <YAxis
+                        tickLine={false}
+                        axisLine={false}
+                        tickMargin={4}
+                        width={48}
+                        tickFormatter={(value) =>
+                          value >= 1000 ? `฿${Math.round(value / 1000)}k` : `฿${value}`
+                        }
+                        className="text-xs fill-muted-foreground"
+                      />
+                      <ChartTooltip content={<ChartTooltipContent />} />
+                      <Line
+                        type="monotone"
+                        dataKey="amount"
+                        stroke="var(--chart-1)"
+                        strokeWidth={2}
+                        dot={{ fill: 'var(--chart-1)', r: 3 }}
+                        activeDot={{ r: 5 }}
+                      />
+                    </LineChart>
+                  </ChartContainer>
+                ) : (
+                  <ChartEmpty>No spending this week yet.</ChartEmpty>
+                )
+              ) : (
+                weekdayPattern.some((d) => d.thisWeek > 0) ? (
+                  <ChartContainer config={chartConfig} className="h-[250px] w-full">
+                    <BarChart
+                      data={weekdayPattern}
+                      margin={{ top: 12, right: 8, left: 4, bottom: 4 }}
+                    >
+                      <CartesianGrid
+                        strokeDasharray="3 3"
+                        className="stroke-border"
+                        vertical={false}
+                      />
+                      <XAxis
+                        dataKey="day"
+                        tickLine={false}
+                        axisLine={false}
+                        tickMargin={8}
+                        className="text-xs fill-muted-foreground"
+                      />
+                      <YAxis
+                        tickLine={false}
+                        axisLine={false}
+                        tickMargin={4}
+                        width={48}
+                        tickFormatter={(value) =>
+                          value >= 1000 ? `฿${Math.round(value / 1000)}k` : `฿${value}`
+                        }
+                        className="text-xs fill-muted-foreground"
+                      />
+                      <ChartTooltip content={<ChartTooltipContent />} />
+                      <Bar
+                        dataKey="thisWeek"
+                        fill="var(--chart-1)"
+                        radius={[4, 4, 0, 0]}
+                        name="Spending"
+                      />
+                    </BarChart>
+                  </ChartContainer>
+                ) : (
+                  <ChartEmpty>No weekday spending in {monthLabel}.</ChartEmpty>
+                )
+              )}
+            </MonthContentTransition>
+          </CardContent>
+        </Card>
+
+        <Card className="min-w-0 overflow-hidden">
+          <CardHeader className="px-4 sm:px-6">
+            <CardTitle className="text-balance">Daily spending</CardTitle>
+            <CardDescription className="text-pretty">
+              Day-by-day pattern for{' '}
+              <MonthAnimatedValue valueKey={`${monthKey}-daily-desc`} className="inline">
+                {monthLabel}
+              </MonthAnimatedValue>
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="px-4 sm:px-6">
+            <MonthContentTransition monthKey={monthKey} direction={monthDirection}>
+              {dailySpending.length > 0 ? (
                 <ChartContainer config={chartConfig} className="h-[250px] w-full">
-                  <LineChart data={weeklySpendingTrend} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" vertical={false} />
+                  <LineChart
+                    data={dailySpending}
+                    margin={{ top: 12, right: 8, left: 4, bottom: 4 }}
+                  >
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      className="stroke-border"
+                      vertical={false}
+                    />
                     <XAxis
                       dataKey="day"
                       tickLine={false}
                       axisLine={false}
+                      tickMargin={8}
                       className="text-xs fill-muted-foreground"
                     />
                     <YAxis
                       tickLine={false}
                       axisLine={false}
-                      tickFormatter={(value) => `฿${value}`}
+                      tickMargin={4}
+                      width={48}
+                      tickFormatter={(value) =>
+                        value >= 1000 ? `฿${Math.round(value / 1000)}k` : `฿${value}`
+                      }
                       className="text-xs fill-muted-foreground"
                     />
                     <ChartTooltip content={<ChartTooltipContent />} />
@@ -633,129 +727,79 @@ export default function DashboardPage() {
                       dataKey="amount"
                       stroke="var(--chart-1)"
                       strokeWidth={2}
-                      dot={{ fill: 'var(--chart-1)', r: 4 }}
-                      activeDot={{ r: 6 }}
+                      dot={{ fill: 'var(--chart-1)', r: 2.5 }}
+                      activeDot={{ r: 4 }}
                     />
                   </LineChart>
                 </ChartContainer>
               ) : (
-                <div className="flex h-[250px] items-center justify-center text-sm text-muted-foreground">
-                  No spending this week yet
-                </div>
-              )
-            ) : (
-              <ChartContainer config={chartConfig} className="h-[250px] w-full">
-                <BarChart data={weekdayPattern} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" vertical={false} />
-                  <XAxis
-                    dataKey="day"
-                    tickLine={false}
-                    axisLine={false}
-                    className="text-xs fill-muted-foreground"
-                  />
-                  <YAxis
-                    tickLine={false}
-                    axisLine={false}
-                    tickFormatter={(value) => `฿${value}`}
-                    className="text-xs fill-muted-foreground"
-                  />
-                  <ChartTooltip content={<ChartTooltipContent />} />
-                  <Bar dataKey="thisWeek" fill="var(--chart-1)" radius={[4, 4, 0, 0]} name="Spending" />
-                </BarChart>
-              </ChartContainer>
-            )}
+                <ChartEmpty>No daily spending recorded for {monthLabel}.</ChartEmpty>
+              )}
             </MonthContentTransition>
           </CardContent>
         </Card>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Daily Spending Trend</CardTitle>
-          <CardDescription>
-            Spending pattern for{' '}
-            <MonthAnimatedValue valueKey={`${monthKey}-daily-desc`} className="inline">
-              {monthLabel}
-            </MonthAnimatedValue>
+      <Card className="min-w-0 overflow-hidden">
+        <CardHeader className="px-4 sm:px-6">
+          <CardTitle className="text-balance">Habits at a glance</CardTitle>
+          <CardDescription className="text-pretty">
+            Snapshot of how you spent in {monthLabel}
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="px-4 sm:px-6">
           <MonthContentTransition monthKey={monthKey} direction={monthDirection}>
-          {dailySpending.length > 0 ? (
-            <ChartContainer config={chartConfig} className="h-[200px] w-full">
-              <LineChart data={dailySpending} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" vertical={false} />
-                <XAxis
-                  dataKey="day"
-                  tickLine={false}
-                  axisLine={false}
-                  className="text-xs fill-muted-foreground"
-                />
-                <YAxis
-                  tickLine={false}
-                  axisLine={false}
-                  tickFormatter={(value) => `฿${value}`}
-                  className="text-xs fill-muted-foreground"
-                />
-                <ChartTooltip content={<ChartTooltipContent />} />
-                <Line
-                  type="monotone"
-                  dataKey="amount"
-                  stroke="var(--chart-1)"
-                  strokeWidth={2}
-                  dot={{ fill: 'var(--chart-1)', r: 3 }}
-                  activeDot={{ r: 5 }}
-                />
-              </LineChart>
-            </ChartContainer>
-          ) : (
-            <div className="flex items-center justify-center h-[200px] text-muted-foreground">
-              No spending data for this month yet
-            </div>
-          )}
-          </MonthContentTransition>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Financial Habits Summary</CardTitle>
-          <CardDescription>Key insights from your spending patterns</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <MonthContentTransition
-            monthKey={monthKey}
-            direction={monthDirection}
-            className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"
-          >
-            <div className="rounded-lg bg-muted p-4 animate-in fade-in-0 slide-in-from-bottom-1 duration-300 fill-mode-both motion-reduce:animate-none" style={{ animationDelay: '0ms' }}>
-              <p className="text-sm text-muted-foreground">Avg. Daily Spending</p>
-              <MonthAnimatedValue valueKey={`${monthKey}-avg-daily`} className="mt-1 block text-2xl font-bold">
-                ฿{habits.avgDaily.toLocaleString()}
-              </MonthAnimatedValue>
-              <p className="text-xs text-muted-foreground mt-1">Average for {monthLabel}</p>
-            </div>
-            <div className="rounded-lg bg-muted p-4 animate-in fade-in-0 slide-in-from-bottom-1 duration-300 fill-mode-both motion-reduce:animate-none" style={{ animationDelay: '45ms' }}>
-              <p className="text-sm text-muted-foreground">Highest Spending Day</p>
-              <MonthAnimatedValue valueKey={`${monthKey}-highest-day`} className="mt-1 block text-2xl font-bold">
-                {habits.highestDay}
-              </MonthAnimatedValue>
-              <p className="text-xs text-muted-foreground mt-1">Day with most spending</p>
-            </div>
-            <div className="rounded-lg bg-muted p-4 animate-in fade-in-0 slide-in-from-bottom-1 duration-300 fill-mode-both motion-reduce:animate-none" style={{ animationDelay: '90ms' }}>
-              <p className="text-sm text-muted-foreground">Top Category</p>
-              <MonthAnimatedValue valueKey={`${monthKey}-top-cat`} className="mt-1 block truncate text-2xl font-bold">
-                {habits.topCategory}
-              </MonthAnimatedValue>
-              <p className="text-xs text-muted-foreground mt-1">{habits.topCategoryPct}% of total expenses</p>
-            </div>
-            <div className="rounded-lg bg-muted p-4 animate-in fade-in-0 slide-in-from-bottom-1 duration-300 fill-mode-both motion-reduce:animate-none" style={{ animationDelay: '135ms' }}>
-              <p className="text-sm text-muted-foreground">Total Transactions</p>
-              <MonthAnimatedValue valueKey={`${monthKey}-habit-tx`} className="mt-1 block text-2xl font-bold">
-                {habits.txCount}
-              </MonthAnimatedValue>
-              <p className="text-xs text-muted-foreground mt-1">In {monthLabel}</p>
-            </div>
+            <dl className="grid gap-0 divide-y divide-border sm:grid-cols-2 sm:gap-x-8 sm:divide-y-0">
+              <div className="flex items-baseline justify-between gap-4 py-3 sm:border-b sm:border-border sm:py-3.5">
+                <dt className="text-sm text-muted-foreground">Avg. daily spending</dt>
+                <dd>
+                  <MonthAnimatedValue
+                    valueKey={`${monthKey}-avg-daily`}
+                    className="text-sm font-semibold tabular-nums"
+                  >
+                    {formatMoney(habits.avgDaily, currency)}
+                  </MonthAnimatedValue>
+                </dd>
+              </div>
+              <div className="flex items-baseline justify-between gap-4 py-3 sm:border-b sm:border-border sm:py-3.5">
+                <dt className="text-sm text-muted-foreground">Highest spending day</dt>
+                <dd>
+                  <MonthAnimatedValue
+                    valueKey={`${monthKey}-highest-day`}
+                    className="text-sm font-semibold"
+                  >
+                    {habits.highestDay}
+                  </MonthAnimatedValue>
+                </dd>
+              </div>
+              <div className="flex items-baseline justify-between gap-4 py-3 sm:py-3.5">
+                <dt className="text-sm text-muted-foreground">Top category</dt>
+                <dd className="min-w-0 text-right">
+                  <MonthAnimatedValue
+                    valueKey={`${monthKey}-top-cat`}
+                    className="block truncate text-sm font-semibold"
+                  >
+                    {habits.topCategory}
+                  </MonthAnimatedValue>
+                  {habits.topCategoryPct > 0 && (
+                    <span className="text-xs text-muted-foreground tabular-nums">
+                      {habits.topCategoryPct}% of expenses
+                    </span>
+                  )}
+                </dd>
+              </div>
+              <div className="flex items-baseline justify-between gap-4 py-3 sm:py-3.5">
+                <dt className="text-sm text-muted-foreground">Transactions</dt>
+                <dd>
+                  <MonthAnimatedValue
+                    valueKey={`${monthKey}-habit-tx`}
+                    className="text-sm font-semibold tabular-nums"
+                  >
+                    {habits.txCount}
+                  </MonthAnimatedValue>
+                </dd>
+              </div>
+            </dl>
           </MonthContentTransition>
         </CardContent>
       </Card>

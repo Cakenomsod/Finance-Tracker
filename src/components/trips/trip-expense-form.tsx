@@ -450,32 +450,36 @@ export function TripExpenseFormV2({
         }
       />
       {/* Input Mode Selector */}
-      <div className="flex gap-1 p-1 bg-muted rounded-lg">
+      <div className="flex gap-1 rounded-lg bg-muted p-1" role="tablist" aria-label="Expense input mode">
         <button
           type="button"
+          role="tab"
+          aria-selected={inputMode === 'standard'}
           onClick={() => {
             setInputMode('standard')
             setUseItemSplit(false)
           }}
           className={cn(
-            "flex-1 py-1.5 text-xs font-medium rounded-md transition-all",
-            inputMode === 'standard' ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+            'flex-1 rounded-md py-1.5 text-xs font-medium transition-colors duration-200',
+            inputMode === 'standard' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
           )}
         >
-          Standard Input
+          Standard
         </button>
         <button
           type="button"
+          role="tab"
+          aria-selected={inputMode === 'receipt'}
           onClick={() => {
             setInputMode('receipt')
             setUseItemSplit(true)
           }}
           className={cn(
-            "flex-1 py-1.5 text-xs font-medium rounded-md transition-all",
-            inputMode === 'receipt' ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+            'flex-1 rounded-md py-1.5 text-xs font-medium transition-colors duration-200',
+            inputMode === 'receipt' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
           )}
         >
-          🧾 Receipt Input
+          Receipt
         </button>
       </div>
 
@@ -531,7 +535,7 @@ export function TripExpenseFormV2({
                 const tx = parseFloat(tax) || 0
                 setTotalAmount(sub > 0 || tx > 0 ? (sub + tx).toString() : '')
               }}
-              className="h-9 text-xs"
+              className="h-9 text-xs tabular-nums"
             />
           </div>
           <div className="space-y-1.5">
@@ -548,7 +552,7 @@ export function TripExpenseFormV2({
                 const tx = parseFloat(val) || 0
                 setTotalAmount(sub > 0 || tx > 0 ? (sub + tx).toString() : '')
               }}
-              className="h-9 text-xs"
+              className="h-9 text-xs tabular-nums"
             />
           </div>
           <div className="space-y-1.5">
@@ -563,7 +567,7 @@ export function TripExpenseFormV2({
                 setSubtotal('')
                 setTax('')
               }}
-              className="h-9 text-xs font-semibold border-primary/40 focus-visible:ring-primary"
+              className="h-9 text-xs font-semibold tabular-nums border-primary/40 focus-visible:ring-primary"
             />
           </div>
         </div>
@@ -609,7 +613,7 @@ export function TripExpenseFormV2({
         <div className="space-y-4 border rounded-lg p-3 bg-muted/20 overflow-hidden">
           <div className="flex flex-col gap-2 pb-1 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-              <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Receipt Items</h4>
+              <h4 className="text-xs font-semibold text-muted-foreground">Receipt items</h4>
               <div className="inline-flex w-full rounded-lg border p-0.5 bg-muted/60 text-[10px] select-none sm:w-auto">
                 <button
                   type="button"

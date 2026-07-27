@@ -201,7 +201,10 @@ export function ImmichAttachmentsField({
       </div>
 
       <Dialog open={!!lightboxAssetId} onOpenChange={(o) => !o && setLightboxAssetId(null)}>
-        <DialogContent className="max-w-[min(96vw,900px)] p-2 sm:p-4">
+        <DialogContent
+          className="max-w-[min(96vw,900px)] p-2 sm:p-4"
+          disableOutsideClose
+        >
           <DialogHeader className="sr-only">
             <DialogTitle>ดูรูปโน้ต</DialogTitle>
           </DialogHeader>

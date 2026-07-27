@@ -34,7 +34,6 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -66,7 +65,6 @@ import { useCategories } from '@/hooks/use-categories'
 import { TransactionForm } from '@/components/transactions/transaction-form'
 import { TransactionAiPanel, type TransactionAiPanelHandle } from '@/components/transactions/transaction-ai-panel'
 import { DateGroupDividerRow } from '@/components/transactions/date-group-divider'
-import { MonthGroupDividerRow } from '@/components/transactions/month-group-divider'
 import { MonthPicker } from '@/components/shared/month-picker'
 import {
   MonthAnimatedValue,
@@ -84,7 +82,7 @@ import {
   formatTransactionDisplayTime,
   getCurrentMonthSelection,
   getLatestAvailableMonth,
-  groupItemsByMonthAndDate,
+  groupItemsByDate,
   hasMonthData,
   toDateFromFirestore,
 } from '@/lib/datetime'
@@ -316,26 +314,55 @@ export default function TransactionsPage() {
     [summaryCombined, selectedMonth]
   )
 
-  const filteredTransactions = allCombined.filter((t) => {
-    const descMatches = t.description?.toLowerCase().includes(searchQuery.toLowerCase()) || false
-    const noteMatches = t.note?.toLowerCase().includes(searchQuery.toLowerCase()) || false
-    const catMatches = t.category?.toLowerCase().includes(searchQuery.toLowerCase()) || false
-    const matchesSearch = descMatches || noteMatches || catMatches
-    const matchesCategory =
-      selectedCategory === ALL_CATEGORIES || t.category === selectedCategory
-    return matchesSearch && matchesCategory
-  })
+  const monthScopedTransactions = React.useMemo(() => {
+    return allCombined.filter((t) => {
+      const d = toDateFromFirestore(t.date)
+      if (!d) return false
+      return d.getFullYear() === selectedMonth.year && d.getMonth() === selectedMonth.month
+    })
+  }, [allCombined, selectedMonth])
+
+  const filteredTransactions = React.useMemo(() => {
+    const q = searchQuery.toLowerCase().trim()
+    return monthScopedTransactions.filter((t) => {
+      const descMatches = !q || t.description?.toLowerCase().includes(q)
+      const noteMatches = !q || t.note?.toLowerCase().includes(q)
+      const catMatches = !q || t.category?.toLowerCase().includes(q)
+      const matchesSearch = !q || descMatches || noteMatches || catMatches
+      const matchesCategory =
+        selectedCategory === ALL_CATEGORIES || t.category === selectedCategory
+      return matchesSearch && matchesCategory
+    })
+  }, [monthScopedTransactions, searchQuery, selectedCategory])
 
   const hasActiveFilters =
     searchQuery.trim().length > 0 || selectedCategory !== ALL_CATEGORIES
+  const monthHasData = hasMonthData(monthsWithData, selectedMonth)
+  const monthWindowEmpty = monthScopedTransactions.length === 0
   const showLoadOlderHint =
-    hasActiveFilters &&
     filteredTransactions.length === 0 &&
-    allCombined.length > 0
+    monthHasData &&
+    monthWindowEmpty &&
+    (hasMoreOlder || loadingOlder)
 
-  const monthGroupedTransactions = React.useMemo(
+  // When the month picker jumps to a month not yet in the window, keep loading older pages.
+  React.useEffect(() => {
+    if (loading || loadingOlder || !hasMoreOlder) return
+    if (!monthHasData) return
+    if (monthScopedTransactions.length > 0) return
+    void loadOlder()
+  }, [
+    loading,
+    loadingOlder,
+    hasMoreOlder,
+    monthHasData,
+    monthScopedTransactions.length,
+    loadOlder,
+  ])
+
+  const dateGroupedTransactions = React.useMemo(
     () =>
-      groupItemsByMonthAndDate(filteredTransactions, (transaction) =>
+      groupItemsByDate(filteredTransactions, (transaction) =>
         toDateFromFirestore(transaction.date)
       ),
     [filteredTransactions]
@@ -350,7 +377,9 @@ export default function TransactionsPage() {
     ? 'no-data'
     : showLoadOlderHint
       ? 'filtered-load-older'
-      : 'no-results'
+      : monthWindowEmpty
+        ? 'no-month-data'
+        : 'no-results'
 
   const handleViewTransaction = (transaction: {
     isLegacy: boolean
@@ -378,10 +407,9 @@ export default function TransactionsPage() {
 
   return (
     <div className="flex flex-col gap-6 p-6">
-      {/* Page Header */}
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">ธุรกรรม</h1>
-        <p className="text-muted-foreground">
+        <h1 className="text-balance text-2xl font-semibold tracking-tight">ธุรกรรม</h1>
+        <p className="text-sm text-muted-foreground">
           ดูและจัดการรายการเงินทั้งหมดของคุณ
         </p>
       </div>
@@ -396,21 +424,21 @@ export default function TransactionsPage() {
         }}
       />
 
-      {/* Filters and Actions */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-1 flex-wrap items-center gap-2">
-          <div className="relative flex-1 max-w-sm">
-            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <div className="relative min-w-0 flex-1 sm:max-w-sm">
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
             <Input
               placeholder="ค้นหาธุรกรรม..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-9"
+              aria-label="ค้นหาธุรกรรม"
             />
           </div>
           <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-            <SelectTrigger className="w-[180px]">
-              <Filter className="mr-2 size-4" />
+            <SelectTrigger className="w-full sm:w-[180px]" aria-label="กรองตามหมวดหมู่">
+              <Filter className="mr-2 size-4 shrink-0" aria-hidden />
               <SelectValue placeholder="หมวดหมู่" />
             </SelectTrigger>
             <SelectContent>
@@ -421,6 +449,17 @@ export default function TransactionsPage() {
               ))}
             </SelectContent>
           </Select>
+          {hasActiveFilters && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground"
+              onClick={handleClearFilters}
+            >
+              ล้างตัวกรอง
+            </Button>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <Dialog open={isAddDialogOpen} onOpenChange={(open) => {
@@ -432,12 +471,14 @@ export default function TransactionsPage() {
             }
           }}>
             <DialogTrigger asChild>
-              <Button size="sm" className="gap-2">
-                <Plus className="size-4" />
+              <Button size="sm" className="hidden gap-2 md:inline-flex">
+                <Plus className="size-4" aria-hidden />
                 เพิ่มธุรกรรม
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-h-[min(90vh,90dvh)] w-[calc(100vw-1rem)] overflow-y-auto overflow-x-hidden p-4 max-sm:top-[4vh] max-sm:translate-y-0 sm:max-w-[680px] sm:p-6">
+            <DialogContent
+              className="max-h-[min(90vh,90dvh)] w-[calc(100vw-1rem)] overflow-y-auto overflow-x-hidden p-4 max-sm:top-[4vh] max-sm:translate-y-0 sm:max-w-[680px] sm:p-6"
+            >
               <DialogHeader>
                 <DialogTitle>
                   {editingTransaction ? 'แก้ไขธุรกรรม' : ocrDraft ? 'ตรวจสอบธุรกรรมจาก AI' : 'เพิ่มธุรกรรม'}
@@ -478,9 +519,9 @@ export default function TransactionsPage() {
         </div>
       </div>
 
-      {/* Sticky summary — totals for selected month */}
+      {/* Sticky month summary — single card, hairline cell dividers, no nested metric cards */}
       <div className="sticky top-0 z-20 -mx-6 border-b bg-background/95 px-6 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-        <div className="mb-3 flex justify-center">
+        <div className="mb-3 flex justify-center border-b border-border pb-3">
           <MonthPicker
             value={selectedMonth}
             onChange={handleSelectedMonthChange}
@@ -491,50 +532,76 @@ export default function TransactionsPage() {
         <MonthContentTransition
           monthKey={monthKey}
           direction={monthDirection}
-          className="grid grid-cols-2 gap-3 sm:grid-cols-4"
+          className="duration-200 ease-out"
         >
-          <Card className="shadow-sm animate-in fade-in-0 slide-in-from-bottom-1 duration-300 fill-mode-both motion-reduce:animate-none" style={{ animationDelay: '0ms' }}>
-            <CardContent className="p-4">
-              <div className="text-sm text-muted-foreground">รายรับรวม</div>
-              <MonthAnimatedValue valueKey={`${monthKey}-income`} className="mt-1 block text-xl font-bold text-success sm:text-2xl">
-                +฿{summaryTotals.income.toLocaleString()}
-              </MonthAnimatedValue>
-            </CardContent>
-          </Card>
-          <Card className="shadow-sm animate-in fade-in-0 slide-in-from-bottom-1 duration-300 fill-mode-both motion-reduce:animate-none" style={{ animationDelay: '45ms' }}>
-            <CardContent className="p-4">
-              <div className="text-sm text-muted-foreground">รายจ่ายรวม</div>
-              <MonthAnimatedValue valueKey={`${monthKey}-expenses`} className="mt-1 block text-xl font-bold text-destructive sm:text-2xl">
-                -฿{summaryTotals.expenses.toLocaleString()}
-              </MonthAnimatedValue>
-            </CardContent>
-          </Card>
-          <Card className="shadow-sm animate-in fade-in-0 slide-in-from-bottom-1 duration-300 fill-mode-both motion-reduce:animate-none" style={{ animationDelay: '90ms' }}>
-            <CardContent className="p-4">
-              <div className="text-sm text-muted-foreground">ยอดสุทธิเดือนนี้</div>
-              <MonthAnimatedValue
-                valueKey={`${monthKey}-net`}
-                className={cn('mt-1 block text-xl font-bold sm:text-2xl', amountColorClass(summaryTotals.net, 'text-foreground'))}
+          <Card className="shadow-sm">
+            <CardContent className="p-0">
+              <div
+                className="grid grid-cols-2 sm:grid-cols-4"
+                role="group"
+                aria-label="สรุปยอดเดือนที่เลือก"
               >
-                {summaryTotals.net >= 0 ? '+' : ''}฿
-                {Math.abs(summaryTotals.net).toLocaleString()}
-              </MonthAnimatedValue>
-            </CardContent>
-          </Card>
-          <Card className="shadow-sm animate-in fade-in-0 slide-in-from-bottom-1 duration-300 fill-mode-both motion-reduce:animate-none" style={{ animationDelay: '135ms' }}>
-            <CardContent className="p-4">
-              <div className="text-sm text-muted-foreground">เงินสะสมทั้งหมด</div>
-              <MonthAnimatedValue
-                valueKey={`${monthKey}-balance`}
-                className={cn('mt-1 block text-xl font-bold sm:text-2xl', amountColorClass(cumulativeBalance, 'text-foreground'))}
-              >
-                {cumulativeBalance >= 0 ? '' : '-'}฿
-                {Math.abs(cumulativeBalance).toLocaleString()}
-              </MonthAnimatedValue>
-              <p className="mt-1 text-xs text-muted-foreground">สะสมถึงสิ้นเดือนนี้</p>
+                <div className="min-w-0 space-y-1 border-b border-r border-border px-3 py-3 sm:border-b-0 sm:px-4 sm:py-3.5">
+                  <p className="text-xs font-medium text-muted-foreground">รายรับรวม</p>
+                  <MonthAnimatedValue
+                    valueKey={`${monthKey}-income`}
+                    className="block truncate text-lg font-semibold tabular-nums text-success duration-200 ease-out sm:text-xl"
+                  >
+                    +฿{summaryTotals.income.toLocaleString()}
+                  </MonthAnimatedValue>
+                </div>
+                <div className="min-w-0 space-y-1 border-b border-border px-3 py-3 sm:border-b-0 sm:border-r sm:px-4 sm:py-3.5">
+                  <p className="text-xs font-medium text-muted-foreground">รายจ่ายรวม</p>
+                  <MonthAnimatedValue
+                    valueKey={`${monthKey}-expenses`}
+                    className="block truncate text-lg font-semibold tabular-nums text-destructive duration-200 ease-out sm:text-xl"
+                  >
+                    -฿{summaryTotals.expenses.toLocaleString()}
+                  </MonthAnimatedValue>
+                </div>
+                <div className="min-w-0 space-y-1 border-r border-border px-3 py-3 sm:px-4 sm:py-3.5">
+                  <p className="text-xs font-medium text-muted-foreground">ยอดสุทธิเดือนนี้</p>
+                  <MonthAnimatedValue
+                    valueKey={`${monthKey}-net`}
+                    className={cn(
+                      'block truncate text-lg font-semibold tabular-nums duration-200 ease-out sm:text-xl',
+                      amountColorClass(summaryTotals.net, 'text-foreground')
+                    )}
+                  >
+                    {summaryTotals.net >= 0 ? '+' : ''}฿
+                    {Math.abs(summaryTotals.net).toLocaleString()}
+                  </MonthAnimatedValue>
+                </div>
+                <div className="min-w-0 space-y-1 px-3 py-3 sm:px-4 sm:py-3.5">
+                  <p className="text-xs font-medium text-muted-foreground">เงินสะสมทั้งหมด</p>
+                  <MonthAnimatedValue
+                    valueKey={`${monthKey}-balance`}
+                    className={cn(
+                      'block truncate text-lg font-semibold tabular-nums duration-200 ease-out sm:text-xl',
+                      amountColorClass(cumulativeBalance, 'text-foreground')
+                    )}
+                  >
+                    {cumulativeBalance >= 0 ? '' : '-'}฿
+                    {Math.abs(cumulativeBalance).toLocaleString()}
+                  </MonthAnimatedValue>
+                  <p className="text-[11px] leading-tight text-muted-foreground">สะสมถึงสิ้นเดือนนี้</p>
+                </div>
+              </div>
             </CardContent>
           </Card>
         </MonthContentTransition>
+      </div>
+
+      <div
+        className="flex items-center justify-between gap-2 text-xs text-muted-foreground"
+        aria-live="polite"
+      >
+        <span>
+          {loading
+            ? 'กำลังโหลด…'
+            : `${filteredTransactions.length.toLocaleString()} รายการในเดือนนี้`}
+          {hasActiveFilters ? ' (กรองแล้ว)' : ''}
+        </span>
       </div>
 
       <TransactionMobileList
@@ -544,6 +611,7 @@ export default function TransactionsPage() {
         hasAnyData={allCombined.length > 0}
         hasActiveFilters={hasActiveFilters}
         showLoadOlderHint={showLoadOlderHint}
+        emptyVariant={emptyVariant}
         onView={handleViewTransaction}
         onEdit={(tx) => {
           setEditingTransaction(tx)
@@ -560,12 +628,14 @@ export default function TransactionsPage() {
             <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead className="w-[80px]">เวลา</TableHead>
-                <TableHead>รายละเอียด</TableHead>
-                <TableHead>หมวดหมู่</TableHead>
-                <TableHead>ผู้จ่าย</TableHead>
-                <TableHead className="text-right">จำนวนเงิน</TableHead>
-                <TableHead className="w-[40px]"></TableHead>
+                <TableHead className="w-[72px] text-xs font-semibold">เวลา</TableHead>
+                <TableHead className="text-xs font-semibold">รายละเอียด</TableHead>
+                <TableHead className="text-xs font-semibold">หมวดหมู่</TableHead>
+                <TableHead className="text-xs font-semibold">ผู้จ่าย</TableHead>
+                <TableHead className="text-right text-xs font-semibold">จำนวนเงิน</TableHead>
+                <TableHead className="w-[44px]">
+                  <span className="sr-only">การดำเนินการ</span>
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -581,22 +651,19 @@ export default function TransactionsPage() {
                     />
                   </TableCell>
                 </TableRow>
-              ) : monthGroupedTransactions.map((monthGroup) => (
-                <React.Fragment key={monthGroup.monthKey}>
-                  <MonthGroupDividerRow label={monthGroup.label} colSpan={6} />
-                  {monthGroup.dateGroups.map((group) => (
+              ) : dateGroupedTransactions.map((group) => (
                 <React.Fragment key={group.dateKey}>
                   <DateGroupDividerRow label={group.label} colSpan={6} />
                   {group.items.map((transaction) => (
                 <TableRow
                   key={transaction.id}
-                  className="group cursor-pointer"
+                  className="group cursor-pointer transition-colors duration-200 hover:bg-muted/40 focus-within:bg-muted/40 motion-reduce:transition-none"
                   onClick={(e) => {
                     if (shouldIgnoreRowClick(e.target)) return
                     handleViewTransaction(transaction)
                   }}
                 >
-                  <TableCell className="text-muted-foreground">
+                  <TableCell className="py-2.5 text-muted-foreground">
                     {(() => {
                       const txDate = toDateFromFirestore(transaction.date)
                       if (!txDate) return ''
@@ -607,29 +674,29 @@ export default function TransactionsPage() {
                       )
                     })()}
                   </TableCell>
-                  <TableCell>
-                    <div>
-                      <p className="font-medium">
+                  <TableCell className="py-2.5">
+                    <div className="min-w-0">
+                      <p className="font-medium leading-snug">
                         {transaction.description}
                         {transaction.isPaotang && (
-                          <Badge variant="outline" className="ml-2 text-[10px] border-chart-2/40 text-chart-2">
+                          <Badge variant="outline" className="ml-2 align-middle text-[10px] border-chart-2/40 text-chart-2">
                             เป๋าตัง
                           </Badge>
                         )}
                         {!transaction.isLegacy && (
-                          <Badge variant="outline" className="ml-2 text-[10px]">
-                            {transaction.isTripDebtPending ? 'ค้างจ่ายทริป' : 'Trip Expense'}
+                          <Badge variant="outline" className="ml-2 align-middle text-[10px]">
+                            {transaction.isTripDebtPending ? 'ค้างจ่ายทริป' : 'รายจ่ายทริป'}
                           </Badge>
                         )}
                       </p>
                       {transaction.note && (
                         <p className="mt-0.5 text-xs text-muted-foreground line-clamp-1">
-                          📝 {transaction.note}
+                          {transaction.note}
                         </p>
                       )}
                     </div>
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="py-2.5">
                     {(() => {
                       const cat = categoryByName.get(transaction.category)
                       return (
@@ -648,10 +715,12 @@ export default function TransactionsPage() {
                       )
                     })()}
                   </TableCell>
-                  <TableCell className="text-muted-foreground">{transaction.paidBy || 'Me'}</TableCell>
+                  <TableCell className="py-2.5 text-muted-foreground">
+                    {transaction.paidBy === 'Me' || !transaction.paidBy ? 'ฉัน' : transaction.paidBy}
+                  </TableCell>
                   <TableCell
                     className={cn(
-                      'text-right font-semibold tabular-nums',
+                      'py-2.5 text-right font-semibold tabular-nums',
                       transaction.isTripDebtPending
                         ? 'text-muted-foreground'
                         : amountColorClass(transaction.amount)
@@ -668,28 +737,28 @@ export default function TransactionsPage() {
                             {Math.abs(displayAmount).toLocaleString()}
                           </span>
                           {transaction.isPaotang && Math.abs(fullAmount) !== Math.abs(displayAmount) && (
-                            <span className="text-[10px] text-muted-foreground block font-normal">
+                            <span className="block text-[10px] font-normal text-muted-foreground">
                               เต็ม ฿{Math.abs(fullAmount).toLocaleString()}
                               {' · '}รัฐ {PAOTANG_GOV_PERCENT}% (ตามโควต้า)
                             </span>
                           )}
                           {!transaction.isLegacy && Math.abs(fullAmount) !== Math.abs(displayAmount) && (
-                            <span className="text-[10px] text-muted-foreground block font-normal">
+                            <span className="block text-[10px] font-normal text-muted-foreground">
                               เต็ม {isJpy ? '¥' : '฿'}{Math.abs(fullAmount).toLocaleString()}
                             </span>
                           )}
                           {transaction.isPaotang && transaction.paotangQuotaCapped && (
-                            <span className="text-[10px] text-warning block font-normal">
+                            <span className="block text-[10px] font-normal text-warning">
                               โควต้าจำกัด — {getPaotangCapReasonLabel(transaction.paotangCapReason)}
                             </span>
                           )}
                           {transaction.isTripDebtPending && (
-                            <span className="text-[10px] text-muted-foreground block font-normal">
+                            <span className="block text-[10px] font-normal text-muted-foreground">
                               ยังไม่นับในรายจ่าย — จ่ายคืนในหน้าทริป
                             </span>
                           )}
                           {isJpy && (
-                            <span className="text-[10px] text-muted-foreground block font-normal">
+                            <span className="block text-[10px] font-normal tabular-nums text-muted-foreground">
                               ({displayAmount > 0 ? '+' : ''}฿{(Math.abs(displayAmount) * 0.22).toLocaleString()})
                             </span>
                           )}
@@ -697,15 +766,16 @@ export default function TransactionsPage() {
                       )
                     })()}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="py-2.5">
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="size-8 opacity-0 group-hover:opacity-100"
+                          className="size-8 opacity-100 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 md:focus-visible:opacity-100"
+                          aria-label={`เมนูสำหรับ ${transaction.description}`}
                         >
-                          <MoreHorizontal className="size-4" />
+                          <MoreHorizontal className="size-4" aria-hidden />
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
@@ -715,12 +785,12 @@ export default function TransactionsPage() {
                               setEditingTransaction(transaction.rawTx!)
                               setIsAddDialogOpen(true)
                             }}>
-                              <Edit2 className="mr-2 size-4" />
+                              <Edit2 className="mr-2 size-4" aria-hidden />
                               แก้ไข
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem className="text-destructive" onClick={() => removeTransaction(transaction.id!, transaction.rawTx)}>
-                              <Trash2 className="mr-2 size-4" />
+                              <Trash2 className="mr-2 size-4" aria-hidden />
                               ลบ
                             </DropdownMenuItem>
                           </>
@@ -735,8 +805,6 @@ export default function TransactionsPage() {
                 </TableRow>
                   ))}
                 </React.Fragment>
-                  ))}
-                </React.Fragment>
               ))}
             </TableBody>
             </Table>
@@ -744,10 +812,14 @@ export default function TransactionsPage() {
         </CardContent>
       </Card>
 
-      <div ref={loadOlderSentinelRef} className="flex h-12 items-center justify-center">
+      <div
+        ref={loadOlderSentinelRef}
+        className="flex h-12 items-center justify-center"
+        aria-live="polite"
+      >
         {loadingOlder && (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="size-4 animate-spin" />
+            <Loader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden />
             กำลังโหลดรายการเพิ่ม...
           </div>
         )}
@@ -786,10 +858,10 @@ export default function TransactionsPage() {
       <Button
         size="lg"
         onClick={() => setIsAddDialogOpen(true)}
-        className="fixed right-4 z-40 size-14 rounded-full shadow-lg bottom-[calc(4.5rem+env(safe-area-inset-bottom))] md:hidden"
+        className="fixed right-4 z-40 size-14 rounded-full shadow-lg transition-opacity duration-150 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] motion-reduce:transition-none md:hidden"
         aria-label="เพิ่มธุรกรรม"
       >
-        <Plus className="size-6" />
+        <Plus className="size-6" aria-hidden />
       </Button>
     </div>
   )

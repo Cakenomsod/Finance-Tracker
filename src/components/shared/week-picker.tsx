@@ -131,7 +131,7 @@ export function WeekPicker({
             <span
               key={`year-${pickerYear}`}
               className={cn(
-                'text-sm font-semibold animate-in fade-in-0 duration-200',
+                'text-sm font-semibold animate-in fade-in-0 duration-200 motion-reduce:animate-none',
                 yearSlideClass
               )}
             >
@@ -153,7 +153,7 @@ export function WeekPicker({
           <div
             key={`weeks-${pickerYear}`}
             className={cn(
-              'grid max-h-56 grid-cols-2 gap-1.5 overflow-y-auto animate-in fade-in-0 duration-200',
+              'grid max-h-56 grid-cols-2 gap-1.5 overflow-y-auto animate-in fade-in-0 duration-200 motion-reduce:animate-none',
               yearDirection === 'prev'
                 ? 'slide-in-from-left-2'
                 : 'slide-in-from-right-2'

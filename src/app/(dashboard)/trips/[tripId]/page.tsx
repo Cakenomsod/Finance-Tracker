@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import {
   ArrowLeft, Receipt, Users, Calendar, MapPin, ArrowRight,
   Plus, Edit2, Trash2, MoreHorizontal, Lock, Unlock, Plane,
-  BarChart3, DollarSign, CheckCircle2,
+  BarChart3, CheckCircle2,
 } from 'lucide-react'
 import {
   Bar, BarChart, Pie, PieChart, Cell, XAxis, YAxis,
@@ -38,6 +38,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart'
+import { Skeleton } from '@/components/ui/skeleton'
 import { cn, amountColorClass } from '@/lib/utils'
 import { useTrips } from '@/hooks/use-trips'
 import { useTripsData } from '@/hooks/use-trips-data-context'
@@ -72,9 +73,43 @@ import {
 } from '@/lib/trip-currency'
 import { collectImmichAssetIds } from '@/lib/immich/asset-ids'
 import { requestDeleteImmichAssets } from '@/lib/immich/delete-from-browser'
-import { shouldIgnoreRowClick } from '@/lib/row-click'
 import { Timestamp } from 'firebase/firestore'
 import { Search } from 'lucide-react'
+
+function TripDetailSkeleton() {
+  return (
+    <div className="flex flex-col gap-4 p-4 sm:gap-6 sm:p-6" aria-busy="true" aria-label="Loading trip">
+      <div className="flex items-start gap-3">
+        <Skeleton className="size-9 shrink-0 rounded-md" />
+        <div className="min-w-0 flex-1 space-y-2">
+          <Skeleton className="h-7 w-48 max-w-full" />
+          <Skeleton className="h-4 w-64 max-w-full" />
+        </div>
+        <Skeleton className="h-9 w-28 shrink-0 rounded-md" />
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div key={i} className="rounded-xl border bg-card p-6 shadow-sm">
+            <Skeleton className="h-4 w-24" />
+            <Skeleton className="mt-3 h-8 w-32" />
+          </div>
+        ))}
+      </div>
+      <div className="rounded-xl border bg-card p-4 shadow-sm space-y-3">
+        <Skeleton className="h-4 w-40" />
+        <Skeleton className="h-9 w-full" />
+        <Skeleton className="h-20 w-full rounded-lg" />
+      </div>
+      <Skeleton className="h-10 w-full rounded-lg" />
+      <div className="rounded-xl border bg-card p-6 shadow-sm space-y-3">
+        <Skeleton className="h-5 w-36" />
+        <Skeleton className="h-12 w-full" />
+        <Skeleton className="h-12 w-full" />
+        <Skeleton className="h-12 w-full" />
+      </div>
+    </div>
+  )
+}
 
 const chartConfig = {
   amount: { label: 'Amount', color: 'var(--chart-1)' },
@@ -310,7 +345,7 @@ export default function TripDetailPage() {
       category: tx.category,
       date: tx.date,
       paidBy: tx.paidBy,
-      splitLabel: !tx.splitWith ? '🙋 Solo' : tx.splitWith === 'all' ? '👥 All' : `🤝 ${tx.splitWith}`,
+      splitLabel: !tx.splitWith ? 'Solo' : tx.splitWith === 'all' ? 'All' : tx.splitWith,
       isLegacy: true,
       rawTx: tx,
       rawEx: null
@@ -318,7 +353,7 @@ export default function TripDetailPage() {
 
     const newExps = tripExpenses.map(ex => {
       const payersStr = ex.payers.map(p => p.displayName).join(', ')
-      const splitLabel = ex.splitMode === 'solo' ? '🙋 Solo' : ex.splitMode === 'equal' ? '⚖️ Equal' : '✏️ Custom'
+      const splitLabel = ex.splitMode === 'solo' ? 'Solo' : ex.splitMode === 'equal' ? 'Equal' : 'Custom'
       return {
         id: ex.id,
         description: ex.description,
@@ -465,18 +500,19 @@ export default function TripDetailPage() {
   const endDate = trip?.endDate?.seconds ? new Date(trip.endDate.seconds * 1000) : null
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center p-12">
-        <Plane className="mx-auto size-8 animate-pulse text-muted-foreground" />
-      </div>
-    )
+    return <TripDetailSkeleton />
   }
 
   if (!trip) {
     return (
-      <div className="flex flex-col items-center justify-center p-12 gap-4">
-        <Plane className="size-12 text-muted-foreground/50" />
-        <p className="text-lg font-medium">Trip not found</p>
+      <div className="flex flex-col items-center justify-center gap-4 p-12 text-center">
+        <Plane className="size-10 text-muted-foreground/50" aria-hidden />
+        <div className="space-y-1">
+          <p className="text-lg font-semibold tracking-tight">Trip not found</p>
+          <p className="max-w-sm text-sm text-muted-foreground">
+            This trip may have been deleted, or you don&apos;t have access.
+          </p>
+        </div>
         <Button variant="outline" onClick={() => router.push('/trips')}>
           <ArrowLeft className="mr-2 size-4" /> Back to Trips
         </Button>
@@ -489,27 +525,38 @@ export default function TripDetailPage() {
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex items-start gap-3 sm:gap-4">
-          <Button variant="ghost" size="icon" className="shrink-0" onClick={() => router.push('/trips')}>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="shrink-0"
+            onClick={() => router.push('/trips')}
+            aria-label="Back to trips"
+          >
             <ArrowLeft className="size-5" />
           </Button>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">{trip.name}</h1>
-              <Badge variant={trip.status === 'active' ? 'default' : 'secondary'}
-                className={cn(trip.status === 'active' && 'bg-primary/20 text-primary')}>
+              <h1 className="text-balance text-xl font-semibold tracking-tight sm:text-2xl">{trip.name}</h1>
+              <Badge
+                variant={trip.status === 'active' ? 'default' : 'secondary'}
+                className={cn(trip.status === 'active' && 'bg-primary/15 text-primary hover:bg-primary/15')}
+              >
                 {trip.status === 'active' ? 'Active' : 'Closed'}
               </Badge>
             </div>
             <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
               {trip.description && (
-                <span className="flex items-center gap-1"><MapPin className="size-3 shrink-0" />{trip.description}</span>
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <MapPin className="size-3.5 shrink-0" aria-hidden />
+                  <span className="truncate">{trip.description}</span>
+                </span>
               )}
               {startDate && (
-                <span className="flex items-center gap-1">
-                  <Calendar className="size-3 shrink-0" />
+                <span className="flex items-center gap-1.5 tabular-nums">
+                  <Calendar className="size-3.5 shrink-0" aria-hidden />
                   {startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                   {endDate && startDate.toDateString() !== endDate.toDateString() &&
-                    ` - ${endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`}
+                    ` – ${endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`}
                 </span>
               )}
             </div>
@@ -520,11 +567,14 @@ export default function TripDetailPage() {
             <Button className="gap-2" onClick={() => setIsAddExpenseOpen(true)}>
               <Plus className="size-4" />
               <span className="hidden sm:inline">Add Expense</span>
+              <span className="sm:hidden">Add</span>
             </Button>
           )}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="icon"><MoreHorizontal className="size-4" /></Button>
+              <Button variant="outline" size="icon" aria-label="Trip actions">
+                <MoreHorizontal className="size-4" />
+              </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               {trip.status === 'active' && (
@@ -561,38 +611,40 @@ export default function TripDetailPage() {
         </div>
       </div>
 
-      {/* Summary Cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Card>
+      {/* Summary */}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 sm:gap-4">
+        <Card className="shadow-sm animate-in fade-in-0 duration-200 fill-mode-both motion-reduce:animate-none">
           <CardContent className="pt-6">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <DollarSign className="size-4" /> Total Expenses
-            </div>
-            <p className="mt-2 text-2xl font-bold sm:text-3xl">฿{totalExpenses.toLocaleString()}</p>
+            <p className="text-sm font-medium text-muted-foreground">Total expenses</p>
+            <p className="mt-2 text-2xl font-semibold tracking-tight tabular-nums sm:text-3xl">
+              {homeSymbol}{totalExpenses.toLocaleString()}
+            </p>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="shadow-sm animate-in fade-in-0 duration-200 fill-mode-both motion-reduce:animate-none" style={{ animationDelay: '40ms' }}>
           <CardContent className="pt-6">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Users className="size-4" /> Participants
-            </div>
-            <p className="mt-2 text-2xl font-bold sm:text-3xl">{members.length}</p>
+            <p className="text-sm font-medium text-muted-foreground">Your balance</p>
+            <p className={cn('mt-2 text-2xl font-semibold tracking-tight tabular-nums sm:text-3xl', amountColorClass(myBalance, 'text-foreground'))}>
+              {myBalance > 0 ? '+' : ''}{homeSymbol}{myBalance.toLocaleString()}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {myBalance > 0 ? 'You are owed' : myBalance < 0 ? 'You owe' : 'Settled up'}
+            </p>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="shadow-sm animate-in fade-in-0 duration-200 fill-mode-both motion-reduce:animate-none" style={{ animationDelay: '80ms' }}>
           <CardContent className="pt-6">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Receipt className="size-4" /> Transactions
-            </div>
-            <p className="mt-2 text-2xl font-bold sm:text-3xl">{allExpensesCombined.length}</p>
+            <p className="text-sm font-medium text-muted-foreground">Participants</p>
+            <p className="mt-2 text-2xl font-semibold tracking-tight tabular-nums sm:text-3xl">{members.length}</p>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="shadow-sm animate-in fade-in-0 duration-200 fill-mode-both motion-reduce:animate-none" style={{ animationDelay: '120ms' }}>
           <CardContent className="pt-6">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <BarChart3 className="size-4" /> Shared Splits
-            </div>
-            <p className="mt-2 text-2xl font-bold sm:text-3xl">{allExpensesCombined.filter(ex => !ex.splitLabel.includes('Solo')).length}</p>
+            <p className="text-sm font-medium text-muted-foreground">Expenses</p>
+            <p className="mt-2 text-2xl font-semibold tracking-tight tabular-nums sm:text-3xl">{allExpensesCombined.length}</p>
+            <p className="mt-1 text-xs text-muted-foreground tabular-nums">
+              {allExpensesCombined.filter((ex) => !ex.splitLabel.includes('Solo')).length} shared
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -615,55 +667,80 @@ export default function TripDetailPage() {
 
       {/* Tabs */}
       <Tabs defaultValue="expenses" className="w-full">
-        <TabsList className="grid h-auto w-full grid-cols-3">
-          <TabsTrigger value="expenses" className="gap-1 px-2 text-xs sm:gap-2 sm:px-3 sm:text-sm">
-            <Receipt className="size-3.5 sm:size-4" /> <span className="truncate">Expenses</span>
-            <Badge variant="secondary" className="ml-0.5 rounded-full px-1.5 text-[10px] sm:ml-1">{allExpensesCombined.length}</Badge>
+        <TabsList className="grid h-auto w-full grid-cols-3 gap-1 p-1">
+          <TabsTrigger value="expenses" className="gap-1.5 px-2 py-2 text-xs sm:gap-2 sm:px-3 sm:text-sm">
+            <Receipt className="size-3.5 sm:size-4" aria-hidden />
+            <span className="truncate">Expenses</span>
+            <Badge variant="secondary" className="ml-0.5 px-1.5 tabular-nums text-[10px] sm:ml-1">
+              {allExpensesCombined.length}
+            </Badge>
           </TabsTrigger>
-          <TabsTrigger value="analytics" className="gap-1 px-2 text-xs sm:gap-2 sm:px-3 sm:text-sm">
-            <BarChart3 className="size-3.5 sm:size-4" /> <span className="truncate">Analytics</span>
+          <TabsTrigger value="analytics" className="gap-1.5 px-2 py-2 text-xs sm:gap-2 sm:px-3 sm:text-sm">
+            <BarChart3 className="size-3.5 sm:size-4" aria-hidden />
+            <span className="truncate">Analytics</span>
           </TabsTrigger>
-          <TabsTrigger value="settlements" className="gap-1 px-2 text-xs sm:gap-2 sm:px-3 sm:text-sm">
-            <Users className="size-3.5 sm:size-4" /> <span className="truncate">Settle</span>
+          <TabsTrigger value="settlements" className="gap-1.5 px-2 py-2 text-xs sm:gap-2 sm:px-3 sm:text-sm">
+            <Users className="size-3.5 sm:size-4" aria-hidden />
+            <span className="truncate">Settle</span>
+            {settlements.length > 0 && (
+              <Badge variant="secondary" className="ml-0.5 px-1.5 tabular-nums text-[10px] sm:ml-1">
+                {settlements.length}
+              </Badge>
+            )}
           </TabsTrigger>
         </TabsList>
 
         {/* Expenses Tab */}
-        <TabsContent value="expenses" className="mt-4 space-y-4">
-          <Card>
+        <TabsContent value="expenses" className="mt-4 space-y-4 animate-in fade-in-0 duration-200 motion-reduce:animate-none">
+          <Card className="shadow-sm">
             <CardHeader>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <CardTitle>All Expenses</CardTitle>
-                  <CardDescription>{filteredExpenses.length} / {allExpensesCombined.length} transactions</CardDescription>
+                  <CardTitle>All expenses</CardTitle>
+                  <CardDescription className="tabular-nums">
+                    {filteredExpenses.length} of {allExpensesCombined.length} shown
+                  </CardDescription>
                 </div>
                 <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
                   <div className="relative w-full sm:w-auto">
-                    <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                    <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
                     <Input
-                      placeholder="ค้นหา..."
+                      placeholder="Search expenses…"
                       value={expenseSearch}
                       onChange={(e) => setExpenseSearch(e.target.value)}
-                      className="w-full pl-9 sm:w-[180px]"
+                      className="w-full pl-9 sm:w-[200px]"
+                      aria-label="Search expenses"
                     />
                   </div>
-                  <div className="flex flex-wrap gap-1">
+                  <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filter by payer">
                     <button
                       type="button"
                       onClick={() => setExpenseFilterPaidBy('all')}
-                      className={cn('rounded-full border px-3 py-1 text-xs font-medium transition-all',
-                        expenseFilterPaidBy === 'all' ? 'bg-primary text-primary-foreground border-primary' : 'hover:border-primary/50'
+                      aria-pressed={expenseFilterPaidBy === 'all'}
+                      className={cn(
+                        'rounded-md border px-3 py-1.5 text-xs font-medium transition-colors duration-200',
+                        expenseFilterPaidBy === 'all'
+                          ? 'border-primary bg-primary text-primary-foreground'
+                          : 'bg-background hover:bg-muted'
                       )}
-                    >ทุกคน</button>
+                    >
+                      Everyone
+                    </button>
                     {members.map((m) => (
                       <button
                         key={m}
                         type="button"
                         onClick={() => setExpenseFilterPaidBy(m)}
-                        className={cn('rounded-full border px-3 py-1 text-xs font-medium transition-all',
-                          expenseFilterPaidBy === m ? 'bg-primary text-primary-foreground border-primary' : 'hover:border-primary/50'
+                        aria-pressed={expenseFilterPaidBy === m}
+                        className={cn(
+                          'rounded-md border px-3 py-1.5 text-xs font-medium transition-colors duration-200',
+                          expenseFilterPaidBy === m
+                            ? 'border-primary bg-primary text-primary-foreground'
+                            : 'bg-background hover:bg-muted'
                         )}
-                      >{getDisplayName(m)}</button>
+                      >
+                        {getDisplayName(m)}
+                      </button>
                     ))}
                   </div>
                 </div>
@@ -671,11 +748,38 @@ export default function TripDetailPage() {
             </CardHeader>
             <CardContent>
               {allExpensesCombined.length === 0 ? (
-                <div className="py-8 text-center text-muted-foreground">
-                  ยังไม่มีรายการ กดปุ่ม Add Expense เพื่อเพิ่ม
+                <div className="flex flex-col items-center justify-center px-4 py-10 text-center">
+                  <Receipt className="size-10 text-muted-foreground/50" aria-hidden />
+                  <p className="mt-4 text-base font-medium">No expenses yet</p>
+                  <p className="mt-1 max-w-sm text-sm text-muted-foreground">
+                    Add your first trip expense, or capture a receipt with AI above.
+                  </p>
+                  {trip.status === 'active' && (
+                    <Button size="sm" className="mt-4 gap-2" onClick={() => setIsAddExpenseOpen(true)}>
+                      <Plus className="size-4" />
+                      Add expense
+                    </Button>
+                  )}
                 </div>
               ) : filteredExpenses.length === 0 ? (
-                <div className="py-8 text-center text-muted-foreground">ไม่พบรายการที่ค้นหา</div>
+                <div className="flex flex-col items-center justify-center px-4 py-10 text-center">
+                  <Search className="size-10 text-muted-foreground/50" aria-hidden />
+                  <p className="mt-4 text-base font-medium">No matching expenses</p>
+                  <p className="mt-1 max-w-sm text-sm text-muted-foreground">
+                    Try a different search or payer filter.
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="mt-4"
+                    onClick={() => {
+                      setExpenseSearch('')
+                      setExpenseFilterPaidBy('all')
+                    }}
+                  >
+                    Clear filters
+                  </Button>
+                </div>
               ) : (
                 <TripExpenseList
                   expenses={filteredExpenses}
@@ -703,36 +807,39 @@ export default function TripDetailPage() {
         </TabsContent>
 
         {/* Analytics Tab */}
-        <TabsContent value="analytics" className="mt-4">
-          <div className="grid gap-6 lg:grid-cols-2">
+        <TabsContent value="analytics" className="mt-4 animate-in fade-in-0 duration-200 motion-reduce:animate-none">
+          <div className="grid gap-4 lg:grid-cols-2 lg:gap-6">
             {/* Per-person paid vs share */}
-            <Card>
+            <Card className="shadow-sm">
               <CardHeader>
-                <CardTitle>Paid vs Share</CardTitle>
-                <CardDescription>How much each person paid vs their fair share</CardDescription>
+                <CardTitle>Paid vs balance</CardTitle>
+                <CardDescription>How much each person paid and their net balance</CardDescription>
               </CardHeader>
               <CardContent>
                 {perPersonData.length > 0 ? (
-                  <ChartContainer config={{ paid: { label: 'Paid', color: 'var(--chart-1)' }, share: { label: 'Share', color: 'var(--chart-4)' } }} className="h-[250px] w-full">
+                  <ChartContainer config={{ paid: { label: 'Paid', color: 'var(--chart-1)' }, share: { label: 'Net', color: 'var(--chart-4)' } }} className="h-[250px] w-full">
                     <BarChart data={perPersonData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" className="stroke-muted" vertical={false} />
                       <XAxis dataKey="displayName" tickLine={false} axisLine={false} className="text-xs fill-muted-foreground" />
-                      <YAxis tickLine={false} axisLine={false} tickFormatter={(v) => `฿${v}`} className="text-xs fill-muted-foreground" />
+                      <YAxis tickLine={false} axisLine={false} tickFormatter={(v) => `${homeSymbol}${v}`} className="text-xs fill-muted-foreground" />
                       <ChartTooltip content={<ChartTooltipContent />} />
                       <Bar dataKey="paid" fill="var(--chart-1)" radius={[4, 4, 0, 0]} />
                       <Bar dataKey="net" fill="var(--chart-4)" radius={[4, 4, 0, 0]} opacity={0.5} />
                     </BarChart>
                   </ChartContainer>
                 ) : (
-                  <div className="flex items-center justify-center h-[250px] text-muted-foreground">No data</div>
+                  <div className="flex h-[250px] flex-col items-center justify-center gap-1 text-center text-sm text-muted-foreground">
+                    <p className="font-medium text-foreground">No chart data yet</p>
+                    <p>Add expenses to see paid vs balance by person.</p>
+                  </div>
                 )}
               </CardContent>
             </Card>
 
             {/* Category breakdown */}
-            <Card>
+            <Card className="shadow-sm">
               <CardHeader>
-                <CardTitle>By Category</CardTitle>
+                <CardTitle>By category</CardTitle>
                 <CardDescription>Expense breakdown by category</CardDescription>
               </CardHeader>
               <CardContent>
@@ -751,94 +858,131 @@ export default function TripDetailPage() {
                     <div className="mt-4 space-y-2">
                       {categoryData.map((cat, i) => (
                         <div key={cat.name} className="flex items-center justify-between text-sm">
-                          <div className="flex items-center gap-2">
-                            <div className="size-3 rounded-full" style={{ backgroundColor: categoryColors[i % categoryColors.length] }} />
-                            <span>{cat.name}</span>
+                          <div className="flex min-w-0 items-center gap-2">
+                            <div
+                              className="size-2.5 shrink-0 rounded-sm"
+                              style={{ backgroundColor: categoryColors[i % categoryColors.length] }}
+                              aria-hidden
+                            />
+                            <span className="truncate">{cat.name}</span>
                           </div>
-                          <span className="text-muted-foreground tabular-nums">฿{cat.value.toLocaleString()}</span>
+                          <span className="shrink-0 font-medium tabular-nums text-muted-foreground">
+                            {homeSymbol}{cat.value.toLocaleString()}
+                          </span>
                         </div>
                       ))}
                     </div>
                   </>
                 ) : (
-                  <div className="flex items-center justify-center h-[180px] text-muted-foreground">No expense data</div>
+                  <div className="flex h-[180px] flex-col items-center justify-center gap-1 text-center text-sm text-muted-foreground">
+                    <p className="font-medium text-foreground">No category data</p>
+                    <p>Categories appear once expenses are logged.</p>
+                  </div>
                 )}
               </CardContent>
             </Card>
           </div>
 
           {/* Per-person detail table */}
-          <Card className="mt-6">
+          <Card className="mt-4 shadow-sm lg:mt-6">
             <CardHeader>
-              <CardTitle>Per Person Summary</CardTitle>
+              <CardTitle>Per person summary</CardTitle>
+              <CardDescription>Paid totals and who owes whom</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-3">
-                {participants.map((p) => {
-                  const balance = p.netBalance
-                  return (
-                    <div key={p.name} className="flex items-center justify-between rounded-lg border p-4">
-                      <div className="flex items-center gap-3">
-                        <Avatar className="size-10">
-                          <AvatarFallback className="text-xs bg-muted">{p.initials}</AvatarFallback>
-                        </Avatar>
-                        <div>
-                          <p className="font-medium">{p.displayName}</p>
-                          <p className="text-xs text-muted-foreground">จ่ายไป: ฿{p.paid.toLocaleString()}</p>
+              {participants.length === 0 ? (
+                <div className="py-8 text-center text-sm text-muted-foreground">
+                  Add members to see balances.
+                </div>
+              ) : (
+                <div className="divide-y rounded-lg border">
+                  {participants.map((p) => {
+                    const balance = p.netBalance
+                    return (
+                      <div key={p.name} className="flex items-center justify-between gap-3 px-4 py-3 sm:px-4 sm:py-3.5">
+                        <div className="flex min-w-0 items-center gap-3">
+                          <Avatar className="size-9 shrink-0 sm:size-10">
+                            <AvatarFallback className="bg-muted text-xs">{p.initials}</AvatarFallback>
+                          </Avatar>
+                          <div className="min-w-0">
+                            <p className="truncate font-medium">{p.displayName}</p>
+                            <p className="text-xs text-muted-foreground tabular-nums">
+                              Paid {homeSymbol}{Math.round(p.paid).toLocaleString()}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="shrink-0 text-right">
+                          <p className={cn('font-semibold tabular-nums', amountColorClass(balance))}>
+                            {balance > 0 ? '+' : ''}{homeSymbol}{balance.toLocaleString()}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {balance > 0 ? 'Owed to them' : balance < 0 ? 'They owe' : 'Even'}
+                          </p>
                         </div>
                       </div>
-                      <div className="text-right">
-                        <p className={cn('font-semibold tabular-nums', amountColorClass(balance))}>
-                          {balance > 0 ? '+' : ''}฿{balance.toLocaleString()}
-                        </p>
-                        <p className="text-xs text-muted-foreground">{balance > 0 ? 'ได้รับคืน' : balance < 0 ? 'ต้องจ่ายคืน' : 'เท่ากัน'}</p>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
+                    )
+                  })}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
 
         {/* Settlements Tab */}
-        <TabsContent value="settlements" className="mt-4">
-          <div className="grid gap-6">
-            <Card>
+        <TabsContent value="settlements" className="mt-4 animate-in fade-in-0 duration-200 motion-reduce:animate-none">
+          <div className="grid gap-4 lg:gap-6">
+            <Card className="shadow-sm">
               <CardHeader>
-                <CardTitle>Settlement Plan</CardTitle>
+                <CardTitle>Settlement plan</CardTitle>
                 <CardDescription>Minimum transfers to settle all balances</CardDescription>
               </CardHeader>
               <CardContent>
                 {settlements.length === 0 ? (
-                  <div className="py-8 text-center text-muted-foreground">
-                    {totalExpenses === 0 ? 'No expenses yet' : 'Everyone is settled up! 🎉'}
+                  <div className="flex flex-col items-center justify-center px-4 py-10 text-center">
+                    <CheckCircle2 className="size-10 text-success/70" aria-hidden />
+                    <p className="mt-4 text-base font-medium">
+                      {totalExpenses === 0 ? 'No expenses yet' : 'Everyone is settled up'}
+                    </p>
+                    <p className="mt-1 max-w-sm text-sm text-muted-foreground">
+                      {totalExpenses === 0
+                        ? 'Once shared expenses exist, suggested transfers appear here.'
+                        : 'No outstanding balances between members.'}
+                    </p>
                   </div>
                 ) : (
-                  <div className="space-y-3">
+                  <ul className="space-y-2">
                     {settlements.map((s, i) => {
                       const fromName = getDisplayName(s.from)
                       const toName = getDisplayName(s.to)
                       return (
-                        <div key={i} className="flex flex-col gap-3 rounded-lg bg-muted/50 p-3 sm:flex-row sm:items-center sm:justify-between sm:p-4">
+                        <li
+                          key={`${s.from}-${s.to}-${i}`}
+                          className="flex flex-col gap-3 rounded-lg border bg-muted/40 p-3 transition-colors duration-200 sm:flex-row sm:items-center sm:justify-between sm:p-4"
+                        >
                           <div className="flex min-w-0 items-center gap-2 sm:gap-3">
                             <Avatar className="size-8 shrink-0 sm:size-9">
-                              <AvatarFallback className="text-xs bg-destructive/20 text-destructive">
+                              <AvatarFallback className="bg-destructive/15 text-xs text-destructive">
                                 {fromName.substring(0, 2).toUpperCase()}
                               </AvatarFallback>
                             </Avatar>
-                            <ArrowRight className="size-4 shrink-0 text-muted-foreground" />
+                            <ArrowRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
                             <Avatar className="size-8 shrink-0 sm:size-9">
-                              <AvatarFallback className="text-xs bg-primary/20 text-primary">
+                              <AvatarFallback className="bg-primary/15 text-xs text-primary">
                                 {toName.substring(0, 2).toUpperCase()}
                               </AvatarFallback>
                             </Avatar>
                             <div className="min-w-0">
-                              <p className="truncate text-sm font-medium">{fromName} → {toName}</p>
+                              <p className="truncate text-sm font-medium">
+                                <span className="text-destructive">{fromName}</span>
+                                <span className="text-muted-foreground"> pays </span>
+                                <span className="text-primary">{toName}</span>
+                              </p>
                             </div>
                           </div>
                           <div className="flex items-center justify-between gap-3 sm:justify-end sm:gap-4">
-                            <span className="text-base font-bold tabular-nums sm:text-lg">฿{s.amount.toLocaleString()}</span>
+                            <span className="text-base font-semibold tabular-nums sm:text-lg">
+                              {homeSymbol}{s.amount.toLocaleString()}
+                            </span>
                             {trip.status === 'active' && (
                               <Button
                                 size="sm"
@@ -853,61 +997,84 @@ export default function TripDetailPage() {
                               </Button>
                             )}
                           </div>
-                        </div>
+                        </li>
                       )
                     })}
-                  </div>
+                  </ul>
                 )}
               </CardContent>
             </Card>
 
-            <Card>
+            <Card className="shadow-sm">
               <CardHeader>
-                <CardTitle>Itemized Debts by Expense</CardTitle>
-                <CardDescription>Breakdown of debts generated by each specific expense</CardDescription>
+                <CardTitle>Itemized debts</CardTitle>
+                <CardDescription>Debts generated by each expense</CardDescription>
               </CardHeader>
               <CardContent>
                 {allExpensesCombined.length === 0 ? (
-                  <div className="py-8 text-center text-muted-foreground">
-                    No expenses recorded yet
+                  <div className="flex flex-col items-center justify-center px-4 py-10 text-center">
+                    <Receipt className="size-10 text-muted-foreground/50" aria-hidden />
+                    <p className="mt-4 text-base font-medium">No expenses recorded</p>
+                    <p className="mt-1 max-w-sm text-sm text-muted-foreground">
+                      Itemized who-owes-whom appears after shared expenses are added.
+                    </p>
                   </div>
                 ) : (
-                  <div className="space-y-4">
+                  <div className="space-y-3">
                     {allExpensesCombined.map((ex) => {
                       const transfers = calculateExpenseTransfers(ex)
                       if (transfers.length === 0) return null
 
                       const exCurrency = ex.rawTx?.currency || ex.rawEx?.currency || trip?.tripCurrency || 'THB'
-                    const exSymbol = formatCurrencySymbol(exCurrency)
-                    const exHomeHint = formatHomeConversion(ex.amount, exCurrency, trip)
+                      const exSymbol = formatCurrencySymbol(exCurrency)
+                      const exHomeHint = formatHomeConversion(ex.amount, exCurrency, trip)
                       return (
-                        <div key={ex.id || `${ex.description}-${ex.date?.seconds}`} className="rounded-lg border p-3 space-y-3 sm:p-4">
+                        <div
+                          key={ex.id || `${ex.description}-${ex.date?.seconds}`}
+                          className="space-y-3 rounded-lg border p-3 sm:p-4"
+                        >
                           <div className="flex flex-col gap-2 border-b pb-2 sm:flex-row sm:items-center sm:justify-between">
                             <div className="min-w-0">
-                              <p className="text-sm font-semibold break-words">{ex.description}</p>
+                              <p className="break-words text-sm font-semibold">{ex.description}</p>
                               <p className="text-xs text-muted-foreground">
-                                {ex.isLegacy ? 'Legacy Transaction' : ex.category || 'Expense'} • {ex.date?.seconds ? new Date(ex.date.seconds * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', ...(tripTimeZone ? { timeZone: tripTimeZone } : {}) }) : ''}
+                                {ex.isLegacy ? 'Legacy' : ex.category || 'Expense'}
+                                {' · '}
+                                {ex.date?.seconds
+                                  ? new Date(ex.date.seconds * 1000).toLocaleDateString('en-US', {
+                                      month: 'short',
+                                      day: 'numeric',
+                                      year: 'numeric',
+                                      ...(tripTimeZone ? { timeZone: tripTimeZone } : {}),
+                                    })
+                                  : ''}
                               </p>
                             </div>
-                            <span className="text-sm font-bold tabular-nums text-right">
+                            <span className="text-right text-sm font-semibold tabular-nums">
                               {exSymbol}{ex.amount.toLocaleString()}
                               {exHomeHint && (
-                                <span className="text-[10px] text-muted-foreground block font-normal">
+                                <span className="block text-[10px] font-normal text-muted-foreground">
                                   ({exHomeHint})
                                 </span>
                               )}
                             </span>
                           </div>
 
-                          <div className="space-y-2">
+                          <ul className="space-y-1.5">
                             {transfers.map((t, index) => {
                               const fromName = getDisplayName(t.from)
                               const toName = getDisplayName(t.to)
                               const exId = ex.id || `${ex.description}-${ex.date?.seconds}`
-                              const debtState = itemizedDebtStates[exId]?.[`${t.from}-${t.to}`] || { status: 'pending', paidAmount: 0, remainingAmount: t.amount }
+                              const debtState = itemizedDebtStates[exId]?.[`${t.from}-${t.to}`] || {
+                                status: 'pending' as const,
+                                paidAmount: 0,
+                                remainingAmount: t.amount,
+                              }
 
                               return (
-                                <div key={index} className="flex flex-col gap-2 rounded bg-muted/30 px-3 py-2 text-sm sm:flex-row sm:items-center sm:justify-between">
+                                <li
+                                  key={index}
+                                  className="flex flex-col gap-2 rounded-md bg-muted/40 px-3 py-2 text-sm sm:flex-row sm:items-center sm:justify-between"
+                                >
                                   <div className="flex min-w-0 flex-wrap items-center gap-1.5 sm:gap-2">
                                     <span className="font-medium text-destructive">{fromName}</span>
                                     <span className="text-xs text-muted-foreground">owes</span>
@@ -915,26 +1082,36 @@ export default function TripDetailPage() {
                                   </div>
                                   <div className="flex items-center justify-between gap-2 sm:justify-end sm:gap-3">
                                     <div className="text-right">
-                                      <span className="font-semibold tabular-nums block">{homeSymbol}{t.amount.toLocaleString()}</span>
+                                      <span className="block font-semibold tabular-nums">
+                                        {homeSymbol}{t.amount.toLocaleString()}
+                                      </span>
                                       {trip?.tripCurrency === 'JPY' && homeCurrency === 'THB' && (trip.exchangeRate ?? 0) > 0 && (
-                                        <span className="text-[9px] text-muted-foreground block">
+                                        <span className="block text-[10px] text-muted-foreground tabular-nums">
                                           (¥{Math.round(t.amount / (trip.exchangeRate ?? LEGACY_JPY_TO_THB)).toLocaleString()})
                                         </span>
                                       )}
                                       {debtState.status === 'partial' && (
-                                        <span className="text-[10px] text-muted-foreground block">Paid ฿{debtState.paidAmount.toLocaleString()}</span>
+                                        <span className="block text-[10px] text-muted-foreground tabular-nums">
+                                          Paid {homeSymbol}{debtState.paidAmount.toLocaleString()}
+                                        </span>
                                       )}
                                     </div>
                                     {debtState.status === 'paid' ? (
-                                      <Badge className="bg-primary/20 text-primary border-0 text-xs hover:bg-primary/20 pointer-events-none">Paid</Badge>
+                                      <Badge className="pointer-events-none border-0 bg-primary/15 text-xs text-primary hover:bg-primary/15">
+                                        Paid
+                                      </Badge>
                                     ) : (
                                       trip.status === 'active' && (
                                         <Button
                                           size="sm"
                                           variant="ghost"
-                                          className="h-7 px-2 text-xs hover:bg-primary/10 hover:text-primary"
+                                          className="h-8 px-2.5 text-xs hover:bg-primary/10 hover:text-primary"
                                           onClick={() => {
-                                            setRecordPaymentData({ from: t.from, to: t.to, amount: debtState.remainingAmount })
+                                            setRecordPaymentData({
+                                              from: t.from,
+                                              to: t.to,
+                                              amount: debtState.remainingAmount,
+                                            })
                                             setSettlementAmount(debtState.remainingAmount.toString())
                                             setIsRecordPaymentOpen(true)
                                           }}
@@ -944,17 +1121,21 @@ export default function TripDetailPage() {
                                       )
                                     )}
                                   </div>
-                                </div>
+                                </li>
                               )
                             })}
-                          </div>
+                          </ul>
                         </div>
                       )
                     })}
 
-                    {allExpensesCombined.every(ex => calculateExpenseTransfers(ex).length === 0) && (
-                      <div className="py-8 text-center text-muted-foreground">
-                        No active itemized debts for the current expenses! 🎉
+                    {allExpensesCombined.every((ex) => calculateExpenseTransfers(ex).length === 0) && (
+                      <div className="flex flex-col items-center justify-center px-4 py-10 text-center">
+                        <CheckCircle2 className="size-10 text-success/70" aria-hidden />
+                        <p className="mt-4 text-base font-medium">No open itemized debts</p>
+                        <p className="mt-1 max-w-sm text-sm text-muted-foreground">
+                          Shared expenses will show who owes whom for each item.
+                        </p>
                       </div>
                     )}
                   </div>
@@ -962,40 +1143,52 @@ export default function TripDetailPage() {
               </CardContent>
             </Card>
 
-            <Card>
+            <Card className="shadow-sm">
               <CardHeader>
-                <CardTitle>Payment History</CardTitle>
+                <CardTitle>Payment history</CardTitle>
                 <CardDescription>Recorded payments between members</CardDescription>
               </CardHeader>
               <CardContent>
                 {paymentHistory.length === 0 ? (
-                  <div className="py-8 text-center text-muted-foreground">
-                    No payments recorded yet
+                  <div className="flex flex-col items-center justify-center px-4 py-10 text-center">
+                    <CheckCircle2 className="size-10 text-muted-foreground/50" aria-hidden />
+                    <p className="mt-4 text-base font-medium">No payments recorded</p>
+                    <p className="mt-1 max-w-sm text-sm text-muted-foreground">
+                      Use Record or Pay on a settlement to log a transfer.
+                    </p>
                   </div>
                 ) : (
-                  <div className="space-y-3">
-                    {paymentHistory.map(s => {
+                  <ul className="divide-y rounded-lg border">
+                    {paymentHistory.map((s) => {
                       const fromName = getDisplayName(s.fromUserId)
                       const toName = getDisplayName(s.toUserId)
                       const date = s.date?.seconds ? new Date(s.date.seconds * 1000) : new Date()
                       return (
-                        <div key={s.id} className="flex items-center justify-between rounded-lg border p-4">
-                          <div className="flex items-center gap-3">
-                            <div className="flex size-10 items-center justify-center rounded-lg bg-muted">
-                              <CheckCircle2 className="size-4 text-green-500" />
+                        <li key={s.id} className="flex items-center justify-between gap-3 px-4 py-3">
+                          <div className="flex min-w-0 items-center gap-3">
+                            <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-primary/10 sm:size-10">
+                              <CheckCircle2 className="size-4 text-success" aria-hidden />
                             </div>
-                            <div>
-                              <p className="font-medium">{fromName} paid {toName}</p>
-                              <p className="text-xs text-muted-foreground">
-                                {date.toLocaleDateString('th-TH', { month: 'short', day: 'numeric', year: 'numeric' })}
+                            <div className="min-w-0">
+                              <p className="truncate font-medium">
+                                {fromName} paid {toName}
+                              </p>
+                              <p className="text-xs text-muted-foreground tabular-nums">
+                                {date.toLocaleDateString('th-TH', {
+                                  month: 'short',
+                                  day: 'numeric',
+                                  year: 'numeric',
+                                })}
                               </p>
                             </div>
                           </div>
-                          <span className="font-semibold text-success tabular-nums">฿{s.amount.toLocaleString()}</span>
-                        </div>
+                          <span className="shrink-0 font-semibold tabular-nums text-success">
+                            {homeSymbol}{s.amount.toLocaleString()}
+                          </span>
+                        </li>
                       )
                     })}
-                  </div>
+                  </ul>
                 )}
               </CardContent>
             </Card>
@@ -1004,9 +1197,11 @@ export default function TripDetailPage() {
       </Tabs>
 
       <Dialog open={isEditTripOpen} onOpenChange={setIsEditTripOpen}>
-        <DialogContent className="max-h-[90vh] w-[calc(100vw-1rem)] overflow-y-auto overflow-x-hidden p-4 sm:max-w-[680px] sm:p-6">
+        <DialogContent
+          className="max-h-[min(90vh,90dvh)] w-[calc(100vw-1rem)] overflow-y-auto overflow-x-hidden p-4 max-sm:top-[4vh] max-sm:translate-y-0 sm:max-w-[680px] sm:p-6"
+        >
           <DialogHeader>
-            <DialogTitle>Edit Trip</DialogTitle>
+            <DialogTitle>Edit trip</DialogTitle>
             <DialogDescription>Update trip details and members</DialogDescription>
           </DialogHeader>
           <form
@@ -1103,17 +1298,19 @@ export default function TripDetailPage() {
           setPendingImmichAssetIds([])
         }
       }}>
-        <DialogContent className="max-h-[90vh] w-[calc(100vw-1rem)] overflow-y-auto overflow-x-hidden p-4 sm:max-w-[680px] sm:p-6">
+        <DialogContent
+          className="max-h-[min(90vh,90dvh)] w-[calc(100vw-1rem)] overflow-y-auto overflow-x-hidden p-4 max-sm:top-[4vh] max-sm:translate-y-0 sm:max-w-[680px] sm:p-6"
+        >
           <DialogHeader>
             <DialogTitle>
-              {editingExpense ? 'Edit Expense' : ocrDraft ? 'ตรวจสอบรายจ่ายจาก AI' : 'Add Trip Expense'}
+              {editingExpense ? 'Edit expense' : ocrDraft ? 'Review AI expense' : 'Add trip expense'}
             </DialogTitle>
             <DialogDescription>
               {editingExpense
-                ? 'Edit this expense'
+                ? 'Update this expense — linked transactions stay in sync.'
                 : ocrDraft
-                  ? 'ข้อมูลจาก AI — แก้ไขได้ก่อนกดบันทึก'
-                  : 'Add an expense to this trip'}
+                  ? 'Parsed by AI — review and edit before saving.'
+                  : 'Log an expense for this trip.'}
             </DialogDescription>
           </DialogHeader>
           <TripExpenseFormV2
@@ -1186,30 +1383,36 @@ export default function TripDetailPage() {
 
       {/* Record Payment Dialog */}
       <Dialog open={isRecordPaymentOpen} onOpenChange={setIsRecordPaymentOpen}>
-        <DialogContent>
+        <DialogContent
+          className="max-h-[min(90vh,90dvh)] w-[calc(100vw-1rem)] p-4 sm:max-w-lg sm:p-6"
+        >
           <DialogHeader>
-            <DialogTitle>Record Payment</DialogTitle>
+            <DialogTitle>Record payment</DialogTitle>
             <DialogDescription>
-              Confirm that {recordPaymentData ? getDisplayName(recordPaymentData.from) : ''} paid {recordPaymentData ? getDisplayName(recordPaymentData.to) : ''}.
+              Confirm that {recordPaymentData ? getDisplayName(recordPaymentData.from) : ''} paid{' '}
+              {recordPaymentData ? getDisplayName(recordPaymentData.to) : ''}.
             </DialogDescription>
           </DialogHeader>
           {recordPaymentData && (
-            <div className="space-y-4 pt-4">
+            <div className="space-y-4 pt-2">
               <div className="space-y-2">
-                <Label>Amount to Settle (฿)</Label>
+                <Label htmlFor="settlement-amount">Amount to settle ({homeSymbol})</Label>
                 <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">฿</span>
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" aria-hidden>
+                    {homeSymbol}
+                  </span>
                   <Input
+                    id="settlement-amount"
                     type="number"
                     step="0.01"
-                    className="pl-8 text-lg font-bold"
+                    className="pl-8 text-lg font-semibold tabular-nums"
                     value={settlementAmount}
                     onChange={(e) => setSettlementAmount(e.target.value)}
                   />
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  Total owed: ฿{recordPaymentData.amount.toLocaleString()}.
-                  You can pay a smaller amount for partial settlement.
+                <p className="text-xs text-muted-foreground tabular-nums">
+                  Total owed: {homeSymbol}{recordPaymentData.amount.toLocaleString()}.
+                  You can enter a smaller amount for a partial settlement.
                 </p>
               </div>
               <DialogFooter>
@@ -1230,7 +1433,7 @@ export default function TripDetailPage() {
                   })
                   setIsRecordPaymentOpen(false)
                 }}>
-                  Confirm Payment
+                  Confirm payment
                 </Button>
               </DialogFooter>
             </div>

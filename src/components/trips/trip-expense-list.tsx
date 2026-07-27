@@ -79,7 +79,7 @@ function TripExpenseReceiptBreakdown({
 
   return (
     <div className="mt-3 space-y-2 border-t pt-3 text-xs">
-      <div className="flex justify-between text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+      <div className="flex justify-between text-xs font-medium text-muted-foreground">
         <span>รายการสินค้า</span>
         <span>ราคา & ภาษี</span>
       </div>
@@ -134,13 +134,13 @@ function TripExpenseReceiptBreakdown({
                   </span>
                 )}
                 {item.tax > 0 ? (
-                  <span className="block text-[9px] text-muted-foreground">
+                  <span className="block text-[10px] text-muted-foreground tabular-nums">
                     (สินค้า {exSymbol}
                     {item.price.toLocaleString()} + ภาษี {exSymbol}
                     {item.tax.toLocaleString()})
                   </span>
                 ) : (
-                  <span className="block text-[9px] text-green-600">Tax free</span>
+                  <span className="block text-[10px] text-success">Tax free</span>
                 )}
               </div>
             </div>
@@ -211,7 +211,8 @@ export function TripExpenseList({
         <Button
           variant="ghost"
           size="icon"
-          className={cn('size-8', className)}
+          className={cn('size-9', className)}
+          aria-label={`Actions for ${expense.description}`}
         >
           <MoreHorizontal className="size-4" />
         </Button>
@@ -259,91 +260,98 @@ export function TripExpenseList({
           event.stopPropagation()
           onToggleReceipt(expenseId)
         }}
-        className="ml-1 flex h-5 items-center gap-1 px-1.5 text-[9px] text-muted-foreground hover:bg-muted"
+        aria-expanded={!!expandedReceipts[expenseId]}
+        className="ml-1 h-7 gap-1 px-2 text-[11px] text-muted-foreground hover:bg-muted"
       >
-        {expandedReceipts[expenseId] ? 'ซ่อนรายการ ▲' : 'ดูรายการใบเสร็จ ▼'}
+        {expandedReceipts[expenseId] ? 'Hide items' : 'Show receipt'}
       </Button>
     )
   }
 
   return (
     <>
-      <div className="space-y-3 md:hidden">
+      <div className="space-y-4 md:hidden">
         {grouped.map((group) => (
-          <div key={group.dateKey}>
-            <div className="overflow-hidden rounded-lg border bg-card">
-              <div className="border-b bg-muted/30 px-4 py-2">
-                <span className="text-xs font-semibold tracking-wide text-muted-foreground">
-                  {group.label}
-                </span>
-              </div>
-              <div className="divide-y">
-                {group.items.map((expense) => {
-                  const txDate = toDateFromFirestore(expense.date)
-                  const exCurrency = (expense.rawTx?.currency ||
-                    expense.rawEx?.currency ||
-                    trip?.tripCurrency ||
-                    'THB') as TripCurrencyCode
-                  const exSymbol = formatCurrencySymbol(exCurrency)
-                  const exHomeHint = formatHomeConversion(expense.amount, exCurrency, trip)
-
-                  return (
-                    <div
-                      key={expense.id}
-                      className="group cursor-pointer p-4 transition-colors hover:bg-muted/30"
-                      onClick={(event) => {
-                        if (shouldIgnoreRowClick(event.target)) return
-                        onView(expense)
-                      }}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <p className="font-medium leading-snug">{expense.description}</p>
-                            {expense.isLegacy && (
-                              <Badge variant="outline" className="h-4 px-1 text-[10px]">
-                                Legacy
-                              </Badge>
-                            )}
-                            {renderReceiptToggle(expense)}
-                          </div>
-                          <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                            <Badge variant="secondary" className="text-[10px] font-normal">
-                              {expense.category}
-                            </Badge>
-                            <Badge variant="outline" className="text-[10px] font-normal">
-                              {expense.splitLabel}
-                            </Badge>
-                          </div>
-                          <p className="mt-2 text-xs text-muted-foreground">
-                            {txDate ? formatTransactionDisplayTime(txDate) : ''} ·{' '}
-                            {expense.paidBy || 'Me'}
-                          </p>
-                          {(expense.rawEx?.note || expense.rawTx?.note) && (
-                            <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
-                              📝 {expense.rawEx?.note || expense.rawTx?.note}
-                            </p>
-                          )}
-                        </div>
-                        <div className="shrink-0 text-right">{renderAmount(expense)}</div>
-                      </div>
-                      <div className="mt-2 flex justify-end">{renderActions(expense)}</div>
-                      {expandedReceipts[expense.id!] && (
-                        <TripExpenseReceiptBreakdown
-                          expense={expense}
-                          trip={trip}
-                          exSymbol={exSymbol}
-                          exCurrency={exCurrency}
-                          exHomeHint={exHomeHint}
-                          getDisplayName={getDisplayName}
-                        />
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
+          <section key={group.dateKey} aria-label={group.label}>
+            <div className="mb-2 px-0.5">
+              <span className="text-xs font-semibold text-muted-foreground">
+                {group.label}
+              </span>
             </div>
-          </div>
+            <div className="divide-y rounded-lg border">
+              {group.items.map((expense) => {
+                const txDate = toDateFromFirestore(expense.date)
+                const exCurrency = (expense.rawTx?.currency ||
+                  expense.rawEx?.currency ||
+                  trip?.tripCurrency ||
+                  'THB') as TripCurrencyCode
+                const exSymbol = formatCurrencySymbol(exCurrency)
+                const exHomeHint = formatHomeConversion(expense.amount, exCurrency, trip)
+
+                return (
+                  <div
+                    key={expense.id}
+                    role="button"
+                    tabIndex={0}
+                    className="group cursor-pointer p-4 transition-colors duration-200 hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                    onClick={(event) => {
+                      if (shouldIgnoreRowClick(event.target)) return
+                      onView(expense)
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault()
+                        onView(expense)
+                      }
+                    }}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="font-medium leading-snug">{expense.description}</p>
+                          {expense.isLegacy && (
+                            <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
+                              Legacy
+                            </Badge>
+                          )}
+                          {renderReceiptToggle(expense)}
+                        </div>
+                        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                          <Badge variant="secondary" className="text-[10px] font-normal">
+                            {expense.category}
+                          </Badge>
+                          <Badge variant="outline" className="text-[10px] font-normal">
+                            {expense.splitLabel}
+                          </Badge>
+                        </div>
+                        <p className="mt-2 text-xs text-muted-foreground tabular-nums">
+                          {txDate ? formatTransactionDisplayTime(txDate) : ''} ·{' '}
+                          {expense.paidBy || 'Me'}
+                        </p>
+                        {(expense.rawEx?.note || expense.rawTx?.note) && (
+                          <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+                            {expense.rawEx?.note || expense.rawTx?.note}
+                          </p>
+                        )}
+                      </div>
+                      <div className="shrink-0 text-right">{renderAmount(expense)}</div>
+                    </div>
+                    <div className="mt-2 flex justify-end">{renderActions(expense)}</div>
+                    {expandedReceipts[expense.id!] && (
+                      <TripExpenseReceiptBreakdown
+                        expense={expense}
+                        trip={trip}
+                        exSymbol={exSymbol}
+                        exCurrency={exCurrency}
+                        exHomeHint={exHomeHint}
+                        getDisplayName={getDisplayName}
+                      />
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </section>
         ))}
       </div>
 
@@ -356,7 +364,9 @@ export function TripExpenseList({
               <TableHead>Category</TableHead>
               <TableHead>Payer</TableHead>
               <TableHead className="text-right">Amount</TableHead>
-              <TableHead className="w-[40px]" />
+              <TableHead className="w-[44px]">
+                <span className="sr-only">Actions</span>
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -375,7 +385,7 @@ export function TripExpenseList({
                   return (
                     <TableRow
                       key={expense.id}
-                      className="group cursor-pointer"
+                      className="group cursor-pointer transition-colors duration-200"
                       onClick={(event) => {
                         if (shouldIgnoreRowClick(event.target)) return
                         onView(expense)
@@ -393,7 +403,7 @@ export function TripExpenseList({
                           <div className="flex flex-wrap items-center gap-2">
                             <p className="font-medium">{expense.description}</p>
                             {expense.isLegacy && (
-                              <Badge variant="outline" className="h-4 px-1 text-[10px]">
+                              <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
                                 Legacy
                               </Badge>
                             )}
@@ -404,7 +414,7 @@ export function TripExpenseList({
                           </p>
                           {(expense.rawEx?.note || expense.rawTx?.note) && (
                             <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">
-                              📝 {expense.rawEx?.note || expense.rawTx?.note}
+                              {expense.rawEx?.note || expense.rawTx?.note}
                             </p>
                           )}
                           {expandedReceipts[expense.id!] && (
@@ -429,7 +439,10 @@ export function TripExpenseList({
                       </TableCell>
                       <TableCell className="text-right">{renderAmount(expense)}</TableCell>
                       <TableCell>
-                        {renderActions(expense, 'opacity-0 group-hover:opacity-100')}
+                        {renderActions(
+                          expense,
+                          'opacity-100 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 focus-visible:opacity-100'
+                        )}
                       </TableCell>
                     </TableRow>
                   )

@@ -79,7 +79,7 @@ export const TripAiPanel = React.forwardRef<TripAiPanelHandle, TripAiPanelProps>
     }
 
     return (
-      <>
+      <section aria-label="AI expense capture" className="animate-in fade-in-0 duration-200 motion-reduce:animate-none">
         <AiExpenseQuickInput
           ref={aiInputRef}
           tripId={tripId}
@@ -96,7 +96,7 @@ export const TripAiPanel = React.forwardRef<TripAiPanelHandle, TripAiPanelProps>
           defaultCurrency={tripCurrency}
           onConfirm={() => pendingResult && openDraftForm(pendingResult)}
         />
-      </>
+      </section>
     )
   }
 )

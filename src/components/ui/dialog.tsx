@@ -38,7 +38,7 @@ function DialogOverlay({
     <DialogPrimitive.Overlay
       data-slot="dialog-overlay"
       className={cn(
-        'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 z-50 bg-black/50',
+        'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 z-50 bg-black/50 duration-200 ease-out motion-reduce:animate-none',
         className,
       )}
       {...props}
@@ -50,17 +50,26 @@ const NESTED_OVERLAY_SELECTORS = [
   '[data-slot="select-content"]',
   '[data-slot="popover-content"]',
   '[data-slot="dropdown-menu-content"]',
+  '[data-slot="dropdown-menu-sub-content"]',
   '[data-slot="calendar"]',
   '[data-radix-select-content]',
   '[data-radix-popper-content-wrapper]',
 ] as const
 
-function isNestedOverlayTarget(target: EventTarget | null): boolean {
+/** Portals / floating UI that live outside Dialog DOM but must not dismiss it. */
+const PROTECTED_OUTSIDE_SELECTORS = [
+  ...NESTED_OVERLAY_SELECTORS,
+  '[data-immich-upload-panel]',
+  '[data-sonner-toaster]',
+  '[data-sonner-toast]',
+] as const
+
+function isProtectedOutsideTarget(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return false
-  return NESTED_OVERLAY_SELECTORS.some((selector) => target.closest(selector))
+  return PROTECTED_OUTSIDE_SELECTORS.some((selector) => target.closest(selector))
 }
 
-/** Radix portals dismiss on outside click; block dialog close until nested UI is gone. */
+/** Radix portals dismiss on outside click/focus; block dialog close while nested UI is up. */
 function hasOpenNestedOverlay(): boolean {
   if (typeof document === 'undefined') return false
   return NESTED_OVERLAY_SELECTORS.some((selector) =>
@@ -68,15 +77,40 @@ function hasOpenNestedOverlay(): boolean {
   )
 }
 
+let lastNestedOverlayPointerAt = 0
+
+function markNestedOverlayPointer() {
+  if (hasOpenNestedOverlay()) {
+    lastNestedOverlayPointerAt = Date.now()
+  }
+}
+
+function wasNestedOverlayJustActive(ms = 400) {
+  return Date.now() - lastNestedOverlayPointerAt < ms
+}
+
+function shouldBlockOutsideDismiss(target: EventTarget | null) {
+  markNestedOverlayPointer()
+  return (
+    hasOpenNestedOverlay() ||
+    isProtectedOutsideTarget(target) ||
+    wasNestedOverlayJustActive()
+  )
+}
+
 function DialogContent({
   className,
   children,
   showCloseButton = true,
+  disableOutsideClose = false,
   onInteractOutside,
   onPointerDownOutside,
+  onFocusOutside,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean
+  /** Keep dialog open on overlay / outside clicks (Escape + close button still work). */
+  disableOutsideClose?: boolean
 }) {
   return (
     <DialogPortal data-slot="dialog-portal">
@@ -84,24 +118,29 @@ function DialogContent({
       <DialogPrimitive.Content
         data-slot="dialog-content"
         className={cn(
-          'bg-background data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-lg border p-6 shadow-lg duration-200 sm:max-w-lg',
+          'bg-background data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-lg border p-6 shadow-lg duration-200 ease-out motion-reduce:animate-none sm:max-w-lg',
           className,
         )}
+        {...props}
         onInteractOutside={(e) => {
-          if (hasOpenNestedOverlay() || isNestedOverlayTarget(e.target)) {
+          if (disableOutsideClose || shouldBlockOutsideDismiss(e.target)) {
             e.preventDefault()
-            return
           }
           onInteractOutside?.(e)
         }}
         onPointerDownOutside={(e) => {
-          if (hasOpenNestedOverlay() || isNestedOverlayTarget(e.target)) {
+          if (disableOutsideClose || shouldBlockOutsideDismiss(e.target)) {
             e.preventDefault()
-            return
           }
           onPointerDownOutside?.(e)
         }}
-        {...props}
+        onFocusOutside={(e) => {
+          // Select/Popover portals steal focus outside DialogContent — do not dismiss.
+          if (disableOutsideClose || shouldBlockOutsideDismiss(e.target)) {
+            e.preventDefault()
+          }
+          onFocusOutside?.(e)
+        }}
       >
         {children}
         {showCloseButton && (

@@ -131,7 +131,7 @@ export function MonthPicker({
             <span
               key={`year-${pickerYear}`}
               className={cn(
-                'text-sm font-semibold animate-in fade-in-0 duration-200',
+                'text-sm font-semibold animate-in fade-in-0 duration-200 motion-reduce:animate-none',
                 yearSlideClass
               )}
             >
@@ -151,7 +151,7 @@ export function MonthPicker({
           <div
             key={`months-${pickerYear}`}
             className={cn(
-              'grid grid-cols-3 gap-1.5 animate-in fade-in-0 duration-200',
+              'grid grid-cols-3 gap-1.5 animate-in fade-in-0 duration-200 motion-reduce:animate-none',
               yearDirection === 'prev' ? 'slide-in-from-left-2' : 'slide-in-from-right-2'
             )}
           >

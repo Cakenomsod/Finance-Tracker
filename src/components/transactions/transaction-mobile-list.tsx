@@ -15,12 +15,11 @@ import { cn, amountColorClass } from '@/lib/utils'
 import { getPaotangCapReasonLabel, PAOTANG_GOV_PERCENT } from '@/lib/transaction-payment'
 import { Transaction, Category, TripExpense } from '@/lib/firestore-types'
 import { DateGroupDividerMobile } from '@/components/transactions/date-group-divider'
-import { MonthGroupDividerMobile } from '@/components/transactions/month-group-divider'
 import { TransactionEmptyState } from '@/components/transactions/transaction-empty-state'
 import { TransactionMobileListSkeleton } from '@/components/transactions/transaction-list-skeleton'
 import {
   formatTransactionDisplayTime,
-  groupItemsByMonthAndDate,
+  groupItemsByDate,
   toDateFromFirestore,
 } from '@/lib/datetime'
 import { shouldIgnoreRowClick } from '@/lib/row-click'
@@ -51,11 +50,17 @@ interface TransactionMobileListProps {
   hasAnyData: boolean
   hasActiveFilters: boolean
   showLoadOlderHint: boolean
+  emptyVariant?: 'no-data' | 'no-results' | 'filtered-load-older' | 'no-month-data'
   onView: (transaction: CombinedTransaction) => void
   onEdit: (tx: Transaction) => void
   onDelete: (id: string, tx: Transaction | null) => void
   onAddClick: () => void
   onClearFilters: () => void
+}
+
+function paidByLabel(paidBy: string | undefined) {
+  if (!paidBy || paidBy === 'Me') return 'ฉัน'
+  return paidBy
 }
 
 export function TransactionMobileList({
@@ -65,6 +70,7 @@ export function TransactionMobileList({
   hasAnyData,
   hasActiveFilters,
   showLoadOlderHint,
+  emptyVariant: emptyVariantProp,
   onView,
   onEdit,
   onDelete,
@@ -73,7 +79,7 @@ export function TransactionMobileList({
 }: TransactionMobileListProps) {
   const grouped = React.useMemo(
     () =>
-      groupItemsByMonthAndDate(transactions, (transaction) =>
+      groupItemsByDate(transactions, (transaction) =>
         toDateFromFirestore(transaction.date)
       ),
     [transactions]
@@ -84,14 +90,16 @@ export function TransactionMobileList({
   }
 
   if (transactions.length === 0) {
-    const emptyVariant = !hasAnyData
-      ? 'no-data'
-      : showLoadOlderHint
-        ? 'filtered-load-older'
-        : 'no-results'
+    const emptyVariant =
+      emptyVariantProp ??
+      (!hasAnyData
+        ? 'no-data'
+        : showLoadOlderHint
+          ? 'filtered-load-older'
+          : 'no-results')
 
     return (
-      <div className="overflow-hidden rounded-lg border bg-card md:hidden">
+      <div className="overflow-hidden rounded-xl border bg-card shadow-sm md:hidden">
         <TransactionEmptyState
           variant={emptyVariant}
           onAddClick={onAddClick}
@@ -103,163 +111,162 @@ export function TransactionMobileList({
 
   return (
     <div className="space-y-3 md:hidden">
-      {grouped.map((monthGroup) => (
-        <div key={monthGroup.monthKey}>
-          <MonthGroupDividerMobile label={monthGroup.label} />
-          {monthGroup.dateGroups.map((group) => (
-        <div key={group.dateKey}>
-          <div className="overflow-hidden rounded-lg border bg-card">
-            <DateGroupDividerMobile label={group.label} />
-            <div className="divide-y">
-              {group.items.map((transaction) => {
-                const txId = transaction.id!
-                const cat = categoryByName.get(transaction.category)
-                const txDate = toDateFromFirestore(transaction.date)
-                const isJpy =
-                  transaction.rawTx?.currency === 'JPY' ||
-                  transaction.rawEx?.currency === 'JPY'
-                const displayAmount = transaction.amount
-                const fullAmount = transaction.fullAmount ?? transaction.amount
+      {grouped.map((group) => (
+        <div key={group.dateKey} className="overflow-hidden rounded-xl border bg-card shadow-sm">
+          <DateGroupDividerMobile label={group.label} />
+          <div className="divide-y divide-border">
+            {group.items.map((transaction) => {
+              const txId = transaction.id!
+              const cat = categoryByName.get(transaction.category)
+              const txDate = toDateFromFirestore(transaction.date)
+              const isJpy =
+                transaction.rawTx?.currency === 'JPY' ||
+                transaction.rawEx?.currency === 'JPY'
+              const displayAmount = transaction.amount
+              const fullAmount = transaction.fullAmount ?? transaction.amount
 
-                return (
-                  <div
-                    key={txId}
-                    className="flex cursor-pointer gap-3 p-4 transition-colors hover:bg-muted/30"
-                    onClick={(e) => {
-                      if (shouldIgnoreRowClick(e.target)) return
-                      onView(transaction)
-                    }}
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="font-medium leading-snug">
-                            {transaction.description}
-                          </p>
-                          <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                            {transaction.isPaotang && (
-                              <Badge
-                                variant="outline"
-                                className="text-[10px] border-chart-2/40 text-chart-2"
-                              >
-                                เป๋าตัง
-                              </Badge>
-                            )}
-                            {!transaction.isLegacy && (
-                              <Badge variant="outline" className="text-[10px]">
-                                {transaction.isTripDebtPending ? 'ค้างจ่ายทริป' : 'Trip Expense'}
-                              </Badge>
-                            )}
-                            <Badge
-                              variant="secondary"
-                              className="text-[10px] font-normal"
-                              style={
-                                cat?.color
-                                  ? {
-                                      backgroundColor: `${cat.color}20`,
-                                      color: cat.color,
-                                    }
-                                  : undefined
-                              }
-                            >
-                              {cat?.icon ? `${cat.icon} ` : ''}
-                              {transaction.category}
-                            </Badge>
-                          </div>
-                        </div>
-                        <div className="shrink-0 text-right">
-                          <p
-                            className={cn(
-                              'font-semibold tabular-nums',
-                              transaction.isTripDebtPending
-                                ? 'text-muted-foreground'
-                                : amountColorClass(displayAmount)
-                            )}
-                          >
-                            {displayAmount > 0 ? '+' : ''}
-                            {isJpy ? '¥' : '฿'}
-                            {Math.abs(displayAmount).toLocaleString()}
-                          </p>
-                          {transaction.isTripDebtPending && (
-                            <p className="text-[10px] text-muted-foreground">
-                              ยังไม่นับในรายจ่าย
-                            </p>
-                          )}
-                          {isJpy && (
-                            <p className="text-[10px] text-muted-foreground tabular-nums">
-                              ({displayAmount > 0 ? '+' : ''}฿
-                              {(Math.abs(displayAmount) * 0.22).toLocaleString()})
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                      <div className="mt-2 flex items-center justify-between gap-2 text-xs text-muted-foreground">
-                        <span>
-                          {txDate
-                            ? formatTransactionDisplayTime(txDate)
-                            : ''}{' '}
-                          · {transaction.paidBy || 'Me'}
-                        </span>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="size-7">
-                              <MoreHorizontal className="size-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            {transaction.isLegacy ? (
-                              <>
-                                <DropdownMenuItem
-                                  onClick={() => onEdit(transaction.rawTx!)}
-                                >
-                                  <Edit2 className="mr-2 size-4" />
-                                  แก้ไข
-                                </DropdownMenuItem>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem
-                                  className="text-destructive"
-                                  onClick={() =>
-                                    onDelete(txId, transaction.rawTx)
-                                  }
-                                >
-                                  <Trash2 className="mr-2 size-4" />
-                                  ลบ
-                                </DropdownMenuItem>
-                              </>
-                            ) : (
-                              <DropdownMenuItem disabled>
-                                ไปที่หน้าทริปเพื่อแก้ไข
-                              </DropdownMenuItem>
-                            )}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-                      {transaction.note && (
-                        <p className="mt-1 text-xs text-muted-foreground line-clamp-2">
-                          📝 {transaction.note}
+              return (
+                <div
+                  key={txId}
+                  className="flex cursor-pointer gap-3 px-3 py-3 transition-colors duration-200 hover:bg-muted/30 active:bg-muted/50 focus-within:bg-muted/30 focus-visible:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 motion-reduce:transition-none"
+                  onClick={(e) => {
+                    if (shouldIgnoreRowClick(e.target)) return
+                    onView(transaction)
+                  }}
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium leading-snug">
+                          {transaction.description}
                         </p>
-                      )}
-                      {transaction.isPaotang &&
-                        Math.abs(fullAmount) !== Math.abs(displayAmount) && (
-                          <p className="mt-1 text-[10px] text-muted-foreground">
-                            เต็ม ฿{Math.abs(fullAmount).toLocaleString()} · รัฐ{' '}
-                            {PAOTANG_GOV_PERCENT}% (ตามโควต้า)
+                        <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                          {transaction.isPaotang && (
+                            <Badge
+                              variant="outline"
+                              className="text-[10px] border-chart-2/40 text-chart-2"
+                            >
+                              เป๋าตัง
+                            </Badge>
+                          )}
+                          {!transaction.isLegacy && (
+                            <Badge variant="outline" className="text-[10px]">
+                              {transaction.isTripDebtPending
+                                ? 'ค้างจ่ายทริป'
+                                : 'รายจ่ายทริป'}
+                            </Badge>
+                          )}
+                          <Badge
+                            variant="secondary"
+                            className="text-[10px] font-normal"
+                            style={
+                              cat?.color
+                                ? {
+                                    backgroundColor: `${cat.color}20`,
+                                    color: cat.color,
+                                  }
+                                : undefined
+                            }
+                          >
+                            {cat?.icon ? `${cat.icon} ` : ''}
+                            {transaction.category}
+                          </Badge>
+                        </div>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <p
+                          className={cn(
+                            'text-sm font-semibold tabular-nums',
+                            transaction.isTripDebtPending
+                              ? 'text-muted-foreground'
+                              : amountColorClass(displayAmount)
+                          )}
+                        >
+                          {displayAmount > 0 ? '+' : ''}
+                          {isJpy ? '¥' : '฿'}
+                          {Math.abs(displayAmount).toLocaleString()}
+                        </p>
+                        {transaction.isTripDebtPending && (
+                          <p className="text-[10px] text-muted-foreground">
+                            ยังไม่นับในรายจ่าย
                           </p>
                         )}
-                      {transaction.isPaotang && transaction.paotangQuotaCapped && (
-                        <p className="text-[10px] text-warning">
-                          โควต้าจำกัด —{' '}
-                          {getPaotangCapReasonLabel(transaction.paotangCapReason)}
+                        {isJpy && (
+                          <p className="text-[10px] tabular-nums text-muted-foreground">
+                            ({displayAmount > 0 ? '+' : ''}฿
+                            {(Math.abs(displayAmount) * 0.22).toLocaleString()})
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="mt-1.5 flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                      <span className="min-w-0 truncate tabular-nums">
+                        {txDate ? formatTransactionDisplayTime(txDate) : ''}
+                        {' · '}
+                        {paidByLabel(transaction.paidBy)}
+                      </span>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-8 shrink-0"
+                            aria-label={`เมนูสำหรับ ${transaction.description}`}
+                          >
+                            <MoreHorizontal className="size-4" aria-hidden />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          {transaction.isLegacy ? (
+                            <>
+                              <DropdownMenuItem
+                                onClick={() => onEdit(transaction.rawTx!)}
+                              >
+                                <Edit2 className="mr-2 size-4" aria-hidden />
+                                แก้ไข
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                className="text-destructive"
+                                onClick={() =>
+                                  onDelete(txId, transaction.rawTx)
+                                }
+                              >
+                                <Trash2 className="mr-2 size-4" aria-hidden />
+                                ลบ
+                              </DropdownMenuItem>
+                            </>
+                          ) : (
+                            <DropdownMenuItem disabled>
+                              ไปที่หน้าทริปเพื่อแก้ไข
+                            </DropdownMenuItem>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                    {transaction.note && (
+                      <p className="mt-1 text-xs text-muted-foreground line-clamp-2">
+                        {transaction.note}
+                      </p>
+                    )}
+                    {transaction.isPaotang &&
+                      Math.abs(fullAmount) !== Math.abs(displayAmount) && (
+                        <p className="mt-1 text-[10px] text-muted-foreground">
+                          เต็ม ฿{Math.abs(fullAmount).toLocaleString()} · รัฐ{' '}
+                          {PAOTANG_GOV_PERCENT}% (ตามโควต้า)
                         </p>
                       )}
-                    </div>
+                    {transaction.isPaotang && transaction.paotangQuotaCapped && (
+                      <p className="text-[10px] text-warning">
+                        โควต้าจำกัด —{' '}
+                        {getPaotangCapReasonLabel(transaction.paotangCapReason)}
+                      </p>
+                    )}
                   </div>
-                )
-              })}
-            </div>
+                </div>
+              )
+            })}
           </div>
-        </div>
-          ))}
         </div>
       ))}
     </div>

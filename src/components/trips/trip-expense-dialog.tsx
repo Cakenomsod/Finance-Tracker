@@ -35,11 +35,13 @@ export function TripExpenseDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[min(90vh,90dvh)] w-[calc(100vw-1rem)] overflow-y-auto overflow-x-hidden p-4 max-sm:top-[4vh] max-sm:translate-y-0 sm:max-w-[680px] sm:p-6">
+      <DialogContent
+        className="max-h-[min(90vh,90dvh)] w-[calc(100vw-1rem)] overflow-y-auto overflow-x-hidden p-4 max-sm:top-[4vh] max-sm:translate-y-0 sm:max-w-[680px] sm:p-6"
+      >
         <DialogHeader>
-          <DialogTitle>รายละเอียดรายจ่ายทริป</DialogTitle>
+          <DialogTitle>Trip expense</DialogTitle>
           <DialogDescription>
-            ดูและแก้ไขรายจ่ายจากทริป — บันทึกแล้วจะอัปเดตธุรกรรมที่เกี่ยวข้องโดยอัตโนมัติ
+            Review and edit this trip expense. Saving keeps the linked transaction in sync.
           </DialogDescription>
         </DialogHeader>
         <TripExpenseFormV2

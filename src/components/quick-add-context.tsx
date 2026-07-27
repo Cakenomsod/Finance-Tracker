@@ -44,7 +44,9 @@ export function QuickAddProvider({ children }: { children: React.ReactNode }) {
     <QuickAddContext.Provider value={value}>
       {children}
       <Dialog open={isOpen} onOpenChange={setIsOpen}>
-        <DialogContent className="max-h-[min(90vh,90dvh)] w-[calc(100vw-1rem)] overflow-y-auto overflow-x-hidden p-4 max-sm:top-[4vh] max-sm:translate-y-0 sm:max-w-[680px] sm:p-6">
+        <DialogContent
+          className="max-h-[min(90vh,90dvh)] w-[calc(100vw-1rem)] overflow-y-auto overflow-x-hidden p-4 max-sm:top-[4vh] max-sm:translate-y-0 sm:max-w-[680px] sm:p-6"
+        >
           <DialogHeader>
             <DialogTitle>Add Transaction</DialogTitle>
             <DialogDescription>Record a new income or expense.</DialogDescription>

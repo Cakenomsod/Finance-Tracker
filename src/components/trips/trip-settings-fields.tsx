@@ -94,11 +94,14 @@ export function TripSettingsFields({ value, onChange }: TripSettingsFieldsProps)
   }
 
   return (
-    <div className="space-y-4 rounded-lg border p-3 bg-muted/20">
-      <p className="text-xs font-medium text-muted-foreground">ตั้งค่าประเทศ & สกุลเงิน</p>
+    <fieldset className="space-y-4 border-t border-border/80 pt-4">
+      <legend className="text-sm font-medium">Country & currency</legend>
+      <p className="text-xs text-muted-foreground">
+        ตั้งค่าประเทศและสกุลเงินสำหรับทริปนี้ · Used for receipt tax and totals
+      </p>
 
       <div className="grid gap-2">
-        <Label>ประเทศ (สำหรับคำนวณภาษีใบเสร็จ)</Label>
+        <Label>Country (receipt tax)</Label>
         <Select
           value={value.countryCode}
           onValueChange={(v) => patch({ countryCode: v as TripCountryCode })}
@@ -121,9 +124,9 @@ export function TripSettingsFields({ value, onChange }: TripSettingsFieldsProps)
         </p>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid gap-3 sm:grid-cols-2">
         <div className="grid gap-2">
-          <Label>สกุลเงินทริป</Label>
+          <Label>Trip currency</Label>
           <Select
             value={value.tripCurrency}
             onValueChange={(v) => patch({ tripCurrency: v as TripCurrencyCode })}
@@ -136,7 +139,7 @@ export function TripSettingsFields({ value, onChange }: TripSettingsFieldsProps)
           </Select>
         </div>
         <div className="grid gap-2">
-          <Label>สกุลเงินแสดงผล (บ้าน)</Label>
+          <Label>Home display currency</Label>
           <Select
             value={value.homeCurrency}
             onValueChange={(v) => patch({ homeCurrency: v as TripCurrencyCode })}
@@ -153,7 +156,7 @@ export function TripSettingsFields({ value, onChange }: TripSettingsFieldsProps)
       {needsRate && (
         <div className="grid gap-2">
           <Label>
-            อัตราแลกเปลี่ยน (1 {value.tripCurrency} = ? {value.homeCurrency})
+            Exchange rate (1 {value.tripCurrency} = ? {value.homeCurrency})
           </Label>
           <Input
             type="number"
@@ -164,10 +167,10 @@ export function TripSettingsFields({ value, onChange }: TripSettingsFieldsProps)
             placeholder={value.countryCode === 'JP' ? '0.22' : '1'}
           />
           <p className="text-xs text-muted-foreground">
-            ใช้แปลงยอดรวมและการชำระเงินเป็นสกุล {value.homeCurrency}
+            Converts totals and settlements to {value.homeCurrency}
           </p>
         </div>
       )}
-    </div>
+    </fieldset>
   )
 }

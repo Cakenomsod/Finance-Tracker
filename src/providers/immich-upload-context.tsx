@@ -185,16 +185,30 @@ export function ImmichUploadProvider({ children }: { children: React.ReactNode }
       {children}
       {visibleJobs.length > 0 && (
         <div
-          className="pointer-events-none fixed bottom-4 right-4 z-[80] flex w-[min(100vw-2rem,20rem)] flex-col gap-2"
+          data-immich-upload-panel
+          className="pointer-events-none fixed top-4 right-4 z-[60] flex w-[min(100vw-2rem,20rem)] flex-col gap-2 max-sm:top-3 max-sm:right-3"
           aria-live="polite"
         >
-          <div className="pointer-events-auto rounded-lg border bg-card/95 shadow-lg backdrop-blur supports-[backdrop-filter]:bg-card/90">
+          <div className="pointer-events-auto rounded-lg border bg-card shadow-md">
             <div className="flex items-center gap-2 border-b px-3 py-2">
-              <Upload className="size-3.5 text-muted-foreground" />
-              <p className="text-xs font-medium">
+              <Upload className="size-3.5 text-muted-foreground" aria-hidden />
+              <p className="min-w-0 flex-1 text-xs font-medium">
                 อัปโหลดรูป
                 {activeCount > 0 ? ` (${activeCount} กำลังทำ)` : ''}
               </p>
+              {activeCount === 0 && (
+                <button
+                  type="button"
+                  className="shrink-0 rounded p-1 text-muted-foreground hover:text-foreground"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    for (const job of visibleJobs) dismissJob(job.id)
+                  }}
+                  aria-label="ปิดแผงสถานะอัปโหลด"
+                >
+                  <X className="size-3.5" />
+                </button>
+              )}
             </div>
             <ul className="max-h-48 space-y-1 overflow-y-auto p-2">
               {visibleJobs.map((job) => (
@@ -225,8 +239,11 @@ export function ImmichUploadProvider({ children }: { children: React.ReactNode }
                   </div>
                   <button
                     type="button"
-                    className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-foreground"
-                    onClick={() => dismissJob(job.id)}
+                    className="shrink-0 rounded p-1 text-muted-foreground hover:text-foreground"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      dismissJob(job.id)
+                    }}
                     aria-label="ปิดสถานะอัปโหลด"
                   >
                     <X className="size-3.5" />
