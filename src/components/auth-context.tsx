@@ -6,8 +6,10 @@ import {
   GoogleAuthProvider, 
   signInWithPopup, 
   signOut as firebaseSignOut, 
-  onAuthStateChanged 
+  onAuthStateChanged,
+  onIdTokenChanged,
 } from 'firebase/auth';
+import { startSessionCookieSync } from '@/lib/api-auth-client';
 import { auth, db } from '@/lib/firebase';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { UserProfile } from '@/lib/firestore-types';
@@ -36,26 +38,49 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         setUser(firebaseUser);
-        
-        // Update session cookie
+
         const idToken = await firebaseUser.getIdToken();
         await fetch('/api/auth/session', {
           method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
           body: JSON.stringify({ idToken }),
         });
 
-        // Sync to Firestore
         await syncUserProfile(firebaseUser);
       } else {
         setUser(null);
-        // Clear session cookie
-        await fetch('/api/auth/session', { method: 'DELETE' });
+        await fetch('/api/auth/session', { method: 'DELETE', credentials: 'same-origin' });
       }
       setLoading(false);
     });
 
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    const unsubscribe = onIdTokenChanged(auth, async (firebaseUser) => {
+      if (!firebaseUser) return;
+      try {
+        const idToken = await firebaseUser.getIdToken();
+        await fetch('/api/auth/session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ idToken }),
+        });
+      } catch (error) {
+        console.error('[Auth] failed to sync refreshed ID token to session cookie:', error);
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    return startSessionCookieSync();
+  }, [user]);
 
   const syncUserProfile = async (firebaseUser: User) => {
     const userDocRef = doc(db, 'users', firebaseUser.uid);

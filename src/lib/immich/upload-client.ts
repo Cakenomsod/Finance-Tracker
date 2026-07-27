@@ -1,4 +1,5 @@
 import { readApiJson } from '@/lib/api-json'
+import { authFetch } from '@/lib/api-auth-client'
 import { compressImageForUpload } from '@/lib/immich/compress-image'
 
 /** Uploads to Immich; optional tripId is for membership auth only (album = user's displayName). */
@@ -21,10 +22,9 @@ export async function uploadImmichImage(
     form.append('tripId', tripId)
   }
 
-  const res = await fetch('/api/immich/upload', {
+  const res = await authFetch('/api/immich/upload', {
     method: 'POST',
     body: form,
-    credentials: 'same-origin',
   })
   const data = await readApiJson<{ error?: string; assetId?: string }>(res)
   if (!res.ok) throw new Error(data.error || 'Upload failed')

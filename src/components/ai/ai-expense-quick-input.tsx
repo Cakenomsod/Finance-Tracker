@@ -14,6 +14,7 @@ import {
   saveAiParseJobs,
 } from '@/lib/ai/parse-jobs-storage'
 import { readApiJson } from '@/lib/api-json'
+import { authFetch } from '@/lib/api-auth-client'
 import { useImmichUploadDelivery } from '@/providers/immich-upload-context'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
@@ -116,10 +117,9 @@ export const AiExpenseQuickInput = React.forwardRef<
 
   const runTextJob = async (job: AiParseJob, text: string) => {
     try {
-      const res = await fetch('/api/ai/expense/parse', {
+      const res = await authFetch('/api/ai/expense/parse', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'same-origin',
         body: JSON.stringify({
           text,
           tripId,
@@ -155,7 +155,7 @@ export const AiExpenseQuickInput = React.forwardRef<
 
       const endpoint = tripId ? '/api/ai/receipt/parse' : '/api/ai/transaction/parse'
 
-      const res = await fetch(endpoint, { method: 'POST', body: form, credentials: 'same-origin' })
+      const res = await authFetch(endpoint, { method: 'POST', body: form })
       const data = await readApiJson<{ error?: string; draft?: ReceiptParseResult }>(res)
       if (!res.ok) throw new Error(data.error || 'Parse failed')
 

@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/dialog'
 import { requestDeleteImmichAssets } from '@/lib/immich/delete-from-browser'
 import { useImmichUploadDelivery } from '@/providers/immich-upload-context'
+import { useAuthenticatedImmichSrc } from '@/hooks/use-authenticated-immich-src'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 
@@ -41,23 +42,24 @@ function ImmichThumb({
   onOpen: () => void
   onRemove: () => void
 }) {
-  const [loaded, setLoaded] = React.useState(false)
+  const { src, loading } = useAuthenticatedImmichSrc(assetId, 'thumbnail')
 
   return (
     <div className="relative group w-20 h-20 rounded-md border bg-muted overflow-hidden shrink-0">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={`/api/immich/asset/${assetId}?type=thumbnail`}
-        alt=""
-        loading="lazy"
-        decoding="async"
-        className={cn(
-          'w-full h-full object-cover cursor-pointer transition-opacity duration-200 ease-out motion-reduce:transition-none',
-          loaded ? 'opacity-100' : 'opacity-0'
-        )}
-        onLoad={() => setLoaded(true)}
-        onClick={onOpen}
-      />
+      {loading && (
+        <div className="absolute inset-0 flex items-center justify-center">
+          <Loader2 className="size-4 animate-spin text-muted-foreground" />
+        </div>
+      )}
+      {src && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={src}
+          alt=""
+          className="w-full h-full object-cover cursor-pointer"
+          onClick={onOpen}
+        />
+      )}
       <button
         type="button"
         className="absolute top-0.5 right-0.5 size-6 rounded-full bg-background/90 border flex items-center justify-center opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
@@ -98,7 +100,10 @@ export function ImmichAttachmentsField({
   const [lightboxQuality, setLightboxQuality] = React.useState<'preview' | 'original'>(
     'preview'
   )
-  const [lightboxLoaded, setLightboxLoaded] = React.useState(false)
+  const {
+    src: lightboxSrc,
+    loading: lightboxLoading,
+  } = useAuthenticatedImmichSrc(lightboxAssetId, lightboxQuality)
   const [localPreviews, setLocalPreviews] = React.useState<LocalPreview[]>([])
   const attachInputRef = React.useRef<HTMLInputElement>(null)
 
@@ -139,7 +144,6 @@ export function ImmichAttachmentsField({
   React.useEffect(() => {
     if (!lightboxAssetId) return
     setLightboxQuality('preview')
-    setLightboxLoaded(false)
   }, [lightboxAssetId])
 
   const uniqueIds = React.useMemo(() => [...new Set(value)], [value])
@@ -251,7 +255,6 @@ export function ImmichAttachmentsField({
           if (!o) {
             setLightboxAssetId(null)
             setLightboxQuality('preview')
-            setLightboxLoaded(false)
           }
         }}
       >
@@ -264,23 +267,21 @@ export function ImmichAttachmentsField({
           </DialogHeader>
           {lightboxAssetId && (
             <div className="relative min-h-[12rem] rounded-md bg-muted">
-              {!lightboxLoaded && (
+              {lightboxLoading && (
                 <div className="absolute inset-0 flex items-center justify-center">
                   <Loader2 className="size-6 animate-spin text-muted-foreground" />
                 </div>
               )}
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                key={`${lightboxAssetId}-${lightboxQuality}`}
-                src={`/api/immich/asset/${lightboxAssetId}?type=${lightboxQuality}`}
-                alt="รูปโน้ตขนาดใหญ่"
-                decoding="async"
-                className={cn(
-                  'w-full max-h-[80vh] object-contain rounded-md transition-opacity duration-200 ease-out motion-reduce:transition-none',
-                  lightboxLoaded ? 'opacity-100' : 'opacity-0'
-                )}
-                onLoad={() => setLightboxLoaded(true)}
-              />
+              {lightboxSrc && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  key={`${lightboxAssetId}-${lightboxQuality}`}
+                  src={lightboxSrc}
+                  alt="รูปโน้ตขนาดใหญ่"
+                  decoding="async"
+                  className="w-full max-h-[80vh] object-contain rounded-md"
+                />
+              )}
             </div>
           )}
           <DialogFooter className="gap-2 sm:justify-between">
@@ -290,7 +291,6 @@ export function ImmichAttachmentsField({
                 variant="outline"
                 size="sm"
                 onClick={() => {
-                  setLightboxLoaded(false)
                   setLightboxQuality('original')
                 }}
               >
