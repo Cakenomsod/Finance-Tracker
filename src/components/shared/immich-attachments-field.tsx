@@ -17,6 +17,7 @@ import { toast } from 'sonner'
 interface ImmichAttachmentsFieldProps {
   value: string[]
   onChange: (ids: string[]) => void
+  /** Passed through for trip membership auth on upload; assets go to the user's Immich album */
   tripId?: string | null
   /** Stable key so late uploads still attach after remount/navigation */
   deliveryKey?: string

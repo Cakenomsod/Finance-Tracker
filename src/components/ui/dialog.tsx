@@ -4,6 +4,12 @@ import * as React from 'react'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
 import { XIcon } from 'lucide-react'
 
+import {
+  getNestedOverlayGraceMs,
+  isNestedOverlayActivityTarget,
+  markNestedOverlayActivity,
+  wasNestedOverlayRecentlyActive,
+} from '@/lib/nested-overlay-guard'
 import { cn } from '@/lib/utils'
 
 function Dialog({
@@ -77,24 +83,14 @@ function hasOpenNestedOverlay(): boolean {
   )
 }
 
-let lastNestedOverlayPointerAt = 0
-
-function markNestedOverlayPointer() {
-  if (hasOpenNestedOverlay()) {
-    lastNestedOverlayPointerAt = Date.now()
-  }
-}
-
-function wasNestedOverlayJustActive(ms = 400) {
-  return Date.now() - lastNestedOverlayPointerAt < ms
-}
-
-function shouldBlockOutsideDismiss(target: EventTarget | null) {
-  markNestedOverlayPointer()
+function shouldBlockOutsideDismiss(
+  target: EventTarget | null,
+  event?: { pointerType?: string } | Event,
+) {
   return (
     hasOpenNestedOverlay() ||
     isProtectedOutsideTarget(target) ||
-    wasNestedOverlayJustActive()
+    wasNestedOverlayRecentlyActive(getNestedOverlayGraceMs(event))
   )
 }
 
@@ -112,6 +108,22 @@ function DialogContent({
   /** Keep dialog open on overlay / outside clicks (Escape + close button still work). */
   disableOutsideClose?: boolean
 }) {
+  React.useEffect(() => {
+    const handleNestedOverlayActivity = (event: Event) => {
+      if (isNestedOverlayActivityTarget(event.target)) {
+        markNestedOverlayActivity()
+      }
+    }
+
+    document.addEventListener('pointerdown', handleNestedOverlayActivity, true)
+    document.addEventListener('touchstart', handleNestedOverlayActivity, true)
+
+    return () => {
+      document.removeEventListener('pointerdown', handleNestedOverlayActivity, true)
+      document.removeEventListener('touchstart', handleNestedOverlayActivity, true)
+    }
+  }, [])
+
   return (
     <DialogPortal data-slot="dialog-portal">
       <DialogOverlay />
@@ -123,22 +135,20 @@ function DialogContent({
         )}
         {...props}
         onInteractOutside={(e) => {
-          if (disableOutsideClose || shouldBlockOutsideDismiss(e.target)) {
+          if (disableOutsideClose || shouldBlockOutsideDismiss(e.target, e.detail.originalEvent)) {
             e.preventDefault()
           }
           onInteractOutside?.(e)
         }}
         onPointerDownOutside={(e) => {
-          if (disableOutsideClose || shouldBlockOutsideDismiss(e.target)) {
+          if (disableOutsideClose || shouldBlockOutsideDismiss(e.target, e.detail.originalEvent)) {
             e.preventDefault()
           }
           onPointerDownOutside?.(e)
         }}
         onFocusOutside={(e) => {
-          // Select/Popover portals steal focus outside DialogContent — do not dismiss.
-          if (disableOutsideClose || shouldBlockOutsideDismiss(e.target)) {
-            e.preventDefault()
-          }
+          // Focus changes must never dismiss the dialog; overlay tap / Escape still work.
+          e.preventDefault()
           onFocusOutside?.(e)
         }}
       >

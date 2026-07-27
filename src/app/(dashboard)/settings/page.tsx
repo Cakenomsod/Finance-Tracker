@@ -26,6 +26,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
 import { useTheme } from 'next-themes'
 import { useUserSettings } from '@/hooks/use-user-settings'
+import { useImmichStatus } from '@/hooks/use-immich-status'
 import { useLocale } from '@/components/locale-provider'
 import { ProfileSettings } from '@/components/settings/profile-settings'
 import { CategoriesSettings } from '@/components/settings/categories-settings'
@@ -74,11 +75,16 @@ function SettingToggleRow({
 export default function SettingsPage() {
   const { theme, setTheme, resolvedTheme } = useTheme()
   const {
-    immich,
     aiInsightsWeekly,
     aiInsightsMonthly,
     saveAiInsightsSettings,
   } = useUserSettings()
+  const {
+    configured: immichConfigured,
+    host: immichHost,
+    loading: immichStatusLoading,
+    refresh: refreshImmichStatus,
+  } = useImmichStatus()
   const { t } = useLocale()
   const [mounted, setMounted] = React.useState(false)
   const [savingInsights, setSavingInsights] = React.useState<'weekly' | 'monthly' | null>(null)
@@ -90,7 +96,6 @@ export default function SettingsPage() {
   }, [])
 
   const activeTheme = mounted ? theme : undefined
-  const immichConfigured = Boolean(immich?.baseUrl && immich?.apiKey)
 
   const handleAiInsightsToggle = async (
     field: 'aiInsightsWeekly' | 'aiInsightsMonthly',
@@ -117,18 +122,19 @@ export default function SettingsPage() {
 
       const token = await currentUser.getIdToken(true)
 
+      // Server reads Photo tunnel_config + IMMICH_API_KEY (not profile.immich)
       const res = await fetch('/api/immich/test', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ baseUrl: immich?.baseUrl, apiKey: immich?.apiKey }),
       })
 
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Connection failed')
       toast.success(t('settings.immichConnected'))
+      await refreshImmichStatus()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t('settings.immichFailed'))
     } finally {
@@ -330,17 +336,21 @@ export default function SettingsPage() {
               <CardDescription>{t('settings.aiPreferencesDesc')}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <p className="text-sm text-muted-foreground">
-                {immichConfigured
-                  ? t('settings.immichConfigured')
-                  : t('settings.immichNotConfigured')}
+              <p className="text-sm text-muted-foreground text-pretty">
+                {immichStatusLoading
+                  ? t('settings.immichChecking')
+                  : immichConfigured
+                    ? immichHost
+                      ? t('settings.immichConfigured', { host: immichHost })
+                      : t('settings.immichConfiguredNoHost')
+                    : t('settings.immichNotConfigured')}
               </p>
               <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
                 <Button
                   type="button"
                   variant="outline"
                   onClick={handleTestImmich}
-                  disabled={testingImmich || !immichConfigured}
+                  disabled={testingImmich || immichStatusLoading}
                   className="transition-opacity duration-200 motion-reduce:transition-none"
                 >
                   {testingImmich ? t('settings.testing') : t('settings.testImmich')}

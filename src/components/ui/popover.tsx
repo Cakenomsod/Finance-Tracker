@@ -3,6 +3,7 @@
 import * as React from 'react'
 import * as PopoverPrimitive from '@radix-ui/react-popover'
 
+import { markNestedOverlayActivity } from '@/lib/nested-overlay-guard'
 import { cn } from '@/lib/utils'
 
 function Popover({
@@ -12,9 +13,19 @@ function Popover({
 }
 
 function PopoverTrigger({
+  onPointerDown,
   ...props
 }: React.ComponentProps<typeof PopoverPrimitive.Trigger>) {
-  return <PopoverPrimitive.Trigger data-slot="popover-trigger" {...props} />
+  return (
+    <PopoverPrimitive.Trigger
+      data-slot="popover-trigger"
+      {...props}
+      onPointerDown={(e) => {
+        markNestedOverlayActivity()
+        onPointerDown?.(e)
+      }}
+    />
+  )
 }
 
 function PopoverContent({

@@ -101,6 +101,104 @@ export async function deleteImmichAssets(
   }
 }
 
+export interface ImmichAlbumSummary {
+  id: string;
+  albumName: string;
+}
+
+function mapImmichAlbumSummary(raw: unknown): ImmichAlbumSummary | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const obj = raw as Record<string, unknown>;
+  const id = typeof obj.id === 'string' ? obj.id.trim() : '';
+  const albumName =
+    typeof obj.albumName === 'string'
+      ? obj.albumName
+      : typeof obj.album_name === 'string'
+        ? obj.album_name
+        : '';
+  if (!id || !albumName) return null;
+  return { id, albumName };
+}
+
+/** GET /api/albums — returns id + albumName for each album. */
+export async function listImmichAlbums(
+  config: ImmichConfig
+): Promise<ImmichAlbumSummary[]> {
+  const res = await immichFetch(
+    config,
+    '/api/albums',
+    {
+      method: 'GET',
+      headers: { 'x-api-key': config.apiKey },
+      timeoutMs: 30000,
+    },
+    'listAlbums'
+  );
+
+  if (!res.ok) {
+    const t = await res.text().catch(() => '');
+    throw new Error(`Immich list albums failed (${res.status}): ${t || res.statusText}`);
+  }
+
+  const data = (await res.json()) as unknown;
+  if (!Array.isArray(data)) {
+    throw new Error('Immich list albums: expected an array response');
+  }
+
+  return data
+    .map(mapImmichAlbumSummary)
+    .filter((album): album is ImmichAlbumSummary => album !== null);
+}
+
+/** Case-insensitive trim match on albumName. */
+export async function findImmichAlbumByName(
+  config: ImmichConfig,
+  name: string
+): Promise<ImmichAlbumSummary | null> {
+  const needle = name.trim().toLowerCase();
+  if (!needle) return null;
+
+  const albums = await listImmichAlbums(config);
+  return (
+    albums.find((album) => album.albumName.trim().toLowerCase() === needle) ?? null
+  );
+}
+
+/**
+ * PATCH /api/albums/:id with `{ albumName }`.
+ * Throws clearly on failure so callers can catch and ignore.
+ */
+export async function updateImmichAlbumName(
+  config: ImmichConfig,
+  albumId: string,
+  albumName: string
+): Promise<void> {
+  const id = albumId.trim();
+  if (!id) throw new Error('Immich update album name: missing album id');
+
+  const res = await immichFetch(
+    config,
+    `/api/albums/${encodeURIComponent(id)}`,
+    {
+      method: 'PATCH',
+      headers: {
+        'x-api-key': config.apiKey,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ albumName }),
+      timeoutMs: 30000,
+    },
+    'updateAlbumName'
+  );
+
+  if (!res.ok) {
+    const t = await res.text().catch(() => '');
+    throw new Error(
+      `Immich update album name failed (${res.status}): ${t || res.statusText}`
+    );
+  }
+}
+
 /** POST /api/albums — returns album id. */
 export async function createImmichAlbum(
   config: ImmichConfig,
@@ -238,16 +336,25 @@ export async function uploadToImmich(
   return { id: data.id };
 }
 
-// 3. ปรับปรุงตัวดึงรูปภาพย่อให้ระบุ Size ตามข้อกำหนด (thumbnail หรือ preview)
+export type ImmichAssetType = 'thumbnail' | 'preview' | 'original';
+
+/** GET Immich asset bytes: thumbnail / mid-size preview / original. */
 export async function fetchImmichAsset(
   config: ImmichConfig,
   assetId: string,
-  type: 'thumbnail' | 'original' = 'thumbnail'
+  type: ImmichAssetType = 'thumbnail'
 ): Promise<Response> {
   const path =
-    type === 'thumbnail'
-      ? `/api/assets/${assetId}/thumbnail?size=thumbnail`
-      : `/api/assets/${assetId}/original`;
+    type === 'original'
+      ? `/api/assets/${assetId}/original`
+      : `/api/assets/${assetId}/thumbnail?size=${type === 'preview' ? 'preview' : 'thumbnail'}`;
+
+  const operation =
+    type === 'original'
+      ? 'getOriginal'
+      : type === 'preview'
+        ? 'getPreview'
+        : 'getThumbnail';
 
   return immichFetch(
     config,
@@ -257,6 +364,6 @@ export async function fetchImmichAsset(
       headers: { 'x-api-key': config.apiKey },
       timeoutMs: 30000,
     },
-    type === 'thumbnail' ? 'getThumbnail' : 'getOriginal'
+    operation
   );
 }

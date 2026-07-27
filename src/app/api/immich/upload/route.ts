@@ -4,6 +4,7 @@ import {
   uploadToImmich,
   createImmichAlbum,
   addAssetsToImmichAlbum,
+  findImmichAlbumByName,
 } from '@/lib/immich/client';
 import { adminDb } from '@/lib/firebase-admin';
 import { photoDb } from '@/lib/photo-firebase-admin';
@@ -70,8 +71,8 @@ export async function POST(request: NextRequest) {
     // 📤 4. ยิงไฟล์ภาพขึ้นไปเซฟที่คอมบ้านผ่านท่อเวอร์ชันอัปเดตล่าสุด
     const result = await uploadToImmich(immich, buffer, filename, mimeType);
 
-    // 📁 5. ส่งค่าคอนฟิกตัวที่สวมลิงก์อัปเดตแล้วเข้าไปจัดแจงอัลบั้มต่อ
-    await assignToFinanceAlbum(session.uid, immich, tripId, result.id).catch((e) => {
+    // 📁 5. Assign asset to the user's single Immich album (non-fatal)
+    await assignToUserAlbum(session.uid, immich, result.id).catch((e) => {
       console.error('[Immich] album assignment failed (non-fatal):', e);
     });
 
@@ -87,38 +88,81 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// 🛠️ ฟังก์ชันจัดระเบียบอัลบั้ม (คงลอจิกเดิมของคุณไว้ทั้งหมด แต่ใช้งานผ่านท่อ baseUrl ใหม่ไร้สะดุด)
-async function assignToFinanceAlbum(
+function sanitizeAlbumName(raw: string): string {
+  return raw
+    .replace(/[\u0000-\u001F\u007F]/g, '')
+    .replace(/[\\/:*?"<>|]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 100);
+}
+
+function resolveUserAlbumName(data: Record<string, unknown> | undefined, uid: string): string {
+  const displayName = typeof data?.displayName === 'string' ? data.displayName.trim() : '';
+  if (displayName) {
+    const name = sanitizeAlbumName(displayName);
+    if (name) return name;
+  }
+
+  const email = typeof data?.email === 'string' ? data.email.trim() : '';
+  const localPart = email.includes('@') ? email.split('@')[0]! : email;
+  if (localPart) {
+    const name = sanitizeAlbumName(localPart);
+    if (name) return name;
+  }
+
+  return sanitizeAlbumName(`User ${uid.slice(0, 6)}`) || `User ${uid.slice(0, 6)}`;
+}
+
+/** Assign asset to the uploader's single Immich album (displayName). Trip albums are not used. */
+async function assignToUserAlbum(
   uid: string,
   immich: { baseUrl: string; apiKey: string },
-  tripId: string | null,
   assetId: string
 ): Promise<void> {
   if (!adminDb()) return;
 
-  if (tripId) {
-    const tripRef = adminDb().collection('trips').doc(tripId);
-    const snap = await tripRef.get();
-    const name = (snap.data()?.name as string)?.trim() || 'Trip';
-    let albumId = snap.data()?.immichAlbumId as string | undefined;
+  const userRef = adminDb().collection('users').doc(uid);
+  const usnap = await userRef.get();
+  const data = usnap.data() as Record<string, unknown> | undefined;
 
-    if (albumId) {
-      await addAssetsToImmichAlbum(immich, albumId, [assetId]);
-    } else {
-      const created = await createImmichAlbum(immich, `Finance · ${name}`, [assetId]);
-      await tripRef.update({ immichAlbumId: created.id });
+  const existingId =
+    (typeof data?.immichUserAlbumId === 'string' && data.immichUserAlbumId.trim()) ||
+    (typeof data?.immichGeneralAlbumId === 'string' && data.immichGeneralAlbumId.trim()) ||
+    '';
+
+  if (existingId) {
+    await addAssetsToImmichAlbum(immich, existingId, [assetId]);
+    // Backfill immichUserAlbumId when only the legacy field was present
+    if (data?.immichUserAlbumId !== existingId || data?.immichGeneralAlbumId !== existingId) {
+      await userRef.update({
+        immichUserAlbumId: existingId,
+        immichGeneralAlbumId: existingId,
+      });
     }
     return;
   }
 
-  const userRef = adminDb().collection('users').doc(uid);
-  const usnap = await userRef.get();
-  let albumId = usnap.data()?.immichGeneralAlbumId as string | undefined;
+  const albumName = resolveUserAlbumName(data, uid);
 
-  if (albumId) {
-    await addAssetsToImmichAlbum(immich, albumId, [assetId]);
-  } else {
-    const created = await createImmichAlbum(immich, 'Finance · ธุรกรรมทั่วไป', [assetId]);
-    await userRef.update({ immichGeneralAlbumId: created.id });
+  // Reuse an Immich album already named for this user (avoids duplicate albums)
+  const matched = await findImmichAlbumByName(immich, albumName).catch((e) => {
+    console.error('[Immich] find album by name failed (will create):', e);
+    return null;
+  });
+
+  if (matched) {
+    await addAssetsToImmichAlbum(immich, matched.id, [assetId]);
+    await userRef.update({
+      immichUserAlbumId: matched.id,
+      immichGeneralAlbumId: matched.id,
+    });
+    return;
   }
+
+  const created = await createImmichAlbum(immich, albumName, [assetId]);
+  await userRef.update({
+    immichUserAlbumId: created.id,
+    immichGeneralAlbumId: created.id,
+  });
 }

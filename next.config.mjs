@@ -12,7 +12,13 @@ const nextConfig = {
         permanent: true,
       },
       {
+        // Canonical home is Transactions at `/`
         source: '/transactions',
+        destination: '/',
+        permanent: true,
+      },
+      {
+        source: '/home',
         destination: '/',
         permanent: true,
       },

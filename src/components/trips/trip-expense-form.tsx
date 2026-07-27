@@ -52,7 +52,7 @@ interface TripExpenseFormV2Props {
   initialData?: TripExpense | null
   /** @deprecated use immich state from attachments; kept for compatibility */
   immichAssetId?: string | null
-  /** Trip id for Immich upload (album routing) */
+  /** Trip id for Immich upload auth/membership checks (not album routing) */
   tripId?: string
   pendingImmichAssetIds?: string[]
   onSubmit: (data: Omit<TripExpense, 'id' | 'createdAt' | 'userId' | 'tripId'>) => Promise<void>

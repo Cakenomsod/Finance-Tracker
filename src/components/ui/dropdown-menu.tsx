@@ -4,6 +4,7 @@ import * as React from 'react'
 import * as DropdownMenuPrimitive from '@radix-ui/react-dropdown-menu'
 import { CheckIcon, ChevronRightIcon, CircleIcon } from 'lucide-react'
 
+import { markNestedOverlayActivity } from '@/lib/nested-overlay-guard'
 import { cn } from '@/lib/utils'
 
 function DropdownMenu({
@@ -21,12 +22,17 @@ function DropdownMenuPortal({
 }
 
 function DropdownMenuTrigger({
+  onPointerDown,
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.Trigger>) {
   return (
     <DropdownMenuPrimitive.Trigger
       data-slot="dropdown-menu-trigger"
       {...props}
+      onPointerDown={(e) => {
+        markNestedOverlayActivity()
+        onPointerDown?.(e)
+      }}
     />
   )
 }

@@ -28,7 +28,12 @@ export interface UserProfile {
   aiInsightsWeekly?: boolean;
   /** Prefer monthly AI insights generation */
   aiInsightsMonthly?: boolean;
-  /** Immich album for non-trip receipt attachments */
+  /** Immich album for this user's receipt photos (one album per user) */
+  immichUserAlbumId?: string | null;
+  /**
+   * Legacy alias of immichUserAlbumId (same id). Kept for backward compatibility;
+   * new uploads prefer immichUserAlbumId and write both.
+   */
   immichGeneralAlbumId?: string | null;
   /** User-defined display order for friends & custom contacts (uid or custom:{id}) */
   contactOrder?: string[];
@@ -206,7 +211,10 @@ export interface Trip {
   homeCurrency?: TripCurrency;
   /** 1 tripCurrency = exchangeRate homeCurrency */
   exchangeRate?: number;
-  /** Shared Immich album for this trip's receipt photos */
+  /**
+   * Legacy Immich album id for this trip. Unused for new uploads
+   * (assets go to the uploader's per-user album instead).
+   */
   immichAlbumId?: string | null;
 }
 

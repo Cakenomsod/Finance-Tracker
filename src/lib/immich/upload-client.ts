@@ -1,6 +1,7 @@
 import { readApiJson } from '@/lib/api-json'
 import { compressImageForUpload } from '@/lib/immich/compress-image'
 
+/** Uploads to Immich; optional tripId is for membership auth only (album = user's displayName). */
 export async function uploadImmichImage(
   file: File,
   options?: { tripId?: string | null; compress?: boolean }

@@ -108,6 +108,13 @@ Tabs for progressive disclosure. Removed fake notifications / Compact Mode / fak
 | [insights.md](./impeccable-polish/insights.md) |
 | [line.md](./impeccable-polish/line.md) |
 | [settings.md](./impeccable-polish/settings.md) |
+| [immich-albums.md](./impeccable-polish/immich-albums.md) |
+
+---
+
+## Immich albums (2026-07-27)
+
+One Immich album per user (`displayName`); trips no longer get separate albums. See [immich-albums.md](./impeccable-polish/immich-albums.md).
 
 ---
 

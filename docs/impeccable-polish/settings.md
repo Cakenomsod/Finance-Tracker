@@ -65,3 +65,7 @@
 ## End-user scope (2026-07-27)
 
 Confirmed Settings shows no admin credential forms (webhook URL, channel secrets, Immich base URL / API key inputs). LINE card links to `/line` only; Immich / Local AI stay status text + Test buttons (credentials via env / Firestore, not this screen). Notifications keep only persisted AI Insights weekly/monthly toggles. Export / Delete remain disabled Coming soon. Softened LINE hint copy so it no longer mentions webhooks.
+
+## Immich status fix (2026-07-27)
+
+Immich readiness is **not** read from `users/{uid}.immich`. Backend uses Photo Firebase `system/tunnel_config.immich_url` + `IMMICH_API_KEY`. Settings now calls `GET /api/immich/status` via `useImmichStatus` so the UI matches upload/test routes.

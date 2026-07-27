@@ -4,6 +4,7 @@ import * as React from 'react'
 import * as SelectPrimitive from '@radix-ui/react-select'
 import { CheckIcon, ChevronDownIcon, ChevronUpIcon } from 'lucide-react'
 
+import { markNestedOverlayActivity } from '@/lib/nested-overlay-guard'
 import { cn } from '@/lib/utils'
 
 function Select({
@@ -28,6 +29,7 @@ function SelectTrigger({
   className,
   size = 'default',
   children,
+  onPointerDown,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Trigger> & {
   size?: 'sm' | 'default'
@@ -41,6 +43,10 @@ function SelectTrigger({
         className,
       )}
       {...props}
+      onPointerDown={(e) => {
+        markNestedOverlayActivity()
+        onPointerDown?.(e)
+      }}
     >
       {children}
       <SelectPrimitive.Icon asChild>

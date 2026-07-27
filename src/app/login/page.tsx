@@ -91,7 +91,11 @@ function LoginContent() {
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const from = searchParams.get('from') || '/';
+  const fromParam = searchParams.get('from')
+  const from =
+    fromParam && fromParam !== '/login' && fromParam.startsWith('/')
+      ? fromParam
+      : '/'
 
   useEffect(() => {
     if (user && !loading) {
@@ -145,7 +149,7 @@ function LoginContent() {
           ) : null}
 
           <p className="text-center text-sm text-muted-foreground text-pretty">
-            Sign in to open your dashboard and keep your numbers straight.
+            Sign in to open Transactions and keep your numbers straight.
           </p>
 
           <Button
