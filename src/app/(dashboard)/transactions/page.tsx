@@ -76,6 +76,7 @@ import { TransactionEmptyState } from '@/components/transactions/transaction-emp
 import { TransactionTableSkeleton } from '@/components/transactions/transaction-list-skeleton'
 import { TransactionDetailDialog } from '@/components/transactions/transaction-detail-dialog'
 import { TripExpenseDialog } from '@/components/trips/trip-expense-dialog'
+import { RecurringDueCard } from '@/components/dashboard/recurring-due-card'
 import { useTrips } from '@/hooks/use-trips'
 import { Transaction, TripExpense } from '@/lib/firestore-types'
 import {
@@ -413,6 +414,8 @@ export default function TransactionsPage() {
           ดูและจัดการรายการเงินทั้งหมดของคุณ
         </p>
       </div>
+
+      <RecurringDueCard />
 
       <TransactionAiPanel
         ref={transactionAiPanelRef}

@@ -87,7 +87,7 @@ export function useRecurringExpenses() {
 
       await createTransaction({
         userId: user.uid,
-        amount: expense.amount,
+        amount: -Math.abs(expense.amount),
         type: 'expense',
         category: expense.category || 'Other',
         description: expense.name,
