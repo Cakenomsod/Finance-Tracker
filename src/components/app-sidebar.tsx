@@ -17,6 +17,7 @@ import {
   ChevronDown,
   UserPlus2,
   Bell,
+  Landmark,
 } from 'lucide-react'
 
 import {
@@ -55,6 +56,7 @@ import { Badge } from '@/components/ui/badge'
 
 const mainNavItems = [
   { title: 'Transactions', icon: Receipt, href: '/' },
+  { title: 'Accounts', icon: Landmark, href: '/accounts' },
   { title: 'Debts & Shared', icon: Users, href: '/debts' },
   { title: 'Trip Mode', icon: Plane, href: '/trips' },
   { title: 'Friends', icon: UserPlus2, href: '/friends' },

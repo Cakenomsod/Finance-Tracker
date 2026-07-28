@@ -1,5 +1,6 @@
 'use client'
 
+import type * as React from 'react'
 import { TrendingUp, TrendingDown } from 'lucide-react'
 
 import { Card, CardContent } from '@/components/ui/card'
@@ -84,6 +85,7 @@ export function MonthlySummaryCard({
   expenseChange,
   savingsChange,
   currency,
+  balanceFilterSlot,
 }: {
   monthKey: string
   monthDirection: MonthDirection
@@ -95,6 +97,7 @@ export function MonthlySummaryCard({
   expenseChange: ReturnType<typeof computePercentChange>
   savingsChange: ReturnType<typeof computePercentChange>
   currency: string
+  balanceFilterSlot?: React.ReactNode
 }) {
   return (
     <MonthContentTransition monthKey={monthKey} direction={monthDirection}>
@@ -137,6 +140,7 @@ export function MonthlySummaryCard({
               />
               <span className="text-xs text-muted-foreground">vs last month</span>
             </div>
+            {balanceFilterSlot ? <div className="pt-2">{balanceFilterSlot}</div> : null}
           </div>
 
           <div

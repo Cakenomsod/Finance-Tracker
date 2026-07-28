@@ -18,6 +18,7 @@ import { db } from './firebase';
 import {
   Transaction, Debt, Trip, Category, RecurringExpense,
   TripExpense, TripSettlement, FriendRequest, CustomFriend,
+  PaymentSource, MoneyPool,
 } from './firestore-types';
 
 // Collection References
@@ -27,6 +28,8 @@ export const debtsRef = collection(db, 'debts');
 export const tripsRef = collection(db, 'trips');
 export const categoriesRef = collection(db, 'categories');
 export const recurringExpensesRef = collection(db, 'recurring_expenses');
+export const paymentSourcesRef = collection(db, 'payment_sources');
+export const moneyPoolsRef = collection(db, 'money_pools');
 export const tripExpensesRef = collection(db, 'trip_expenses');
 export const tripSettlementsRef = collection(db, 'trip_settlements');
 export const friendRequestsRef = collection(db, 'friend_requests');
@@ -280,4 +283,60 @@ export const updateRecurringExpense = async (
 
 export const deleteRecurringExpense = async (id: string) => {
   return await deleteDoc(doc(db, 'recurring_expenses', id));
+};
+
+// --- Payment Sources ---
+
+export const createPaymentSource = async (data: Omit<PaymentSource, 'id' | 'createdAt'>) => {
+  return await addDoc(paymentSourcesRef, stripUndefined({ ...data, createdAt: serverTimestamp() }));
+};
+
+export const updatePaymentSource = async (
+  id: string,
+  data: Partial<Omit<PaymentSource, 'id' | 'createdAt' | 'userId'>>
+) => {
+  const payload: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (value === undefined) continue;
+    payload[key] = value === null ? deleteField() : value;
+  }
+  return await updateDoc(doc(db, 'payment_sources', id), payload);
+};
+
+export const deletePaymentSource = async (id: string) => {
+  return await deleteDoc(doc(db, 'payment_sources', id));
+};
+
+export const clearDefaultPaymentSources = async (userId: string, exceptId?: string) => {
+  const q = query(paymentSourcesRef, where('userId', '==', userId), where('isDefault', '==', true));
+  const snapshot = await getDocs(q);
+  await Promise.all(
+    snapshot.docs
+      .filter((d) => d.id !== exceptId)
+      .map((d) => updateDoc(d.ref, { isDefault: false }))
+  );
+};
+
+// --- Money Pools ---
+
+export const createMoneyPool = async (data: Omit<MoneyPool, 'id' | 'createdAt'>) => {
+  return await addDoc(moneyPoolsRef, stripUndefined({ ...data, createdAt: serverTimestamp() }));
+};
+
+export const updateMoneyPool = async (
+  id: string,
+  data: Partial<Omit<MoneyPool, 'id' | 'createdAt' | 'userId' | 'targetAmount'>> & {
+    targetAmount?: number | null;
+  }
+) => {
+  const payload: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (value === undefined) continue;
+    payload[key] = value === null ? deleteField() : value;
+  }
+  return await updateDoc(doc(db, 'money_pools', id), payload);
+};
+
+export const deleteMoneyPool = async (id: string) => {
+  return await deleteDoc(doc(db, 'money_pools', id));
 };

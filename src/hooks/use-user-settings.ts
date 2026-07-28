@@ -105,6 +105,17 @@ export function useUserSettings() {
     [user]
   );
 
+  const saveMoneyFeatures = useCallback(
+    async (settings: { accountsEnabled?: boolean; moneyPoolsEnabled?: boolean }) => {
+      if (!user) throw new Error('Not logged in');
+      await updateDoc(doc(db, 'users', user.uid), {
+        ...settings,
+        updatedAt: serverTimestamp(),
+      });
+    },
+    [user]
+  );
+
   return {
     profile,
     loading,
@@ -115,9 +126,12 @@ export function useUserSettings() {
     localAiBaseUrl: profile?.localAiBaseUrl,
     aiInsightsWeekly: profile?.aiInsightsWeekly === true,
     aiInsightsMonthly: profile?.aiInsightsMonthly === true,
+    accountsEnabled: profile?.accountsEnabled === true,
+    moneyPoolsEnabled: profile?.moneyPoolsEnabled === true,
     saveImmichSettings,
     saveAiSettings,
     saveAiInsightsSettings,
+    saveMoneyFeatures,
     saveProfile,
     saveCurrency,
     saveLocale,

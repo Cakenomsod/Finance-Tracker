@@ -36,6 +36,9 @@ export async function createDebtSettlementTransaction(
     debtId?: string;
     note?: string;
     date?: Timestamp;
+    /** Payment source used when settling (payer) or receiving into (receiver) */
+    accountId?: string;
+    moneyPoolId?: string;
   }
 ) {
   // Lazy-load client Firestore helpers so server API routes can import pure
@@ -50,6 +53,8 @@ export async function createDebtSettlementTransaction(
     debtId,
     note,
     date = Timestamp.now(),
+    accountId,
+    moneyPoolId,
   } = params;
 
   const absAmount = Math.abs(amount);
@@ -72,6 +77,8 @@ export async function createDebtSettlementTransaction(
       debtTracking: false,
       note,
       currency: 'THB',
+      accountId: accountId || undefined,
+      moneyPoolId: moneyPoolId || undefined,
     });
   }
 
@@ -91,6 +98,8 @@ export async function createDebtSettlementTransaction(
     debtTracking: false,
     note,
     currency: 'THB',
+    accountId: accountId || undefined,
+    moneyPoolId: moneyPoolId || undefined,
   });
 }
 
@@ -101,7 +110,12 @@ export async function recordDebtSettlementCashFlow(
     'id' | 'fromUserId' | 'toUserId' | 'fromDisplayName' | 'toDisplayName'
   >,
   payAmount: number,
-  options?: { note?: string; date?: Timestamp }
+  options?: {
+    note?: string;
+    date?: Timestamp;
+    accountId?: string;
+    moneyPoolId?: string;
+  }
 ) {
   const isPayer = debt.fromUserId === userId;
   const isReceiver = debt.toUserId === userId;
@@ -118,5 +132,7 @@ export async function recordDebtSettlementCashFlow(
     debtId: debt.id,
     note: options?.note,
     date: options?.date,
+    accountId: options?.accountId,
+    moneyPoolId: options?.moneyPoolId,
   });
 }

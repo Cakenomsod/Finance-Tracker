@@ -28,6 +28,12 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { PaymentSourceSelect } from '@/components/accounts/payment-source-select'
+import { MoneyPoolSelect } from '@/components/accounts/money-pool-select'
+import { useUserSettings } from '@/hooks/use-user-settings'
+import { usePaymentSources } from '@/hooks/use-payment-sources'
+import { useMoneyPools } from '@/hooks/use-money-pools'
+import { useLocale } from '@/components/locale-provider'
 import {
   Select,
   SelectContent,
@@ -563,6 +569,10 @@ export default function DebtsPage() {
   const { tripDebts, tripBalanceData, loading: tripLoading } = useTripDebts()
   const { settlements: paymentSettlements, loading: settlementsLoading, removeSettlement } = useTripSettlements()
   const { transactions, editTransaction, removeTransaction } = useTransactions()
+  const { accountsEnabled, moneyPoolsEnabled } = useUserSettings()
+  const { activeSources, defaultSource } = usePaymentSources()
+  const { activePools } = useMoneyPools()
+  const { t } = useLocale()
 
   const txById = React.useMemo(() => {
     const map = new Map<string, Transaction>()
@@ -580,6 +590,8 @@ export default function DebtsPage() {
   const [settleDebtData, setSettleDebtData] = React.useState<UIGlobalDebt | null>(null)
   const [isSettleOpen, setIsSettleOpen] = React.useState(false)
   const [settleAmount, setSettleAmount] = React.useState<string>('')
+  const [settleAccountId, setSettleAccountId] = React.useState('')
+  const [settleMoneyPoolId, setSettleMoneyPoolId] = React.useState('')
   const [isSettling, setIsSettling] = React.useState(false)
   const [deletingPaymentId, setDeletingPaymentId] = React.useState<string | null>(null)
   const [editingTransaction, setEditingTransaction] = React.useState<Transaction | null>(null)
@@ -720,8 +732,18 @@ export default function DebtsPage() {
     if (!debt) return
     setSettleDebtData(debt)
     setSettleAmount(debt.amount.toString())
+    setSettleAccountId(defaultSource?.id ?? '')
+    setSettleMoneyPoolId('')
     setIsSettleOpen(true)
   }
+
+  const settleCashOptions = React.useMemo(
+    () => ({
+      accountId: accountsEnabled && settleAccountId ? settleAccountId : undefined,
+      moneyPoolId: moneyPoolsEnabled && settleMoneyPoolId ? settleMoneyPoolId : undefined,
+    }),
+    [accountsEnabled, moneyPoolsEnabled, settleAccountId, settleMoneyPoolId]
+  )
 
   const handleConfirmSettle = async () => {
     if (!settleDebtData || isSettling) return
@@ -777,9 +799,11 @@ export default function DebtsPage() {
           debtId: settleDebtData.id,
           note: 'trip-debt',
           date: Timestamp.now(),
+          accountId: settleCashOptions.accountId,
+          moneyPoolId: settleCashOptions.moneyPoolId,
         })
       } else {
-        await settleDebt(settleDebtData.id!, payAmount)
+        await settleDebt(settleDebtData.id!, payAmount, settleCashOptions)
       }
 
       const isPartial = payAmount < settleDebtData.amount - 0.001
@@ -1306,7 +1330,11 @@ export default function DebtsPage() {
         open={isSettleOpen}
         onOpenChange={(open) => {
           setIsSettleOpen(open)
-          if (!open) setSettleDebtData(null)
+          if (!open) {
+            setSettleDebtData(null)
+            setSettleAccountId('')
+            setSettleMoneyPoolId('')
+          }
         }}
       >
         <DialogContent>
@@ -1374,6 +1402,37 @@ export default function DebtsPage() {
                   )}
                 </p>
               </div>
+              {(accountsEnabled || moneyPoolsEnabled) && (
+                <div className="space-y-3 rounded-lg border border-dashed p-3">
+                  <p className="text-xs text-muted-foreground text-pretty">
+                    {settleIsPayer ? t('accounts.settlePayFrom') : t('accounts.settleReceiveTo')}
+                  </p>
+                  {accountsEnabled && activeSources.length > 0 && (
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">
+                        {settleIsPayer ? t('accounts.fromAccount') : t('accounts.toAccount')}
+                      </Label>
+                      <PaymentSourceSelect
+                        sources={activeSources}
+                        value={settleAccountId}
+                        onChange={setSettleAccountId}
+                        allowNone
+                      />
+                    </div>
+                  )}
+                  {moneyPoolsEnabled && activePools.length > 0 && (
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">{t('accounts.selectPool')}</Label>
+                      <MoneyPoolSelect
+                        pools={activePools}
+                        value={settleMoneyPoolId}
+                        onChange={setSettleMoneyPoolId}
+                        allowNone
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="flex flex-wrap gap-2">
                 <Button
                   type="button"

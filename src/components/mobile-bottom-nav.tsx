@@ -14,6 +14,7 @@ import {
   MessageCircle,
   Settings,
   UserPlus2,
+  Landmark,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useQuickAdd } from '@/components/quick-add-context'
@@ -34,6 +35,7 @@ const primaryNav = [
 ]
 
 const moreNav = [
+  { title: 'Accounts', icon: Landmark, href: '/accounts' },
   { title: 'Friends', icon: UserPlus2, href: '/friends', badge: 'friends' as const },
   { title: 'Dashboard', icon: LayoutDashboard, href: '/dashboard' },
   { title: 'AI Insights', icon: Sparkles, href: '/insights' },

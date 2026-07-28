@@ -62,17 +62,42 @@ import {
 } from '@/lib/datetime'
 import { useCategories } from '@/hooks/use-categories'
 import { usePaotangUsage } from '@/hooks/use-paotang-usage'
+import { useUserSettings } from '@/hooks/use-user-settings'
+import { usePaymentSources } from '@/hooks/use-payment-sources'
+import { useMoneyPools } from '@/hooks/use-money-pools'
+import { PaymentSourceSelect } from '@/components/accounts/payment-source-select'
+import { MoneyPoolSelect } from '@/components/accounts/money-pool-select'
+import { useLocale } from '@/components/locale-provider'
 
-const formSchema = z.object({
-  amount: z.string().min(1, 'Amount is required'),
-  type: z.enum(['income', 'expense']),
-  category: z.string().min(1, 'Please select a category'),
-  description: z.string().min(1, 'Description is required'),
-  date: z.string(),
-  time: z.string().min(1, 'Time is required'),
-  paidBy: z.string().optional(),
-  tripId: z.string().optional(),
-})
+const formSchema = z
+  .object({
+    amount: z.string().min(1, 'Amount is required'),
+    type: z.enum(['income', 'expense', 'transfer']),
+    category: z.string(),
+    description: z.string(),
+    date: z.string(),
+    time: z.string().min(1, 'Time is required'),
+    paidBy: z.string().optional(),
+    tripId: z.string().optional(),
+  })
+  .superRefine((values, ctx) => {
+    if (values.type !== 'transfer') {
+      if (!values.category.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Please select a category',
+          path: ['category'],
+        })
+      }
+      if (!values.description.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Description is required',
+          path: ['description'],
+        })
+      }
+    }
+  })
 
 type TransactionFormValues = z.infer<typeof formSchema>
 
@@ -98,6 +123,21 @@ export function TransactionForm({
   const [isSubmitting, setIsSubmitting] = React.useState(false)
   const { activeTrips } = useTrips()
   const { categories, expenseCategories, incomeCategories, loading: categoriesLoading } = useCategories()
+  const { accountsEnabled, moneyPoolsEnabled } = useUserSettings()
+  const { activeSources, defaultSource } = usePaymentSources()
+  const { activePools } = useMoneyPools()
+  const { t } = useLocale()
+
+  const [accountId, setAccountId] = React.useState(initialData?.accountId ?? '')
+  const [moneyPoolId, setMoneyPoolId] = React.useState(initialData?.moneyPoolId ?? '')
+  const [transferToAccountId, setTransferToAccountId] = React.useState(initialData?.transferToAccountId ?? '')
+  const [transferToPoolId, setTransferToPoolId] = React.useState(initialData?.transferToPoolId ?? '')
+
+  React.useEffect(() => {
+    if (!accountId && defaultSource?.id && accountsEnabled) {
+      setAccountId(defaultSource.id)
+    }
+  }, [accountId, defaultSource?.id, accountsEnabled])
 
   const expenseCategoryNames = React.useMemo(
     () => expenseCategories.map((c) => c.name),
@@ -188,6 +228,7 @@ export function TransactionForm({
   const selectedCategory = form.watch('category')
   const selectedTripId = form.watch('tripId')
   const isIncome = txType === 'income'
+  const isTransfer = txType === 'transfer'
 
   React.useEffect(() => {
     if (categoriesLoading || initialData?.category) return
@@ -290,6 +331,25 @@ export function TransactionForm({
   const watchedTime = form.watch('time')
   const watchedPaidBy = form.watch('paidBy')
 
+  /** Cash leaves my pocket now — otherwise pick account/pool when settling on Debts. */
+  const showPaymentSourceFields = React.useMemo(() => {
+    if (isIncome || isTransfer) return true
+    if (paymentMethod === 'paotang' && paotangPayerMode === 'other') return false
+    if (splitEnabled) {
+      if (!splitData) return false
+      return splitData.payers.some((p) => p.userId === 'Me' && (p.amount ?? 0) > 0)
+    }
+    return !watchedPaidBy || watchedPaidBy === 'Me'
+  }, [
+    isIncome,
+    isTransfer,
+    paymentMethod,
+    paotangPayerMode,
+    splitEnabled,
+    splitData,
+    watchedPaidBy,
+  ])
+
   const totalForPayment = isReceiptMode
     ? receiptNet
     : parseFloat(watchedAmount) || 0
@@ -332,6 +392,41 @@ export function TransactionForm({
   const handleSubmit = async (values: TransactionFormValues) => {
     setIsSubmitting(true)
     try {
+      if (isTransfer) {
+        const rawAmount = parseFloat(values.amount) || 0
+        if (isNaN(rawAmount) || rawAmount <= 0) {
+          form.setError('amount', { message: 'Amount must be a positive number' })
+          return
+        }
+        const hasAccountTransfer = accountId && transferToAccountId && accountId !== transferToAccountId
+        const hasPoolTransfer = moneyPoolId && transferToPoolId && moneyPoolId !== transferToPoolId
+        const hasAccountToPool = accountId && transferToPoolId && !transferToAccountId
+        const hasPoolToAccount = moneyPoolId && transferToAccountId && !transferToAccountId
+        if (!hasAccountTransfer && !hasPoolTransfer && !hasAccountToPool && !hasPoolToAccount) {
+          form.setError('amount', { message: t('accounts.transferDesc') })
+          return
+        }
+        await onSubmit({
+          amount: rawAmount,
+          type: 'transfer',
+          category: 'Transfer',
+          description: values.description || t('accounts.transfer'),
+          date: Timestamp.fromDate(parseLocalDateTime(values.date, values.time)),
+          paidBy: 'Me',
+          splitWith: null,
+          tripId: null,
+          receiptUrl: null,
+          source: initialData?.source || 'manual',
+          currency: 'THB',
+          note: note.trim() || undefined,
+          accountId: accountId || undefined,
+          moneyPoolId: moneyPoolId || undefined,
+          transferToAccountId: transferToAccountId || undefined,
+          transferToPoolId: transferToPoolId || undefined,
+        })
+        return
+      }
+
       const disc = isIncome ? 0 : (parseFloat(discount) || 0)
       let rawAmount: number
       if (isReceiptMode) {
@@ -424,6 +519,10 @@ export function TransactionForm({
         currency: 'THB',
         note: note.trim() || undefined,
         debtTracking: !isIncome ? debtTracking : undefined,
+        accountId:
+          accountsEnabled && showPaymentSourceFields && accountId ? accountId : undefined,
+        moneyPoolId:
+          moneyPoolsEnabled && showPaymentSourceFields && moneyPoolId ? moneyPoolId : undefined,
       }
 
       if (uniqueAttachmentIds.length) {
@@ -508,7 +607,7 @@ export function TransactionForm({
               : 'attachments:transaction:new'
           }
         />
-        {/* Input Mode Selector */}
+        {!isTransfer && (
         <div className="flex gap-1 p-1 bg-muted rounded-lg">
           <button
             type="button"
@@ -531,6 +630,7 @@ export function TransactionForm({
             🧾 Receipt Input
           </button>
         </div>
+        )}
 
         <div className="grid grid-cols-2 gap-3">
           <FormField
@@ -542,7 +642,9 @@ export function TransactionForm({
                 <Select
                   onValueChange={(val) => {
                     field.onChange(val)
-                    if (val === 'expense' && incomeNameSet.has(form.getValues('category'))) {
+                    if (val === 'transfer') {
+                      form.setValue('category', 'Transfer')
+                    } else if (val === 'expense' && incomeNameSet.has(form.getValues('category'))) {
                       const fallback = expenseCategoryNames[0]
                       if (fallback) form.setValue('category', fallback)
                     }
@@ -557,6 +659,9 @@ export function TransactionForm({
                   <SelectContent>
                     <SelectItem value="expense">Expense</SelectItem>
                     <SelectItem value="income">Income</SelectItem>
+                    {(accountsEnabled || moneyPoolsEnabled) && (
+                      <SelectItem value="transfer">{t('accounts.transfer')}</SelectItem>
+                    )}
                   </SelectContent>
                 </Select>
                 <FormMessage />
@@ -568,7 +673,7 @@ export function TransactionForm({
             control={form.control}
             name="category"
             render={({ field }) => (
-              <FormItem>
+              <FormItem className={isTransfer ? 'hidden' : undefined}>
                 <FormLabel className="text-xs sm:text-sm">Category</FormLabel>
                 <Select
                   onValueChange={field.onChange}
@@ -597,6 +702,63 @@ export function TransactionForm({
           />
         </div>
 
+        {isTransfer ? (
+          <div className="space-y-3 rounded-lg border border-dashed p-3">
+            <p className="text-xs text-muted-foreground">{t('accounts.transferDesc')}</p>
+            {accountsEnabled && (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">{t('accounts.fromAccount')}</Label>
+                  <PaymentSourceSelect sources={activeSources} value={accountId} onChange={setAccountId} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">{t('accounts.toAccount')}</Label>
+                  <PaymentSourceSelect sources={activeSources} value={transferToAccountId} onChange={setTransferToAccountId} />
+                </div>
+              </div>
+            )}
+            {moneyPoolsEnabled && (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">{t('accounts.fromPool')}</Label>
+                  <MoneyPoolSelect pools={activePools} value={moneyPoolId} onChange={setMoneyPoolId} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">{t('accounts.toPool')}</Label>
+                  <MoneyPoolSelect pools={activePools} value={transferToPoolId} onChange={setTransferToPoolId} />
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <>
+            {showPaymentSourceFields && accountsEnabled && activeSources.length > 0 && (
+              <div className="space-y-1.5">
+                <Label className="text-xs sm:text-sm">
+                  {isIncome ? t('accounts.toAccount') : t('accounts.fromAccount')}
+                </Label>
+                <PaymentSourceSelect
+                  sources={activeSources}
+                  value={accountId}
+                  onChange={setAccountId}
+                  allowNone
+                />
+              </div>
+            )}
+            {showPaymentSourceFields && moneyPoolsEnabled && activePools.length > 0 && (
+              <div className="space-y-1.5">
+                <Label className="text-xs sm:text-sm">{t('accounts.selectPool')}</Label>
+                <MoneyPoolSelect pools={activePools} value={moneyPoolId} onChange={setMoneyPoolId} allowNone />
+              </div>
+            )}
+            {!showPaymentSourceFields && (accountsEnabled || moneyPoolsEnabled) && (
+              <p className="text-xs text-muted-foreground text-pretty rounded-lg border border-dashed px-3 py-2">
+                {t('accounts.deferToDebts')}
+              </p>
+            )}
+          </>
+        )}
+
         <FormField
           control={form.control}
           name="description"
@@ -605,7 +767,11 @@ export function TransactionForm({
               <FormLabel className="text-xs sm:text-sm">Description</FormLabel>
               <FormControl>
                 <Textarea
-                  placeholder="Enter details about this transaction"
+                  placeholder={
+                    isTransfer
+                      ? t('accounts.transfer')
+                      : 'Enter details about this transaction'
+                  }
                   className="min-h-[4.5rem] resize-none text-sm"
                   {...field}
                 />
@@ -615,7 +781,7 @@ export function TransactionForm({
           )}
         />
 
-        {inputMode === 'receipt' && (
+        {!isTransfer && inputMode === 'receipt' && (
           <div className="space-y-3 rounded-lg border bg-muted/20 p-3">
             <div className="flex items-center justify-between gap-2">
               <h4 className="text-xs font-medium text-muted-foreground">รายการสินค้า</h4>
@@ -771,9 +937,9 @@ export function TransactionForm({
           <div className="space-y-3 rounded-lg border bg-muted/20 p-3">
             <div className={cn(
               'grid gap-3',
-              !isIncome ? 'grid-cols-2' : 'grid-cols-1'
+              !isIncome && !isTransfer ? 'grid-cols-2' : 'grid-cols-1'
             )}>
-              {!isIncome && (
+              {!isIncome && !isTransfer && (
                 <div className="space-y-1.5">
                   <Label className="text-xs">ส่วนลด (฿)</Label>
                   <Input
@@ -822,7 +988,7 @@ export function TransactionForm({
           </div>
         )}
 
-        {!isIncome && (
+        {!isIncome && !isTransfer && (
           <div className="space-y-2 rounded-lg border bg-muted/20 p-3">
             <div className="space-y-1.5">
               <Label className="text-xs sm:text-sm">วิธีชำระเงิน</Label>
@@ -1069,7 +1235,7 @@ export function TransactionForm({
           </div>
         )}
 
-        {isIncome ? (
+        {isTransfer ? null : isIncome ? (
           <FormField
             control={form.control}
             name="paidBy"

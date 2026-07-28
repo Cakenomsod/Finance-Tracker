@@ -56,7 +56,21 @@ export interface TransactionSplitSectionProps {
 type PayerRow = { personId: string; displayName: string; amount: string }
 
 function contactPersonId(c: Contact): string {
-  return c.isSelf ? ME_PERSON_ID : c.displayName
+  return c.isSelf ? ME_PERSON_ID : c.key
+}
+
+function resolveMemberPersonId(
+  userId: string,
+  displayName: string,
+  members: SplitMember[]
+): string {
+  if (userId === ME_PERSON_ID || userId === 'Me') return ME_PERSON_ID
+  if (members.some((m) => m.personId === userId)) return userId
+  const byName = members.find(
+    (m) => m.displayName === userId || m.displayName === displayName
+  )
+  if (byName) return byName.personId
+  return userId
 }
 
 export function TransactionSplitSection({
@@ -76,15 +90,34 @@ export function TransactionSplitSection({
   const { contacts, loading: friendsLoading } = useFriends()
 
   const contactKey = contacts.map((c) => `${c.key}:${c.displayName}`).join('|')
-  const membersFromFriends = React.useMemo(
-    () =>
-      contacts.map((c) => ({
-        personId: contactPersonId(c),
-        displayName: c.displayName,
-      })),
-    [contactKey]
-  )
-  const members = membersProp ?? membersFromFriends
+  const membersFromFriends = React.useMemo(() => {
+    const seen = new Set<string>()
+    const list: SplitMember[] = []
+    for (const c of contacts) {
+      const personId = contactPersonId(c)
+      if (seen.has(personId)) continue
+      seen.add(personId)
+      list.push({ personId, displayName: c.displayName })
+    }
+    return list
+  }, [contactKey])
+
+  const members = React.useMemo(() => {
+    const base = membersProp ?? membersFromFriends
+    const byId = new Map(base.map((m) => [m.personId, m]))
+    const addOrphan = (userId: string, displayName: string) => {
+      const resolved = resolveMemberPersonId(userId, displayName, base)
+      if (byId.has(resolved)) return
+      byId.set(resolved, {
+        personId: resolved,
+        displayName: displayName || userId,
+      })
+    }
+    for (const p of initialPayers ?? []) addOrphan(p.userId, p.displayName)
+    for (const s of initialShares ?? []) addOrphan(s.userId, s.displayName)
+    return Array.from(byId.values())
+  }, [membersProp, membersFromFriends, initialPayers, initialShares])
+
   const loading = membersProp ? false : friendsLoading
 
   const [splitMode, setSplitMode] = React.useState<TransactionSplitMode>(
@@ -94,7 +127,15 @@ export function TransactionSplitSection({
   const [payers, setPayers] = React.useState<PayerRow[]>(() => {
     if (initialPayers?.length) {
       return initialPayers.map((p) => ({
-        personId: p.userId,
+        personId: resolveMemberPersonId(
+          p.userId,
+          p.displayName,
+          membersProp ??
+            contacts.map((c) => ({
+              personId: contactPersonId(c),
+              displayName: c.displayName,
+            }))
+        ),
         displayName: p.displayName,
         amount: String(p.amount),
       }))
@@ -103,18 +144,39 @@ export function TransactionSplitSection({
   })
 
   const [equalIncluded, setEqualIncluded] = React.useState<Set<string>>(() => {
+    const memberList =
+      membersProp ??
+      contacts.map((c) => ({
+        personId: contactPersonId(c),
+        displayName: c.displayName,
+      }))
     if (initialShares?.length && (initialSplitMode === 'equal' || !initialSplitMode)) {
-      return new Set(initialShares.map((s) => s.userId))
+      return new Set(
+        initialShares.map((s) => resolveMemberPersonId(s.userId, s.displayName, memberList))
+      )
     }
     if (initialPayers?.length) {
-      return new Set(initialPayers.map((p) => p.userId))
+      return new Set(
+        initialPayers.map((p) => resolveMemberPersonId(p.userId, p.displayName, memberList))
+      )
     }
     return new Set([ME_PERSON_ID])
   })
 
   const [customShares, setCustomShares] = React.useState<Record<string, string>>(() => {
     if (initialShares?.length && initialSplitMode === 'custom') {
-      return Object.fromEntries(initialShares.map((s) => [s.userId, String(s.amount)]))
+      const memberList =
+        membersProp ??
+        contacts.map((c) => ({
+          personId: contactPersonId(c),
+          displayName: c.displayName,
+        }))
+      return Object.fromEntries(
+        initialShares.map((s) => [
+          resolveMemberPersonId(s.userId, s.displayName, memberList),
+          String(s.amount),
+        ])
+      )
     }
     return {}
   })

@@ -587,7 +587,7 @@ export default function TransactionsPage() {
                     {cumulativeBalance >= 0 ? '' : '-'}฿
                     {Math.abs(cumulativeBalance).toLocaleString()}
                   </MonthAnimatedValue>
-                  <p className="text-[11px] leading-tight text-muted-foreground">สะสมถึงสิ้นเดือนนี้</p>
+                  <p className="text-[11px] leading-tight text-muted-foreground">สะสมถึงสิ้นเดือนนี้ · จากทุกรายการ</p>
                 </div>
               </div>
             </CardContent>

@@ -35,15 +35,27 @@ export function ContactSelect({
   const { contacts, loading } = useFriends()
 
   const options = contacts.filter(c => includeMe || !c.isSelf)
+  const knownKeys = new Set(options.map(c => c.key))
   const knownNames = new Set(options.map(c => c.displayName))
   const extraOptions =
-    value && !knownNames.has(value) && value !== 'Me'
+    value && !knownNames.has(value) && value !== 'Me' && !knownKeys.has(value)
       ? [{ key: `legacy:${value}`, displayName: value }]
       : []
-  const allOptions = [...options, ...extraOptions]
+  const allOptions = React.useMemo(() => {
+    const seen = new Set<string>()
+    const list: Array<{ key: string; displayName: string; isSelf?: boolean; isCustom?: boolean }> = []
+    for (const c of [...options, ...extraOptions]) {
+      if (seen.has(c.key)) continue
+      seen.add(c.key)
+      list.push(c)
+    }
+    return list
+  }, [options, extraOptions])
 
   const resolveSelectKey = (name: string): string => {
     if (allowNone && !name) return NONE_VALUE
+    const byKey = allOptions.find(c => c.key === name)
+    if (byKey) return byKey.key
     const match = allOptions.find(c => c.displayName === name)
     if (match) return match.key
     if (name === 'Me') return 'me'

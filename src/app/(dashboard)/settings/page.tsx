@@ -2,6 +2,8 @@
 
 import * as React from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
+import { Suspense } from 'react'
 import {
   Bell,
   Palette,
@@ -31,6 +33,8 @@ import { useLocale } from '@/components/locale-provider'
 import { ProfileSettings } from '@/components/settings/profile-settings'
 import { CategoriesSettings } from '@/components/settings/categories-settings'
 import { RecurringExpensesSettings } from '@/components/settings/recurring-expenses-settings'
+import { PaymentSourcesSettings } from '@/components/settings/payment-sources-settings'
+import { MoneyPoolsSettings } from '@/components/settings/money-pools-settings'
 import { toast } from 'sonner'
 
 import { auth } from '@/lib/firebase'
@@ -73,7 +77,29 @@ function SettingToggleRow({
 }
 
 export default function SettingsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex flex-col gap-6 p-4 sm:p-6 max-w-3xl mx-auto w-full">
+          <div className="h-8 w-40 animate-pulse rounded-md bg-muted" />
+          <div className="h-10 w-full max-w-md animate-pulse rounded-md bg-muted" />
+          <div className="h-48 w-full animate-pulse rounded-xl bg-muted" />
+        </div>
+      }
+    >
+      <SettingsPageInner />
+    </Suspense>
+  )
+}
+
+function SettingsPageInner() {
   const { theme, setTheme, resolvedTheme } = useTheme()
+  const searchParams = useSearchParams()
+  const tabParam = searchParams.get('tab')
+  const initialTab =
+    tabParam === 'money' || tabParam === 'preferences' || tabParam === 'data' || tabParam === 'account'
+      ? tabParam
+      : 'account'
   const {
     aiInsightsWeekly,
     aiInsightsMonthly,
@@ -170,7 +196,7 @@ export default function SettingsPage() {
         </p>
       </header>
 
-      <Tabs defaultValue="account" className="gap-6">
+      <Tabs defaultValue={initialTab} className="gap-6">
         <TabsList
           className="h-auto w-full flex-wrap justify-start gap-1 bg-muted p-1 sm:w-fit"
           aria-label={t('settings.title')}
@@ -213,6 +239,8 @@ export default function SettingsPage() {
           className="mt-0 space-y-6 animate-in fade-in-0 duration-200 motion-reduce:animate-none"
         >
           <CategoriesSettings />
+          <PaymentSourcesSettings />
+          <MoneyPoolsSettings />
           <RecurringExpensesSettings />
         </TabsContent>
 

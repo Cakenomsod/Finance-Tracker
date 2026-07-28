@@ -1,4 +1,6 @@
 import { Transaction, TripExpense } from '@/lib/firestore-types'
+import { BalanceFilter, transactionMatchesBalanceFilter } from '@/lib/account-balances'
+import { PaymentSource } from '@/lib/firestore-types'
 import { getLocalMonthKey } from '@/lib/datetime'
 import { getTransactionEffectiveAmount } from '@/lib/transaction-payment'
 import {
@@ -26,12 +28,14 @@ export interface CombinedTransaction {
 }
 
 export function getCountedExpenseThb(tx: CombinedTransaction): number {
+  if (tx.rawTx?.type === 'transfer') return 0
   if (tx.isTripDebtPending) return 0
   const thb = tx.expenseAmountThb ?? tx.amountThb
   return thb < 0 ? Math.abs(thb) : 0
 }
 
 export function getCountedIncomeThb(tx: CombinedTransaction): number {
+  if (tx.rawTx?.type === 'transfer') return 0
   return tx.amountThb > 0 ? tx.amountThb : 0
 }
 
@@ -403,15 +407,20 @@ export function computeMonthTotals(transactions: CombinedTransaction[]) {
 export function computeCumulativeBalanceUpToMonth(
   transactions: CombinedTransaction[],
   year: number,
-  month: number
+  month: number,
+  filter?: BalanceFilter & { sourcesById?: Map<string, PaymentSource> }
 ): number {
   const endOfMonth = new Date(year, month + 1, 0, 23, 59, 59, 999)
   let balance = 0
   for (const tx of transactions) {
     const d = getDateFromTx(tx)
-    if (d <= endOfMonth) {
-      balance += getCountedNetThb(tx)
+    if (d > endOfMonth) continue
+    if (filter?.sourcesById && tx.rawTx) {
+      if (!transactionMatchesBalanceFilter(tx.rawTx, filter, filter.sourcesById)) {
+        continue
+      }
     }
+    balance += getCountedNetThb(tx)
   }
   return Math.round(balance)
 }

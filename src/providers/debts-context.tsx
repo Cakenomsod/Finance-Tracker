@@ -39,7 +39,11 @@ export interface DebtsContextValue {
   removeDebt: (
     id: string
   ) => Promise<Awaited<ReturnType<typeof deleteDebt>>>;
-  settleDebt: (id: string, payAmount?: number) => Promise<void>;
+  settleDebt: (
+    id: string,
+    payAmount?: number,
+    options?: { accountId?: string; moneyPoolId?: string }
+  ) => Promise<void>;
 }
 
 export const DebtsContext = createContext<DebtsContextValue | null>(null);
@@ -150,7 +154,11 @@ export function DebtsProvider({ children }: { children: ReactNode }) {
       return deleteDebt(id);
     };
 
-    const settleDebt = async (id: string, payAmount?: number) => {
+    const settleDebt = async (
+      id: string,
+      payAmount?: number,
+      options?: { accountId?: string; moneyPoolId?: string }
+    ) => {
       if (!user) throw new Error('Must be logged in to settle a debt');
       const debt = debts.find((d) => d.id === id);
       if (!debt) throw new Error('Debt not found');
@@ -192,6 +200,8 @@ export function DebtsProvider({ children }: { children: ReactNode }) {
 
       await recordDebtSettlementCashFlow(user.uid, debt, amount, {
         note: debt.id ? `debt:${debt.id}` : undefined,
+        accountId: options?.accountId,
+        moneyPoolId: options?.moneyPoolId,
       });
     };
 

@@ -39,6 +39,10 @@ export interface UserProfile {
   contactOrder?: string[];
   /** Nicknames per app-friend uid for AI matching and display */
   friendAliases?: Record<string, string[]>;
+  /** Enable bank account / debit / cash tracking */
+  accountsEnabled?: boolean;
+  /** Enable money pool (envelope) tracking */
+  moneyPoolsEnabled?: boolean;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }
@@ -116,12 +120,51 @@ export interface ReceiptItem {
   taxRate?: number;
 }
 
+export type PaymentSourceType = 'bank_account' | 'debit_card' | 'cash';
+export type TransactionType = 'income' | 'expense' | 'transfer';
+
+// payment_sources/{id}
+export interface PaymentSource {
+  id?: string;
+  userId: string;
+  type: PaymentSourceType;
+  /** User-defined display name */
+  name: string;
+  /** Thai bank catalog code — not used for cash */
+  bankCode?: string;
+  branchName?: string;
+  accountNumber?: string;
+  /** Debit card → linked bank account */
+  linkedSourceId?: string;
+  openingBalance: number;
+  isDefault?: boolean;
+  /** User-defined display order (lower = first) */
+  sortOrder?: number;
+  color?: string;
+  icon?: string;
+  archived?: boolean;
+  createdAt: Timestamp;
+}
+
+// money_pools/{id}
+export interface MoneyPool {
+  id?: string;
+  userId: string;
+  name: string;
+  icon: string;
+  color: string;
+  openingBalance: number;
+  targetAmount?: number;
+  archived?: boolean;
+  createdAt: Timestamp;
+}
+
 // transactions/{txId}
 export interface Transaction {
   id?: string;
   userId: string;
   amount: number;
-  type: 'income' | 'expense';
+  type: TransactionType;
   category: string;
   description: string;
   date: Timestamp;
@@ -160,6 +203,14 @@ export interface Transaction {
   debtTracking?: boolean;
   /** Set when this row is a debt repayment (counts in cash flow) */
   debtPaymentDebtId?: string | null;
+  /** Payment source (bank account, debit card, or cash) */
+  accountId?: string;
+  /** Money pool / envelope tag */
+  moneyPoolId?: string;
+  /** Transfer destination account */
+  transferToAccountId?: string;
+  /** Transfer destination money pool */
+  transferToPoolId?: string;
   note?: string;
 }
 
@@ -333,5 +384,7 @@ export interface RecurringExpense {
   frequencyInterval?: number;
   nextDate: Timestamp;
   category?: string;
+  /** Default payment source when confirming payment */
+  accountId?: string;
   createdAt: Timestamp;
 }

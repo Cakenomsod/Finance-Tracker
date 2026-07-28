@@ -98,6 +98,7 @@ export function useRecurringExpenses() {
         receiptUrl: null,
         source: 'manual',
         currency: 'THB',
+        accountId: expense.accountId,
       });
 
       await advanceExpenseCycle(expense);

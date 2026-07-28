@@ -37,6 +37,8 @@ import {
 import { useRecurringExpenses } from '@/hooks/use-recurring-expenses';
 import { useCategories } from '@/hooks/use-categories';
 import { useUserSettings } from '@/hooks/use-user-settings';
+import { usePaymentSources } from '@/hooks/use-payment-sources';
+import { PaymentSourceSelect } from '@/components/accounts/payment-source-select';
 import { useLocale } from '@/components/locale-provider';
 import { RecurringExpense, RecurringFrequencyUnit } from '@/lib/firestore-types';
 import { formatMoney } from '@/lib/aggregate-transactions';
@@ -51,6 +53,7 @@ interface RecurringFormState {
   frequencyInterval: string;
   nextDate: string;
   category: string;
+  accountId: string;
 }
 
 const emptyForm = (): RecurringFormState => ({
@@ -60,6 +63,7 @@ const emptyForm = (): RecurringFormState => ({
   frequencyInterval: '1',
   nextDate: formatLocalDateInput(new Date()),
   category: '',
+  accountId: '',
 });
 
 function expenseToForm(expense: RecurringExpense): RecurringFormState {
@@ -73,6 +77,7 @@ function expenseToForm(expense: RecurringExpense): RecurringFormState {
     frequencyInterval: String(normalizeFrequencyInterval(expense.frequencyInterval)),
     nextDate: formatLocalDateInput(date),
     category: expense.category || '',
+    accountId: expense.accountId || '',
   };
 }
 
@@ -97,7 +102,8 @@ function RecurringSkeleton() {
 export function RecurringExpensesSettings() {
   const { expenses, loading, addExpense, editExpense, removeExpense } = useRecurringExpenses();
   const { expenseCategories } = useCategories();
-  const { currency } = useUserSettings();
+  const { currency, accountsEnabled } = useUserSettings();
+  const { activeSources } = usePaymentSources();
   const { locale, t } = useLocale();
   const [dialogOpen, setDialogOpen] = React.useState(false);
   const [editing, setEditing] = React.useState<RecurringExpense | null>(null);
@@ -130,6 +136,7 @@ export function RecurringExpensesSettings() {
         frequencyInterval: normalizeFrequencyInterval(Number(form.frequencyInterval)),
         nextDate,
         category: form.category || undefined,
+        accountId: form.accountId || undefined,
       };
       if (editing?.id) {
         await editExpense(editing.id, data);
@@ -352,6 +359,17 @@ export function RecurringExpensesSettings() {
                 </SelectContent>
               </Select>
             </div>
+            {accountsEnabled && activeSources.length > 0 && (
+              <div className="grid gap-2">
+                <Label>{t('accounts.recurringSource')}</Label>
+                <PaymentSourceSelect
+                  sources={activeSources}
+                  value={form.accountId}
+                  onChange={(accountId) => setForm((f) => ({ ...f, accountId }))}
+                  allowNone
+                />
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button
