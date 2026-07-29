@@ -41,10 +41,10 @@ export function BalanceFilterBar({
   }
 
   return (
-    <div className="flex flex-wrap gap-2" role="group" aria-label={t('accounts.totalBalance')}>
+    <div className="flex min-w-0 flex-wrap gap-2" role="group" aria-label={t('accounts.totalBalance')}>
       {accountsEnabled && sources.length > 0 && (
         <Select value={sourceId} onValueChange={onSourceChange}>
-          <SelectTrigger className="h-8 w-[150px] text-xs" aria-label={t('accounts.filterSource')}>
+          <SelectTrigger className="h-8 w-full min-w-0 text-xs sm:w-[150px]" aria-label={t('accounts.filterSource')}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -59,7 +59,7 @@ export function BalanceFilterBar({
       )}
       {moneyPoolsEnabled && pools.length > 0 && (
         <Select value={poolId} onValueChange={onPoolChange}>
-          <SelectTrigger className="h-8 w-[150px] text-xs" aria-label={t('accounts.filterPool')}>
+          <SelectTrigger className="h-8 w-full min-w-0 text-xs sm:w-[150px]" aria-label={t('accounts.filterPool')}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

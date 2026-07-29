@@ -20,8 +20,6 @@ export function BankSearchCombobox({ value, onChange, disabled }: BankSearchComb
   const { locale, t } = useLocale();
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState('');
-  const listRef = React.useRef<HTMLDivElement>(null);
-
   const banks = React.useMemo(() => searchThaiBanks(query), [query]);
   const selected = React.useMemo(
     () => searchThaiBanks('').find((b) => b.code === value),
@@ -34,19 +32,14 @@ export function BankSearchCombobox({ value, onChange, disabled }: BankSearchComb
       : selected.nameEn
     : t('accounts.selectBank');
 
-  const stopScrollLock = (e: React.WheelEvent | React.TouchEvent) => {
-    e.stopPropagation();
-    markNestedOverlayActivity();
-  };
-
   return (
     <Popover
       open={open}
       onOpenChange={(next) => {
         setOpen(next);
         if (!next) setQuery('');
+        else markNestedOverlayActivity();
       }}
-      modal
     >
       <PopoverTrigger asChild>
         <Button
@@ -62,19 +55,16 @@ export function BankSearchCombobox({ value, onChange, disabled }: BankSearchComb
         </Button>
       </PopoverTrigger>
       <PopoverContent
-        className="w-[var(--radix-popover-trigger-width)] p-0"
+        className="w-[var(--radix-popover-trigger-width)] max-h-[min(320px,70dvh)] p-0"
         align="start"
-        onWheel={stopScrollLock}
-        onTouchMove={stopScrollLock}
         onOpenAutoFocus={(e) => {
-          // Keep focus in search; avoid Dialog stealing scroll
           e.preventDefault();
           const input = (e.currentTarget as HTMLElement)?.querySelector('input');
           input?.focus();
         }}
       >
-        <div className="flex max-h-[min(320px,70dvh)] flex-col overflow-hidden">
-          <div className="border-b p-2">
+        <div className="flex max-h-[inherit] flex-col">
+          <div className="shrink-0 border-b p-2">
             <Input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
@@ -85,12 +75,9 @@ export function BankSearchCombobox({ value, onChange, disabled }: BankSearchComb
             />
           </div>
           <div
-            ref={listRef}
             role="listbox"
             aria-label={t('accounts.selectBank')}
-            className="max-h-[min(260px,55dvh)] overflow-y-auto overscroll-contain touch-pan-y p-1"
-            onWheel={stopScrollLock}
-            onTouchMove={stopScrollLock}
+            className="min-h-0 flex-1 overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch] p-1"
           >
             {banks.length === 0 ? (
               <p className="px-2 py-6 text-center text-sm text-muted-foreground">

@@ -669,6 +669,14 @@ export default function DebtsPage() {
     [paymentHistory]
   )
 
+  const settleCashOptions = React.useMemo(
+    () => ({
+      accountId: accountsEnabled && settleAccountId ? settleAccountId : undefined,
+      moneyPoolId: moneyPoolsEnabled && settleMoneyPoolId ? settleMoneyPoolId : undefined,
+    }),
+    [accountsEnabled, moneyPoolsEnabled, settleAccountId, settleMoneyPoolId]
+  )
+
   if (loading || tripLoading || settlementsLoading) {
     return <DebtsSkeleton />
   }
@@ -736,14 +744,6 @@ export default function DebtsPage() {
     setSettleMoneyPoolId('')
     setIsSettleOpen(true)
   }
-
-  const settleCashOptions = React.useMemo(
-    () => ({
-      accountId: accountsEnabled && settleAccountId ? settleAccountId : undefined,
-      moneyPoolId: moneyPoolsEnabled && settleMoneyPoolId ? settleMoneyPoolId : undefined,
-    }),
-    [accountsEnabled, moneyPoolsEnabled, settleAccountId, settleMoneyPoolId]
-  )
 
   const handleConfirmSettle = async () => {
     if (!settleDebtData || isSettling) return

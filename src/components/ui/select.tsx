@@ -8,9 +8,19 @@ import { markNestedOverlayActivity } from '@/lib/nested-overlay-guard'
 import { cn } from '@/lib/utils'
 
 function Select({
+  onOpenChange,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Root>) {
-  return <SelectPrimitive.Root data-slot="select" {...props} />
+  return (
+    <SelectPrimitive.Root
+      data-slot="select"
+      {...props}
+      onOpenChange={(open) => {
+        if (!open) markNestedOverlayActivity()
+        onOpenChange?.(open)
+      }}
+    />
+  )
 }
 
 function SelectGroup({
@@ -61,6 +71,7 @@ function SelectContent({
   children,
   position = 'popper',
   onCloseAutoFocus,
+  onPointerDownOutside,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Content>) {
   return (
@@ -75,6 +86,11 @@ function SelectContent({
         )}
         position={position}
         {...props}
+        onPointerDownOutside={(e) => {
+          // Same pointer event can dismiss Select then Dialog; mark so parent stays open.
+          markNestedOverlayActivity()
+          onPointerDownOutside?.(e)
+        }}
         onCloseAutoFocus={(e) => {
           // Prevent focus restore from dismissing a parent Dialog via onFocusOutside.
           e.preventDefault()

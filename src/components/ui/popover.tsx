@@ -7,9 +7,19 @@ import { markNestedOverlayActivity } from '@/lib/nested-overlay-guard'
 import { cn } from '@/lib/utils'
 
 function Popover({
+  onOpenChange,
   ...props
 }: React.ComponentProps<typeof PopoverPrimitive.Root>) {
-  return <PopoverPrimitive.Root data-slot="popover" {...props} />
+  return (
+    <PopoverPrimitive.Root
+      data-slot="popover"
+      {...props}
+      onOpenChange={(open) => {
+        if (!open) markNestedOverlayActivity()
+        onOpenChange?.(open)
+      }}
+    />
+  )
 }
 
 function PopoverTrigger({
@@ -33,6 +43,8 @@ function PopoverContent({
   align = 'center',
   sideOffset = 4,
   onCloseAutoFocus,
+  onPointerDownOutside,
+  onInteractOutside,
   ...props
 }: React.ComponentProps<typeof PopoverPrimitive.Content>) {
   return (
@@ -46,6 +58,14 @@ function PopoverContent({
           className,
         )}
         {...props}
+        onPointerDownOutside={(e) => {
+          markNestedOverlayActivity()
+          onPointerDownOutside?.(e)
+        }}
+        onInteractOutside={(e) => {
+          markNestedOverlayActivity()
+          onInteractOutside?.(e)
+        }}
         onCloseAutoFocus={(e) => {
           e.preventDefault()
           onCloseAutoFocus?.(e)

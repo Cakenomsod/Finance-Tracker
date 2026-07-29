@@ -260,7 +260,7 @@ export function TransactionSplitSection({
     if (initialPayers?.length) {
       setPayers(
         initialPayers.map((p) => ({
-          personId: p.userId,
+          personId: resolveMemberPersonId(p.userId, p.displayName, members),
           displayName: p.displayName,
           amount: String(p.amount),
         }))
@@ -269,12 +269,23 @@ export function TransactionSplitSection({
     if (initialSplitMode) setSplitMode(initialSplitMode)
     if (initialShares?.length) {
       if (initialSplitMode === 'custom') {
-        setCustomShares(Object.fromEntries(initialShares.map((s) => [s.userId, String(s.amount)])))
+        setCustomShares(
+          Object.fromEntries(
+            initialShares.map((s) => [
+              resolveMemberPersonId(s.userId, s.displayName, members),
+              String(s.amount),
+            ])
+          )
+        )
       } else if (initialSplitMode === 'equal' || !initialSplitMode) {
-        setEqualIncluded(new Set(initialShares.map((s) => s.userId)))
+        setEqualIncluded(
+          new Set(
+            initialShares.map((s) => resolveMemberPersonId(s.userId, s.displayName, members))
+          )
+        )
       }
     }
-  }, [initialSplitKey])
+  }, [initialSplitKey, members])
 
   const addPayer = () => {
     const used = new Set(payers.map((p) => p.personId))

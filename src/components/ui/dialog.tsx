@@ -54,7 +54,9 @@ function DialogOverlay({
 
 const NESTED_OVERLAY_SELECTORS = [
   '[data-slot="select-content"]',
+  '[data-slot="select-trigger"][data-state="open"]',
   '[data-slot="popover-content"]',
+  '[data-slot="popover-trigger"][data-state="open"]',
   '[data-slot="dropdown-menu-content"]',
   '[data-slot="dropdown-menu-sub-content"]',
   '[data-slot="calendar"]',

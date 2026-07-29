@@ -48,7 +48,7 @@ function LoginSkeleton() {
       aria-busy="true"
       aria-label="Loading sign-in"
     >
-      <CardHeader className="items-center text-center">
+      <CardHeader className="justify-items-center text-center">
         <Skeleton className="size-10 rounded-lg motion-reduce:animate-none" />
         <div className="flex w-full flex-col items-center gap-2 pt-2">
           <Skeleton className="h-6 w-40 motion-reduce:animate-none" />
@@ -125,7 +125,7 @@ function LoginContent() {
   return (
     <main className="w-full max-w-md">
       <Card className="w-full">
-        <CardHeader className="items-center text-center">
+        <CardHeader className="justify-items-center text-center">
           <div className="flex size-10 items-center justify-center rounded-lg bg-primary text-primary-foreground">
             <AppLogo className="size-5" aria-hidden="true" />
           </div>

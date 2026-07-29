@@ -159,7 +159,7 @@ export default function AccountsPage() {
   })
 
   return (
-    <div className="space-y-6 p-4 md:p-6">
+    <div className="min-w-0 space-y-6 p-4 md:p-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">{t('accounts.pageTitle')}</h1>
@@ -187,11 +187,11 @@ export default function AccountsPage() {
             {formatMoney(totalBalance, currency)}
           </p>
         </CardHeader>
-        <CardContent className="flex flex-wrap gap-2 pt-0">
+        <CardContent className="flex min-w-0 flex-wrap gap-2 pt-0">
           {accountsEnabled && (
             <>
               <Select value={filterBank} onValueChange={setFilterBank}>
-                <SelectTrigger className="w-[160px]" aria-label={t('accounts.filterBank')}>
+                <SelectTrigger className="w-full min-w-0 sm:w-[160px]" aria-label={t('accounts.filterBank')}>
                   <SelectValue placeholder={t('accounts.filterBank')} />
                 </SelectTrigger>
                 <SelectContent>
@@ -210,7 +210,7 @@ export default function AccountsPage() {
                 </SelectContent>
               </Select>
               <Select value={filterSource} onValueChange={setFilterSource}>
-                <SelectTrigger className="w-[160px]" aria-label={t('accounts.filterSource')}>
+                <SelectTrigger className="w-full min-w-0 sm:w-[160px]" aria-label={t('accounts.filterSource')}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -226,7 +226,7 @@ export default function AccountsPage() {
           )}
           {moneyPoolsEnabled && activePools.length > 0 && (
             <Select value={filterPool} onValueChange={setFilterPool}>
-              <SelectTrigger className="w-[160px]" aria-label={t('accounts.filterPool')}>
+              <SelectTrigger className="w-full min-w-0 sm:w-[160px]" aria-label={t('accounts.filterPool')}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -276,18 +276,18 @@ export default function AccountsPage() {
                   <li key={key}>
                     <Card className="shadow-sm">
                       <CardHeader className="pb-2">
-                        <div className="flex items-center justify-between gap-3">
-                          <CardTitle className="text-base flex items-center gap-2">
+                        <div className="flex min-w-0 items-start justify-between gap-2 sm:items-center sm:gap-3">
+                          <CardTitle className="text-base flex min-w-0 flex-1 items-center gap-2">
                             {key === '__cash__' ? (
-                              <Banknote className="size-4 text-muted-foreground" aria-hidden />
+                              <Banknote className="size-4 shrink-0 text-muted-foreground" aria-hidden />
                             ) : (
-                              <Landmark className="size-4 text-muted-foreground" aria-hidden />
+                              <Landmark className="size-4 shrink-0 text-muted-foreground" aria-hidden />
                             )}
-                            {groupTitle}
+                            <span className="min-w-0 truncate">{groupTitle}</span>
                           </CardTitle>
                           <span
                             className={cn(
-                              'text-base font-semibold tabular-nums',
+                              'shrink-0 text-sm font-semibold tabular-nums sm:text-base',
                               amountColorClass(groupBalance, 'text-foreground')
                             )}
                           >
@@ -371,10 +371,10 @@ export default function AccountsPage() {
 
                   return (
                     <li key={pool.id}>
-                      <Card className="shadow-sm">
-                        <CardHeader className="pb-2">
-                          <div className="flex items-center justify-between gap-3">
-                            <CardTitle className="text-base flex items-center gap-2 min-w-0">
+                      <Card className="gap-4 py-4 shadow-sm sm:gap-6 sm:py-6">
+                        <CardHeader className="gap-1.5 pb-2 sm:gap-2">
+                          <div className="flex min-w-0 items-start justify-between gap-2 sm:items-center sm:gap-3">
+                            <CardTitle className="text-base flex min-w-0 flex-1 items-center gap-2">
                               <span
                                 className="flex size-9 shrink-0 items-center justify-center rounded-lg text-base"
                                 style={{ backgroundColor: `${pool.color}20` }}
@@ -382,14 +382,14 @@ export default function AccountsPage() {
                               >
                                 {pool.icon}
                               </span>
-                              <span className="truncate">{pool.name}</span>
+                              <span className="min-w-0 truncate">{pool.name}</span>
                             </CardTitle>
-                            <span className="font-semibold tabular-nums shrink-0">
+                            <span className="shrink-0 text-sm font-semibold tabular-nums sm:text-base">
                               {formatMoney(bal, currency)}
                             </span>
                           </div>
                           {pool.targetAmount != null && (
-                            <CardDescription className="tabular-nums">
+                            <CardDescription className="text-pretty break-words tabular-nums">
                               {t('accounts.target')}: {formatMoney(pool.targetAmount, currency)}
                               {progress != null ? ` · ${progress}%` : ''}
                             </CardDescription>
@@ -422,9 +422,9 @@ export default function AccountsPage() {
                                 return (
                                   <li
                                     key={row.accountId}
-                                    className="flex items-center justify-between gap-2 text-sm"
+                                    className="flex min-w-0 items-center justify-between gap-2 text-sm"
                                   >
-                                    <span className="truncate text-muted-foreground">
+                                    <span className="min-w-0 truncate text-muted-foreground">
                                       {src?.name ?? row.accountId}
                                     </span>
                                     <span className="tabular-nums shrink-0">
