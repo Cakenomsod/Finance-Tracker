@@ -105,7 +105,7 @@ export function MonthlySummaryCard({
         <CardContent className="p-4 sm:p-6">
           <div className="space-y-1">
             <p className="text-sm font-medium text-muted-foreground">
-              Balance
+              Total in accounts
               <span className="font-normal text-muted-foreground">
                 {' '}
                 · through {selectedMonthLabel}

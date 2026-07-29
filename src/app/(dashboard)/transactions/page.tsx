@@ -61,6 +61,10 @@ import {
   computeCumulativeBalanceUpToMonth,
   collectMonthsWithData,
 } from '@/lib/aggregate-transactions'
+import { computeTotalLedgerBalanceUpToMonth } from '@/lib/account-balances'
+import { usePaymentSources } from '@/hooks/use-payment-sources'
+import { useUserSettings } from '@/hooks/use-user-settings'
+import { PaymentSource } from '@/lib/firestore-types'
 import { useCategories } from '@/hooks/use-categories'
 import { TransactionForm } from '@/components/transactions/transaction-form'
 import { TransactionAiPanel, type TransactionAiPanelHandle } from '@/components/transactions/transaction-ai-panel'
@@ -135,6 +139,16 @@ export default function TransactionsPage() {
   const { allTripExpenses: fullTripExpenses } = useAllTripExpenses()
   const { categories } = useCategories()
   const { trips } = useTrips()
+  const { accountsEnabled } = useUserSettings()
+  const { activeSources } = usePaymentSources()
+
+  const sourcesById = React.useMemo(() => {
+    const map = new Map<string, PaymentSource>()
+    for (const s of activeSources) {
+      if (s.id) map.set(s.id, s)
+    }
+    return map
+  }, [activeSources])
 
   const filterCategories = React.useMemo(
     () => [ALL_CATEGORIES, ...categories.map((c) => c.name)],
@@ -310,10 +324,29 @@ export default function TransactionsPage() {
     return computeMonthTotals(monthTxs)
   }, [summaryCombined, selectedMonth])
 
-  const cumulativeBalance = React.useMemo(
-    () => computeCumulativeBalanceUpToMonth(summaryCombined, selectedMonth.year, selectedMonth.month),
-    [summaryCombined, selectedMonth]
-  )
+  const cumulativeBalance = React.useMemo(() => {
+    if (accountsEnabled && activeSources.length > 0) {
+      return computeTotalLedgerBalanceUpToMonth(
+        allTransactions,
+        activeSources,
+        sourcesById,
+        selectedMonth.year,
+        selectedMonth.month
+      )
+    }
+    return computeCumulativeBalanceUpToMonth(
+      summaryCombined,
+      selectedMonth.year,
+      selectedMonth.month
+    )
+  }, [
+    accountsEnabled,
+    activeSources,
+    sourcesById,
+    allTransactions,
+    summaryCombined,
+    selectedMonth,
+  ])
 
   const monthScopedTransactions = React.useMemo(() => {
     return allCombined.filter((t) => {
@@ -587,7 +620,11 @@ export default function TransactionsPage() {
                     {cumulativeBalance >= 0 ? '' : '-'}฿
                     {Math.abs(cumulativeBalance).toLocaleString()}
                   </MonthAnimatedValue>
-                  <p className="text-[11px] leading-tight text-muted-foreground">สะสมถึงสิ้นเดือนนี้ · จากทุกรายการ</p>
+                  <p className="text-[11px] leading-tight text-muted-foreground">
+                    {accountsEnabled
+                      ? 'ยอดรวมทุกบัญชี · เงินเริ่มต้น + รายการที่ระบุบัญชี'
+                      : 'สะสมถึงสิ้นเดือนนี้ · จากทุกรายการ'}
+                  </p>
                 </div>
               </div>
             </CardContent>

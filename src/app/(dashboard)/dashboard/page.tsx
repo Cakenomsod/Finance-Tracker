@@ -70,6 +70,9 @@ import {
   formatMoney,
   type CombinedTransaction,
 } from '@/lib/aggregate-transactions'
+import { computeTotalLedgerBalanceUpToMonth } from '@/lib/account-balances'
+import { usePaymentSources } from '@/hooks/use-payment-sources'
+import { PaymentSource } from '@/lib/firestore-types'
 
 const chartConfig = {
   income: { label: 'Income', color: 'var(--chart-1)' },
@@ -176,7 +179,16 @@ function getFinancialHabits(transactions: CombinedTransaction[], month: MonthSel
 
 export default function DashboardPage() {
   const { user } = useAuth()
-  const { profile } = useUserSettings()
+  const { profile, accountsEnabled } = useUserSettings()
+  const { activeSources } = usePaymentSources()
+
+  const sourcesById = React.useMemo(() => {
+    const map = new Map<string, PaymentSource>()
+    for (const s of activeSources) {
+      if (s.id) map.set(s.id, s)
+    }
+    return map
+  }, [activeSources])
   const { openQuickAdd } = useQuickAdd()
   const [selectedMonth, setSelectedMonth] = React.useState(getCurrentMonthSelection)
   const { monthKey, direction: monthDirection, onMonthChange } = useMonthTransition(selectedMonth)
@@ -228,10 +240,29 @@ export default function DashboardPage() {
 
   const currentTotals = React.useMemo(() => computeMonthTotals(selectedMonthTxs), [selectedMonthTxs])
   const previousTotals = React.useMemo(() => computeMonthTotals(previousMonthTxs), [previousMonthTxs])
-  const cumulativeBalance = React.useMemo(
-    () => computeCumulativeBalanceUpToMonth(summaryCombined, selectedMonth.year, selectedMonth.month),
-    [summaryCombined, selectedMonth]
-  )
+  const cumulativeBalance = React.useMemo(() => {
+    if (accountsEnabled && activeSources.length > 0) {
+      return computeTotalLedgerBalanceUpToMonth(
+        allTransactions,
+        activeSources,
+        sourcesById,
+        selectedMonth.year,
+        selectedMonth.month
+      )
+    }
+    return computeCumulativeBalanceUpToMonth(
+      summaryCombined,
+      selectedMonth.year,
+      selectedMonth.month
+    )
+  }, [
+    accountsEnabled,
+    activeSources,
+    sourcesById,
+    allTransactions,
+    summaryCombined,
+    selectedMonth,
+  ])
 
   const netChange = React.useMemo(
     () => computePercentChange(currentTotals.net, previousTotals.net),

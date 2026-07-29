@@ -1,4 +1,5 @@
 import { MoneyPool, PaymentSource, Transaction } from '@/lib/firestore-types';
+import { toDateFromFirestore } from '@/lib/datetime';
 import { getBankByCode } from '@/lib/thai-banks';
 
 export type TransactionType = Transaction['type'];
@@ -105,6 +106,46 @@ export function computeSourceBalance(
 
 export function computePoolBalance(pool: MoneyPool, poolDeltas: Map<string, number>): number {
   return (pool.openingBalance ?? 0) + (poolDeltas.get(pool.id!) ?? 0);
+}
+
+/** Cash + bank accounts that hold a balance (excludes debit cards to avoid double-counting). */
+export function getLedgerSources(sources: PaymentSource[]): PaymentSource[] {
+  return sources.filter(
+    (s) => !s.archived && (s.type === 'bank_account' || s.type === 'cash')
+  );
+}
+
+/** Total liquid balance across all ledger accounts — matches the Accounts page total. */
+export function computeTotalLedgerBalance(
+  sources: PaymentSource[],
+  accountDeltas: Map<string, number>
+): number {
+  return Math.round(
+    getLedgerSources(sources).reduce(
+      (sum, s) => sum + computeSourceBalance(s, accountDeltas),
+      0
+    )
+  );
+}
+
+/**
+ * Ledger total through the end of a month: opening balances + only transactions
+ * with account/pool links that fall on or before that month.
+ */
+export function computeTotalLedgerBalanceUpToMonth(
+  transactions: Transaction[],
+  sources: PaymentSource[],
+  sourcesById: Map<string, PaymentSource>,
+  year: number,
+  month: number
+): number {
+  const endOfMonth = new Date(year, month + 1, 0, 23, 59, 59, 999);
+  const scoped = transactions.filter((tx) => {
+    const d = toDateFromFirestore(tx.date);
+    return d !== null && d <= endOfMonth;
+  });
+  const { accountDeltas } = computeBalanceDeltas(scoped, sourcesById);
+  return computeTotalLedgerBalance(sources, accountDeltas);
 }
 
 export interface PoolAccountBreakdown {
