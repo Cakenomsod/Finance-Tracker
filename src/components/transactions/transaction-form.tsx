@@ -219,7 +219,11 @@ export function TransactionForm({
       description: initialData?.description || '',
       date: defaultDate,
       time: defaultTime,
-      paidBy: initialData?.paidBy || 'Me',
+      // Income "Received From" uses allowNone — don't default to Me or the select clears to ไม่ระบุ
+      paidBy:
+        initialData?.type === 'income'
+          ? initialData.paidBy || ''
+          : initialData?.paidBy || 'Me',
       tripId: initialData?.tripId || 'none',
     },
   })
@@ -370,11 +374,12 @@ export function TransactionForm({
   const paotangQuotaOwner = isOtherPayerPaotang ? watchedPaidBy! : 'Me'
 
   React.useEffect(() => {
+    if (isIncome || isTransfer) return
     if (paymentMethod !== 'paotang' || splitEnabled) return
     if (paotangPayerMode === 'self') {
       form.setValue('paidBy', 'Me')
     }
-  }, [paymentMethod, paotangPayerMode, splitEnabled, form])
+  }, [isIncome, isTransfer, paymentMethod, paotangPayerMode, splitEnabled, form])
 
   const paotangUsage = usePaotangUsage({
     forDate: txPreviewDate,
