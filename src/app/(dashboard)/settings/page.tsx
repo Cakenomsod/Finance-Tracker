@@ -409,12 +409,15 @@ function SettingsPageInner() {
                 <p className="text-sm text-muted-foreground text-pretty max-w-prose">
                   {t('settings.lineManageHint')}
                 </p>
-                <Button variant="outline" size="sm" className="shrink-0 gap-2" asChild>
-                  <Link href="/line">
-                    {t('settings.lineManage')}
-                    <ChevronRight className="size-4" aria-hidden />
-                  </Link>
-                </Button>
+                <div className="flex items-center gap-2 shrink-0">
+                  <Badge variant="secondary">{t('settings.comingSoon')}</Badge>
+                  <Button variant="outline" size="sm" className="gap-2" asChild>
+                    <Link href="/line">
+                      {t('settings.lineManage')}
+                      <ChevronRight className="size-4" aria-hidden />
+                    </Link>
+                  </Button>
+                </div>
               </div>
             </CardContent>
           </Card>
