@@ -12,6 +12,8 @@ import { PaymentSource } from '@/lib/firestore-types';
 import { getSourceDisplaySubtitle } from '@/lib/account-balances';
 import { useLocale } from '@/components/locale-provider';
 
+const NONE_VALUE = '__none__';
+
 interface PaymentSourceSelectProps {
   sources: PaymentSource[];
   value: string;
@@ -30,15 +32,46 @@ export function PaymentSourceSelect({
   disabled,
 }: PaymentSourceSelectProps) {
   const { t } = useLocale();
+  // Track user-opened menu so remount clears to ไม่ระบุ are ignored.
+  const userOpenedRef = React.useRef(false);
+
+  const matched = value ? sources.find((s) => s.id === value) : undefined;
+  // Keep a stable item while sources load / when archived, so Radix does not clear.
+  const orphan = value && !matched ? value : null;
+
+  const handleChange = (v: string) => {
+    // Radix can emit empty when SelectItems remount (sources loading). Ignore that.
+    if (!v) return;
+    if (v === NONE_VALUE) {
+      if (!userOpenedRef.current && value) return;
+      userOpenedRef.current = false;
+      onChange('');
+      return;
+    }
+    userOpenedRef.current = false;
+    onChange(v);
+  };
 
   return (
-    <Select value={value || '__none__'} onValueChange={(v) => onChange(v === '__none__' ? '' : v)} disabled={disabled}>
+    <Select
+      value={value || NONE_VALUE}
+      onValueChange={handleChange}
+      onOpenChange={(next) => {
+        if (next) userOpenedRef.current = true;
+      }}
+      disabled={disabled}
+    >
       <SelectTrigger className="w-full">
         <SelectValue placeholder={placeholder ?? t('accounts.selectSource')} />
       </SelectTrigger>
       <SelectContent>
         {allowNone && (
-          <SelectItem value="__none__">{t('accounts.noSource')}</SelectItem>
+          <SelectItem value={NONE_VALUE}>{t('accounts.noSource')}</SelectItem>
+        )}
+        {orphan && (
+          <SelectItem value={orphan}>
+            <span className="font-medium text-muted-foreground">…</span>
+          </SelectItem>
         )}
         {sources.map((source) => {
           const subtitle = getSourceDisplaySubtitle(source);

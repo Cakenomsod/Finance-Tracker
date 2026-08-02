@@ -55,6 +55,8 @@ export function ContactSelect({
   includeMe = true,
 }: ContactSelectProps) {
   const { contacts, loading } = useFriends()
+  // Track user-opened menu so remount clears to ไม่ระบุ are ignored.
+  const userOpenedRef = React.useRef(false)
 
   const options = contacts.filter((c) => includeMe || !c.isSelf)
   const matched = value ? options.find((c) => matchesContact(value, c)) : undefined
@@ -94,9 +96,12 @@ export function ContactSelect({
     // Radix can emit empty when SelectItems remount (friends loading). Ignore that.
     if (!v) return
     if (v === NONE_VALUE) {
+      if (!userOpenedRef.current && value) return
+      userOpenedRef.current = false
       onChange('')
       return
     }
+    userOpenedRef.current = false
     if (v === ME_VALUE) {
       onChange('Me')
       return
@@ -115,6 +120,9 @@ export function ContactSelect({
     <Select
       value={selectValue}
       onValueChange={handleChange}
+      onOpenChange={(next) => {
+        if (next) userOpenedRef.current = true
+      }}
       disabled={loading && allOptions.length === 0 && !value}
     >
       <SelectTrigger aria-busy={loading} aria-label={placeholder}>

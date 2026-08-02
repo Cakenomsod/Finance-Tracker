@@ -165,24 +165,26 @@ export function computePoolBreakdownByAccount(
     const amount = Math.abs(tx.amount);
     if (amount <= 0) continue;
 
-    const ledgerId = resolveLedgerSourceId(tx.accountId, sourcesById);
-    if (!ledgerId) continue;
+    const fromLedger = resolveLedgerSourceId(tx.accountId, sourcesById);
+    const toLedger = resolveLedgerSourceId(tx.transferToAccountId, sourcesById);
 
     if (tx.type === 'transfer') {
-      if (tx.moneyPoolId === poolId) {
-        applyAccountDelta(breakdown, ledgerId, -amount);
+      // Debit the FROM pool against the FROM account
+      if (tx.moneyPoolId === poolId && fromLedger) {
+        applyAccountDelta(breakdown, fromLedger, -amount);
       }
+      // Credit the TO pool against the TO account (not the from account)
       if (tx.transferToPoolId === poolId) {
-        applyAccountDelta(breakdown, ledgerId, amount);
+        applyAccountDelta(breakdown, toLedger ?? fromLedger, amount);
       }
       continue;
     }
 
-    if (tx.moneyPoolId !== poolId) continue;
+    if (!fromLedger || tx.moneyPoolId !== poolId) continue;
     if (tx.type === 'income') {
-      applyAccountDelta(breakdown, ledgerId, amount);
+      applyAccountDelta(breakdown, fromLedger, amount);
     } else if (tx.type === 'expense') {
-      applyAccountDelta(breakdown, ledgerId, -amount);
+      applyAccountDelta(breakdown, fromLedger, -amount);
     }
   }
 

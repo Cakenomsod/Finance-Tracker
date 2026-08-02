@@ -681,24 +681,27 @@ export function TransactionForm({
               <FormItem className={isTransfer ? 'hidden' : undefined}>
                 <FormLabel className="text-xs sm:text-sm">Category</FormLabel>
                 <Select
-                  onValueChange={field.onChange}
+                  onValueChange={(v) => {
+                    // Radix can emit empty when SelectItems remount while categories load.
+                    if (!v) return
+                    field.onChange(v)
+                  }}
                   value={field.value || undefined}
                 >
                   <FormControl>
                     <SelectTrigger className="h-9">
-                      <SelectValue placeholder="Select category" />
+                      <SelectValue placeholder={categoriesLoading ? 'กำลังโหลด...' : 'Select category'} />
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
-                    {!categoriesLoading &&
-                      visibleCategories.map((c) => {
-                        const cat = categoryByName.get(c)
-                        return (
-                          <SelectItem key={c} value={c}>
-                            {cat ? `${cat.icon} ${c}` : c}
-                          </SelectItem>
-                        )
-                      })}
+                    {visibleCategories.map((c) => {
+                      const cat = categoryByName.get(c)
+                      return (
+                        <SelectItem key={c} value={c}>
+                          {cat ? `${cat.icon} ${c}` : c}
+                        </SelectItem>
+                      )
+                    })}
                   </SelectContent>
                 </Select>
                 <FormMessage />
@@ -836,7 +839,8 @@ export function TransactionForm({
                   <div className="grid grid-cols-[1fr_5.5rem] gap-1.5">
                     <Select
                       value={item.category || undefined}
-                      onValueChange={val => {
+                      onValueChange={(val) => {
+                        if (!val) return
                         const next = [...receiptItems]
                         next[idx] = { ...next[idx], category: val }
                         setReceiptItems(next)
