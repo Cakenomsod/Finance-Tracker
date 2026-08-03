@@ -325,8 +325,9 @@ export const createMoneyPool = async (data: Omit<MoneyPool, 'id' | 'createdAt'>)
 
 export const updateMoneyPool = async (
   id: string,
-  data: Partial<Omit<MoneyPool, 'id' | 'createdAt' | 'userId' | 'targetAmount'>> & {
+  data: Partial<Omit<MoneyPool, 'id' | 'createdAt' | 'userId' | 'targetAmount' | 'accountAllocations'>> & {
     targetAmount?: number | null;
+    accountAllocations?: MoneyPool['accountAllocations'] | null;
   }
 ) => {
   const payload: Record<string, unknown> = {};

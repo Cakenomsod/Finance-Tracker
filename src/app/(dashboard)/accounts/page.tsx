@@ -22,7 +22,7 @@ import { PaymentSource } from '@/lib/firestore-types'
 import {
   computeBalanceDeltas,
   computePoolBalance,
-  computePoolBreakdownByAccount,
+  resolvePoolAccountBreakdown,
   computeSourceBalance,
   groupSourcesByBank,
 } from '@/lib/account-balances'
@@ -361,9 +361,11 @@ export default function AccountsPage() {
                 .filter((p) => filterPool === '__all__' || p.id === filterPool)
                 .map((pool) => {
                   const bal = computePoolBalance(pool, poolDeltas)
-                  const breakdown = pool.id
-                    ? computePoolBreakdownByAccount(pool.id, transactions, sourcesById)
-                    : []
+                  const breakdown = resolvePoolAccountBreakdown(
+                    pool,
+                    transactions,
+                    sourcesById
+                  )
                   const progress =
                     pool.targetAmount && pool.targetAmount > 0
                       ? Math.min(100, Math.round((bal / pool.targetAmount) * 100))

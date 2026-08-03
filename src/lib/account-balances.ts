@@ -194,6 +194,25 @@ export function computePoolBreakdownByAccount(
     .sort((a, b) => b.amount - a.amount);
 }
 
+/**
+ * Prefer explicit display allocations on the pool; otherwise derive from dual-tagged txs.
+ */
+export function resolvePoolAccountBreakdown(
+  pool: MoneyPool,
+  transactions: Transaction[],
+  sourcesById: Map<string, PaymentSource>
+): PoolAccountBreakdown[] {
+  const stored = pool.accountAllocations;
+  if (stored && stored.length > 0) {
+    return stored
+      .filter((row) => row.accountId && row.amount !== 0)
+      .map((row) => ({ accountId: row.accountId, amount: row.amount }))
+      .sort((a, b) => b.amount - a.amount);
+  }
+  if (!pool.id) return [];
+  return computePoolBreakdownByAccount(pool.id, transactions, sourcesById);
+}
+
 export function groupSourcesByBank(sources: PaymentSource[]): Map<string, PaymentSource[]> {
   const groups = new Map<string, PaymentSource[]>();
   for (const source of sources) {

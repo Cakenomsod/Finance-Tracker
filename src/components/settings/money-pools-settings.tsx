@@ -26,13 +26,26 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { useMoneyPools } from '@/hooks/use-money-pools';
+import { usePaymentSources } from '@/hooks/use-payment-sources';
 import { useUserSettings } from '@/hooks/use-user-settings';
 import { useLocale } from '@/components/locale-provider';
-import { MoneyPool } from '@/lib/firestore-types';
+import { MoneyPool, MoneyPoolAccountAllocation } from '@/lib/firestore-types';
 import { DEFAULT_CATEGORY_COLORS } from '@/lib/default-categories';
 import { formatMoney } from '@/lib/aggregate-transactions';
 import { toast } from 'sonner';
+
+interface AllocationFormRow {
+  accountId: string;
+  amount: string;
+}
 
 interface PoolFormState {
   name: string;
@@ -40,6 +53,7 @@ interface PoolFormState {
   color: string;
   openingBalance: string;
   targetAmount: string;
+  allocations: AllocationFormRow[];
 }
 
 const emptyForm = (): PoolFormState => ({
@@ -48,6 +62,7 @@ const emptyForm = (): PoolFormState => ({
   color: DEFAULT_CATEGORY_COLORS[3],
   openingBalance: '0',
   targetAmount: '',
+  allocations: [],
 });
 
 function poolToForm(pool: MoneyPool): PoolFormState {
@@ -57,12 +72,26 @@ function poolToForm(pool: MoneyPool): PoolFormState {
     color: pool.color,
     openingBalance: String(pool.openingBalance ?? 0),
     targetAmount: pool.targetAmount != null ? String(pool.targetAmount) : '',
+    allocations: (pool.accountAllocations ?? []).map((row) => ({
+      accountId: row.accountId,
+      amount: String(row.amount),
+    })),
   };
+}
+
+function parseAllocations(rows: AllocationFormRow[]): MoneyPoolAccountAllocation[] {
+  return rows
+    .map((row) => ({
+      accountId: row.accountId,
+      amount: Number(row.amount) || 0,
+    }))
+    .filter((row) => row.accountId && row.amount !== 0);
 }
 
 export function MoneyPoolsSettings() {
   const { activePools, loading, addPool, editPool, archivePool } = useMoneyPools();
-  const { moneyPoolsEnabled, saveMoneyFeatures, currency } = useUserSettings();
+  const { activeSources } = usePaymentSources();
+  const { moneyPoolsEnabled, accountsEnabled, saveMoneyFeatures, currency } = useUserSettings();
   const { t } = useLocale();
   const [dialogOpen, setDialogOpen] = React.useState(false);
   const [editing, setEditing] = React.useState<MoneyPool | null>(null);
@@ -71,6 +100,19 @@ export function MoneyPoolsSettings() {
   const [saving, setSaving] = React.useState(false);
   const [deleting, setDeleting] = React.useState(false);
   const [toggling, setToggling] = React.useState(false);
+
+  const ledgerSources = React.useMemo(
+    () => activeSources.filter((s) => s.type === 'bank_account' || s.type === 'cash'),
+    [activeSources]
+  );
+
+  const sourceNameById = React.useMemo(() => {
+    const map = new Map<string, string>();
+    for (const s of ledgerSources) {
+      if (s.id) map.set(s.id, s.name);
+    }
+    return map;
+  }, [ledgerSources]);
 
   const openCreate = () => {
     setEditing(null);
@@ -96,11 +138,42 @@ export function MoneyPoolsSettings() {
     }
   };
 
+  const addAllocationRow = () => {
+    setForm((f) => ({
+      ...f,
+      allocations: [...f.allocations, { accountId: '', amount: '' }],
+    }));
+  };
+
+  const updateAllocationRow = (index: number, patch: Partial<AllocationFormRow>) => {
+    setForm((f) => ({
+      ...f,
+      allocations: f.allocations.map((row, i) => (i === index ? { ...row, ...patch } : row)),
+    }));
+  };
+
+  const removeAllocationRow = (index: number) => {
+    setForm((f) => ({
+      ...f,
+      allocations: f.allocations.filter((_, i) => i !== index),
+    }));
+  };
+
   const handleSave = async () => {
     if (!form.name.trim()) {
       toast.error(t('accounts.poolNameRequired'));
       return;
     }
+    const allocations = parseAllocations(form.allocations);
+    if (form.allocations.some((row) => row.accountId && !row.amount.trim())) {
+      toast.error(t('accounts.poolAllocationAmountRequired'));
+      return;
+    }
+    if (form.allocations.some((row) => row.amount.trim() && !row.accountId)) {
+      toast.error(t('accounts.poolAllocationAccountRequired'));
+      return;
+    }
+
     setSaving(true);
     try {
       const data = {
@@ -109,6 +182,7 @@ export function MoneyPoolsSettings() {
         color: form.color,
         openingBalance: Number(form.openingBalance) || 0,
         targetAmount: form.targetAmount ? Number(form.targetAmount) : undefined,
+        accountAllocations: allocations,
       };
       if (editing?.id) {
         await editPool(editing.id, {
@@ -117,6 +191,7 @@ export function MoneyPoolsSettings() {
           color: data.color,
           openingBalance: data.openingBalance,
           targetAmount: form.targetAmount ? Number(form.targetAmount) : null,
+          accountAllocations: allocations.length > 0 ? allocations : null,
         });
         toast.success(t('accounts.poolUpdated'));
       } else {
@@ -212,6 +287,17 @@ export function MoneyPoolsSettings() {
                               <> · {t('accounts.target')}: {formatMoney(pool.targetAmount, currency)}</>
                             )}
                           </p>
+                          {(pool.accountAllocations?.length ?? 0) > 0 && (
+                            <p className="text-xs text-muted-foreground truncate">
+                              {t('accounts.poolBreakdown')}:{' '}
+                              {pool.accountAllocations!
+                                .map((row) => {
+                                  const name = sourceNameById.get(row.accountId) ?? row.accountId;
+                                  return `${name} ${formatMoney(row.amount, currency)}`;
+                                })
+                                .join(' · ')}
+                            </p>
+                          )}
                         </div>
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
@@ -301,6 +387,64 @@ export function MoneyPoolsSettings() {
                 placeholder={t('settings.budgetOptional')}
               />
             </div>
+
+            {accountsEnabled && ledgerSources.length > 0 && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <Label>{t('accounts.poolBreakdown')}</Label>
+                  <Button type="button" variant="ghost" size="sm" onClick={addAllocationRow}>
+                    <Plus className="size-3.5 mr-1" aria-hidden />
+                    {t('accounts.addPoolAllocation')}
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground text-pretty">
+                  {t('accounts.poolBreakdownDesc')}
+                </p>
+                {form.allocations.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">{t('accounts.poolAllocationEmpty')}</p>
+                ) : (
+                  <ul className="space-y-2 list-none p-0 m-0">
+                    {form.allocations.map((row, index) => (
+                      <li key={index} className="flex items-center gap-2">
+                        <Select
+                          value={row.accountId || undefined}
+                          onValueChange={(value) => updateAllocationRow(index, { accountId: value })}
+                        >
+                          <SelectTrigger className="min-w-0 flex-1" aria-label={t('accounts.selectSource')}>
+                            <SelectValue placeholder={t('accounts.selectSource')} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {ledgerSources.map((s) => (
+                              <SelectItem key={s.id} value={s.id!}>
+                                {s.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Input
+                          type="number"
+                          className="w-28 shrink-0"
+                          value={row.amount}
+                          onChange={(e) => updateAllocationRow(index, { amount: e.target.value })}
+                          placeholder="0"
+                          aria-label={t('accounts.openingBalance')}
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="size-8 shrink-0 text-destructive hover:text-destructive"
+                          aria-label={t('accounts.removePoolAllocation')}
+                          onClick={() => removeAllocationRow(index)}
+                        >
+                          <Trash2 className="size-4" aria-hidden />
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>

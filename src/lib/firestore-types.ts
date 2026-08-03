@@ -146,6 +146,12 @@ export interface PaymentSource {
   createdAt: Timestamp;
 }
 
+/** Display-only: where a pool's money currently sits across accounts. */
+export interface MoneyPoolAccountAllocation {
+  accountId: string;
+  amount: number;
+}
+
 // money_pools/{id}
 export interface MoneyPool {
   id?: string;
@@ -155,6 +161,11 @@ export interface MoneyPool {
   color: string;
   openingBalance: number;
   targetAmount?: number;
+  /**
+   * Optional display breakdown of which payment sources hold this pool's money.
+   * Does not affect ledger math — accounts remain the source of truth for totals.
+   */
+  accountAllocations?: MoneyPoolAccountAllocation[];
   archived?: boolean;
   createdAt: Timestamp;
 }

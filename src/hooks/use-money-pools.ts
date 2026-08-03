@@ -47,8 +47,9 @@ export function useMoneyPools() {
   const editPool = useCallback(
     async (
       id: string,
-      data: Partial<Omit<MoneyPool, 'id' | 'createdAt' | 'userId' | 'targetAmount'>> & {
+      data: Partial<Omit<MoneyPool, 'id' | 'createdAt' | 'userId' | 'targetAmount' | 'accountAllocations'>> & {
         targetAmount?: number | null;
+        accountAllocations?: MoneyPool['accountAllocations'] | null;
       }
     ) => {
       return updateMoneyPool(id, data);
