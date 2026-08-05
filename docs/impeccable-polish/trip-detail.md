@@ -44,11 +44,12 @@ Align the trip detail surface with DESIGN.md: clear balances/settlements, AI cap
 - [x] Touch / focus / aria labels improved on key controls
 - [x] Sync / Immich / settlement logic preserved
 
-## Files touched
+## Follow-up — Settle mobile overflow (2026-08-06)
 
-- `src/app/(dashboard)/trips/[tripId]/page.tsx`
-- `src/components/trips/trip-expense-list.tsx`
-- `src/components/trips/trip-expense-form.tsx`
-- `src/components/trips/trip-expense-dialog.tsx`
-- `src/components/trips/trip-ai-panel.tsx`
-- `src/components/ai/ai-expense-quick-input.tsx` (shared AI chrome used by trip panel)
+| Issue | Root cause | Fix |
+| --- | --- | --- |
+| Settle rows spill past phone edges | Horizontal flex: avatars + long Thai names + amount + button in one row; `truncate` fails without width budget | Stack who→whom / amount+action; `[overflow-wrap:anywhere]`; tighter mobile card padding (`px-4`); `min-w-0 overflow-hidden` on cards |
+| Tabs / page can force overflow | Missing `min-w-0` on flex/grid ancestors | Page + Tabs + TabsTriggers get `min-w-0`; compact tab padding on xs |
+
+Logic untouched (settlement algorithm, record payment, itemized debt states).
+

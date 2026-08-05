@@ -521,7 +521,7 @@ export default function TripDetailPage() {
   }
 
   return (
-    <div className="flex flex-col gap-4 p-4 sm:gap-6 sm:p-6">
+    <div className="flex min-w-0 flex-col gap-4 p-4 sm:gap-6 sm:p-6">
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex items-start gap-3 sm:gap-4">
@@ -666,24 +666,24 @@ export default function TripDetailPage() {
       )}
 
       {/* Tabs */}
-      <Tabs defaultValue="expenses" className="w-full">
-        <TabsList className="grid h-auto w-full grid-cols-3 gap-1 p-1">
-          <TabsTrigger value="expenses" className="gap-1.5 px-2 py-2 text-xs sm:gap-2 sm:px-3 sm:text-sm">
-            <Receipt className="size-3.5 sm:size-4" aria-hidden />
+      <Tabs defaultValue="expenses" className="w-full min-w-0">
+        <TabsList className="grid h-auto w-full min-w-0 grid-cols-3 gap-1 p-1">
+          <TabsTrigger value="expenses" className="min-w-0 gap-1 px-1.5 py-2 text-[11px] sm:gap-2 sm:px-3 sm:text-sm">
+            <Receipt className="size-3.5 shrink-0 sm:size-4" aria-hidden />
             <span className="truncate">Expenses</span>
-            <Badge variant="secondary" className="ml-0.5 px-1.5 tabular-nums text-[10px] sm:ml-1">
+            <Badge variant="secondary" className="ml-0.5 shrink-0 px-1.5 tabular-nums text-[10px] sm:ml-1">
               {allExpensesCombined.length}
             </Badge>
           </TabsTrigger>
-          <TabsTrigger value="analytics" className="gap-1.5 px-2 py-2 text-xs sm:gap-2 sm:px-3 sm:text-sm">
-            <BarChart3 className="size-3.5 sm:size-4" aria-hidden />
+          <TabsTrigger value="analytics" className="min-w-0 gap-1 px-1.5 py-2 text-[11px] sm:gap-2 sm:px-3 sm:text-sm">
+            <BarChart3 className="size-3.5 shrink-0 sm:size-4" aria-hidden />
             <span className="truncate">Analytics</span>
           </TabsTrigger>
-          <TabsTrigger value="settlements" className="gap-1.5 px-2 py-2 text-xs sm:gap-2 sm:px-3 sm:text-sm">
-            <Users className="size-3.5 sm:size-4" aria-hidden />
+          <TabsTrigger value="settlements" className="min-w-0 gap-1 px-1.5 py-2 text-[11px] sm:gap-2 sm:px-3 sm:text-sm">
+            <Users className="size-3.5 shrink-0 sm:size-4" aria-hidden />
             <span className="truncate">Settle</span>
             {settlements.length > 0 && (
-              <Badge variant="secondary" className="ml-0.5 px-1.5 tabular-nums text-[10px] sm:ml-1">
+              <Badge variant="secondary" className="ml-0.5 shrink-0 px-1.5 tabular-nums text-[10px] sm:ml-1">
                 {settlements.length}
               </Badge>
             )}
@@ -928,17 +928,20 @@ export default function TripDetailPage() {
           </Card>
         </TabsContent>
 
-        {/* Settlements Tab */}
-        <TabsContent value="settlements" className="mt-4 animate-in fade-in-0 duration-200 motion-reduce:animate-none">
-          <div className="grid gap-4 lg:gap-6">
-            <Card className="shadow-sm">
-              <CardHeader>
+        {/* Settlements Tab — mobile-first: stack + truncate; avoid avatar+name+amount overflow */}
+        <TabsContent
+          value="settlements"
+          className="mt-4 min-w-0 animate-in fade-in-0 duration-200 motion-reduce:animate-none"
+        >
+          <div className="grid min-w-0 gap-4 lg:gap-6">
+            <Card className="min-w-0 overflow-hidden shadow-sm">
+              <CardHeader className="px-4 sm:px-6">
                 <CardTitle>Settlement plan</CardTitle>
                 <CardDescription>Minimum transfers to settle all balances</CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent className="px-4 sm:px-6">
                 {settlements.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center px-4 py-10 text-center">
+                  <div className="flex flex-col items-center justify-center px-2 py-10 text-center sm:px-4">
                     <CheckCircle2 className="size-10 text-success/70" aria-hidden />
                     <p className="mt-4 text-base font-medium">
                       {totalExpenses === 0 ? 'No expenses yet' : 'Everyone is settled up'}
@@ -957,36 +960,37 @@ export default function TripDetailPage() {
                       return (
                         <li
                           key={`${s.from}-${s.to}-${i}`}
-                          className="flex flex-col gap-3 rounded-lg border bg-muted/40 p-3 transition-colors duration-200 sm:flex-row sm:items-center sm:justify-between sm:p-4"
+                          className="min-w-0 space-y-3 rounded-lg border bg-muted/40 p-3 transition-colors duration-200 sm:p-4"
                         >
-                          <div className="flex min-w-0 items-center gap-2 sm:gap-3">
-                            <Avatar className="size-8 shrink-0 sm:size-9">
-                              <AvatarFallback className="bg-destructive/15 text-xs text-destructive">
-                                {fromName.substring(0, 2).toUpperCase()}
-                              </AvatarFallback>
-                            </Avatar>
-                            <ArrowRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-                            <Avatar className="size-8 shrink-0 sm:size-9">
-                              <AvatarFallback className="bg-primary/15 text-xs text-primary">
-                                {toName.substring(0, 2).toUpperCase()}
-                              </AvatarFallback>
-                            </Avatar>
-                            <div className="min-w-0">
-                              <p className="truncate text-sm font-medium">
-                                <span className="text-destructive">{fromName}</span>
-                                <span className="text-muted-foreground"> pays </span>
-                                <span className="text-primary">{toName}</span>
-                              </p>
+                          <div className="flex min-w-0 items-start gap-2.5">
+                            <div className="flex shrink-0 items-center gap-1.5 pt-0.5" aria-hidden>
+                              <Avatar className="size-8">
+                                <AvatarFallback className="bg-destructive/15 text-[10px] text-destructive">
+                                  {fromName.substring(0, 2).toUpperCase()}
+                                </AvatarFallback>
+                              </Avatar>
+                              <ArrowRight className="size-3.5 text-muted-foreground" />
+                              <Avatar className="size-8">
+                                <AvatarFallback className="bg-primary/15 text-[10px] text-primary">
+                                  {toName.substring(0, 2).toUpperCase()}
+                                </AvatarFallback>
+                              </Avatar>
                             </div>
+                            <p className="min-w-0 flex-1 text-sm font-medium leading-snug [overflow-wrap:anywhere]">
+                              <span className="text-destructive">{fromName}</span>
+                              <span className="text-muted-foreground"> pays </span>
+                              <span className="text-primary">{toName}</span>
+                            </p>
                           </div>
-                          <div className="flex items-center justify-between gap-3 sm:justify-end sm:gap-4">
-                            <span className="text-base font-semibold tabular-nums sm:text-lg">
+                          <div className="flex items-center justify-between gap-3 border-t border-border/60 pt-2.5">
+                            <span className="min-w-0 truncate text-base font-semibold tabular-nums sm:text-lg">
                               {homeSymbol}{s.amount.toLocaleString()}
                             </span>
                             {trip.status === 'active' && (
                               <Button
                                 size="sm"
                                 variant="outline"
+                                className="h-8 shrink-0"
                                 onClick={() => {
                                   setRecordPaymentData(s)
                                   setSettlementAmount(s.amount.toString())
@@ -1005,14 +1009,14 @@ export default function TripDetailPage() {
               </CardContent>
             </Card>
 
-            <Card className="shadow-sm">
-              <CardHeader>
+            <Card className="min-w-0 overflow-hidden shadow-sm">
+              <CardHeader className="px-4 sm:px-6">
                 <CardTitle>Itemized debts</CardTitle>
                 <CardDescription>Debts generated by each expense</CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent className="px-4 sm:px-6">
                 {allExpensesCombined.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center px-4 py-10 text-center">
+                  <div className="flex flex-col items-center justify-center px-2 py-10 text-center sm:px-4">
                     <Receipt className="size-10 text-muted-foreground/50" aria-hidden />
                     <p className="mt-4 text-base font-medium">No expenses recorded</p>
                     <p className="mt-1 max-w-sm text-sm text-muted-foreground">
@@ -1031,12 +1035,14 @@ export default function TripDetailPage() {
                       return (
                         <div
                           key={ex.id || `${ex.description}-${ex.date?.seconds}`}
-                          className="space-y-3 rounded-lg border p-3 sm:p-4"
+                          className="min-w-0 space-y-3 rounded-lg border p-3 sm:p-4"
                         >
-                          <div className="flex flex-col gap-2 border-b pb-2 sm:flex-row sm:items-center sm:justify-between">
-                            <div className="min-w-0">
-                              <p className="break-words text-sm font-semibold">{ex.description}</p>
-                              <p className="text-xs text-muted-foreground">
+                          <div className="flex min-w-0 flex-col gap-1.5 border-b pb-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm font-semibold leading-snug [overflow-wrap:anywhere]">
+                                {ex.description}
+                              </p>
+                              <p className="mt-0.5 text-xs text-muted-foreground">
                                 {ex.isLegacy ? 'Legacy' : ex.category || 'Expense'}
                                 {' · '}
                                 {ex.date?.seconds
@@ -1049,14 +1055,16 @@ export default function TripDetailPage() {
                                   : ''}
                               </p>
                             </div>
-                            <span className="text-right text-sm font-semibold tabular-nums">
-                              {exSymbol}{ex.amount.toLocaleString()}
+                            <div className="shrink-0 text-left sm:text-right">
+                              <span className="text-sm font-semibold tabular-nums">
+                                {exSymbol}{ex.amount.toLocaleString()}
+                              </span>
                               {exHomeHint && (
-                                <span className="block text-[10px] font-normal text-muted-foreground">
+                                <span className="mt-0.5 block text-[10px] font-normal text-muted-foreground">
                                   ({exHomeHint})
                                 </span>
                               )}
-                            </span>
+                            </div>
                           </div>
 
                           <ul className="space-y-1.5">
@@ -1073,15 +1081,15 @@ export default function TripDetailPage() {
                               return (
                                 <li
                                   key={index}
-                                  className="flex flex-col gap-2 rounded-md bg-muted/40 px-3 py-2 text-sm sm:flex-row sm:items-center sm:justify-between"
+                                  className="min-w-0 space-y-2 rounded-md bg-muted/40 px-2.5 py-2 text-sm sm:px-3"
                                 >
-                                  <div className="flex min-w-0 flex-wrap items-center gap-1.5 sm:gap-2">
+                                  <p className="min-w-0 leading-snug [overflow-wrap:anywhere]">
                                     <span className="font-medium text-destructive">{fromName}</span>
-                                    <span className="text-xs text-muted-foreground">owes</span>
+                                    <span className="text-xs text-muted-foreground"> owes </span>
                                     <span className="font-medium text-primary">{toName}</span>
-                                  </div>
-                                  <div className="flex items-center justify-between gap-2 sm:justify-end sm:gap-3">
-                                    <div className="text-right">
+                                  </p>
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div className="min-w-0">
                                       <span className="block font-semibold tabular-nums">
                                         {homeSymbol}{t.amount.toLocaleString()}
                                       </span>
@@ -1097,7 +1105,7 @@ export default function TripDetailPage() {
                                       )}
                                     </div>
                                     {debtState.status === 'paid' ? (
-                                      <Badge className="pointer-events-none border-0 bg-primary/15 text-xs text-primary hover:bg-primary/15">
+                                      <Badge className="pointer-events-none shrink-0 border-0 bg-primary/15 text-xs text-primary hover:bg-primary/15">
                                         Paid
                                       </Badge>
                                     ) : (
@@ -1105,7 +1113,7 @@ export default function TripDetailPage() {
                                         <Button
                                           size="sm"
                                           variant="ghost"
-                                          className="h-8 px-2.5 text-xs hover:bg-primary/10 hover:text-primary"
+                                          className="h-8 shrink-0 px-2.5 text-xs hover:bg-primary/10 hover:text-primary"
                                           onClick={() => {
                                             setRecordPaymentData({
                                               from: t.from,
@@ -1130,7 +1138,7 @@ export default function TripDetailPage() {
                     })}
 
                     {allExpensesCombined.every((ex) => calculateExpenseTransfers(ex).length === 0) && (
-                      <div className="flex flex-col items-center justify-center px-4 py-10 text-center">
+                      <div className="flex flex-col items-center justify-center px-2 py-10 text-center sm:px-4">
                         <CheckCircle2 className="size-10 text-success/70" aria-hidden />
                         <p className="mt-4 text-base font-medium">No open itemized debts</p>
                         <p className="mt-1 max-w-sm text-sm text-muted-foreground">
@@ -1143,14 +1151,14 @@ export default function TripDetailPage() {
               </CardContent>
             </Card>
 
-            <Card className="shadow-sm">
-              <CardHeader>
+            <Card className="min-w-0 overflow-hidden shadow-sm">
+              <CardHeader className="px-4 sm:px-6">
                 <CardTitle>Payment history</CardTitle>
                 <CardDescription>Recorded payments between members</CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent className="px-4 sm:px-6">
                 {paymentHistory.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center px-4 py-10 text-center">
+                  <div className="flex flex-col items-center justify-center px-2 py-10 text-center sm:px-4">
                     <CheckCircle2 className="size-10 text-muted-foreground/50" aria-hidden />
                     <p className="mt-4 text-base font-medium">No payments recorded</p>
                     <p className="mt-1 max-w-sm text-sm text-muted-foreground">
@@ -1158,19 +1166,22 @@ export default function TripDetailPage() {
                     </p>
                   </div>
                 ) : (
-                  <ul className="divide-y rounded-lg border">
+                  <ul className="divide-y overflow-hidden rounded-lg border">
                     {paymentHistory.map((s) => {
                       const fromName = getDisplayName(s.fromUserId)
                       const toName = getDisplayName(s.toUserId)
                       const date = s.date?.seconds ? new Date(s.date.seconds * 1000) : new Date()
                       return (
-                        <li key={s.id} className="flex items-center justify-between gap-3 px-4 py-3">
-                          <div className="flex min-w-0 items-center gap-3">
-                            <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-primary/10 sm:size-10">
+                        <li
+                          key={s.id}
+                          className="flex min-w-0 flex-col gap-1.5 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-4"
+                        >
+                          <div className="flex min-w-0 items-start gap-2.5 sm:items-center sm:gap-3">
+                            <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-primary/10 sm:size-9">
                               <CheckCircle2 className="size-4 text-success" aria-hidden />
                             </div>
-                            <div className="min-w-0">
-                              <p className="truncate font-medium">
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm font-medium leading-snug [overflow-wrap:anywhere]">
                                 {fromName} paid {toName}
                               </p>
                               <p className="text-xs text-muted-foreground tabular-nums">
@@ -1182,7 +1193,7 @@ export default function TripDetailPage() {
                               </p>
                             </div>
                           </div>
-                          <span className="shrink-0 font-semibold tabular-nums text-success">
+                          <span className="shrink-0 pl-10 font-semibold tabular-nums text-success sm:pl-0 sm:text-right">
                             {homeSymbol}{s.amount.toLocaleString()}
                           </span>
                         </li>
