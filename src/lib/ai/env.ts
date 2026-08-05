@@ -1,20 +1,32 @@
-/** Default Google AI model (Gemini 2.0 Flash is deprecated for new API keys). */
-export const GEMINI_FLASH_DEFAULT = 'gemini-2.5-flash';
+/**
+ * Default Google AI Flash model.
+ * Gemini 2.5 / 2.0 Flash are capacity-gated or retired for many API keys
+ * ("no longer available to new users") — prefer Gemini 3.x.
+ */
+export const GEMINI_FLASH_DEFAULT = 'gemini-3.6-flash';
 
 /** @deprecated Use GEMINI_FLASH_DEFAULT */
 export const GEMINI_2_FLASH = GEMINI_FLASH_DEFAULT;
 
+/** Model ids that should be remapped to GEMINI_FLASH_DEFAULT. */
 const DEPRECATED_GEMINI_IDS = new Set([
+  'gemini-2.5-flash',
+  'gemini-2.5-flash-lite',
+  'gemini-2.5-pro',
   'gemini-2.0-flash',
+  'gemini-2.0-flash-001',
+  'gemini-2.0-flash-lite',
   'gemini-1.5-flash',
   'gemini-1.5-flash-8b',
+  'gemini-1.5-pro',
 ]);
 
 /** Fallback order when the primary model is unavailable. */
 export const GEMINI_MODEL_FALLBACKS = [
-  'gemini-2.5-flash',
-  'gemini-2.0-flash-lite',
+  'gemini-3.6-flash',
+  'gemini-3.1-flash-lite',
   'gemini-flash-latest',
+  'gemini-3-flash-preview',
 ] as const;
 
 /** Trim env values (handles `.env` entries like `KEY = value`). */
