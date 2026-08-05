@@ -62,15 +62,37 @@ function contactPersonId(c: Contact): string {
 function resolveMemberPersonId(
   userId: string,
   displayName: string,
-  members: SplitMember[]
+  members: SplitMember[],
+  mePersonId: string = ME_PERSON_ID
 ): string {
-  if (userId === ME_PERSON_ID || userId === 'Me') return ME_PERSON_ID
+  if (userId === ME_PERSON_ID || userId === 'Me') {
+    if (members.some((m) => m.personId === mePersonId)) return mePersonId
+    return mePersonId
+  }
   if (members.some((m) => m.personId === userId)) return userId
   const byName = members.find(
     (m) => m.displayName === userId || m.displayName === displayName
   )
   if (byName) return byName.personId
   return userId
+}
+
+function defaultPayerFromMembers(
+  members: SplitMember[],
+  mePersonId: string
+): PayerRow {
+  const me =
+    members.find((m) => m.personId === mePersonId) ||
+    members.find((m) => m.personId === ME_PERSON_ID) ||
+    members[0]
+  if (me) {
+    return {
+      personId: me.personId,
+      displayName: me.displayName,
+      amount: '',
+    }
+  }
+  return { personId: mePersonId || ME_PERSON_ID, displayName: 'Me', amount: '' }
 }
 
 export function TransactionSplitSection({
@@ -88,6 +110,7 @@ export function TransactionSplitSection({
   onChange,
 }: TransactionSplitSectionProps) {
   const { contacts, loading: friendsLoading } = useFriends()
+  const mePersonId = previewPersonId || ME_PERSON_ID
 
   const contactKey = contacts.map((c) => `${c.key}:${c.displayName}`).join('|')
   const membersFromFriends = React.useMemo(() => {
@@ -106,7 +129,7 @@ export function TransactionSplitSection({
     const base = membersProp ?? membersFromFriends
     const byId = new Map(base.map((m) => [m.personId, m]))
     const addOrphan = (userId: string, displayName: string) => {
-      const resolved = resolveMemberPersonId(userId, displayName, base)
+      const resolved = resolveMemberPersonId(userId, displayName, base, mePersonId)
       if (byId.has(resolved)) return
       byId.set(resolved, {
         personId: resolved,
@@ -115,8 +138,8 @@ export function TransactionSplitSection({
     }
     for (const p of initialPayers ?? []) addOrphan(p.userId, p.displayName)
     for (const s of initialShares ?? []) addOrphan(s.userId, s.displayName)
-    return Array.from(byId.values())
-  }, [membersProp, membersFromFriends, initialPayers, initialShares])
+    return Array.from(byId.values()).filter((m) => m.personId.trim() !== '')
+  }, [membersProp, membersFromFriends, initialPayers, initialShares, mePersonId])
 
   const loading = membersProp ? false : friendsLoading
 
@@ -125,55 +148,52 @@ export function TransactionSplitSection({
   )
 
   const [payers, setPayers] = React.useState<PayerRow[]>(() => {
+    const memberList = membersProp ?? []
     if (initialPayers?.length) {
-      return initialPayers.map((p) => ({
-        personId: resolveMemberPersonId(
+      return initialPayers.map((p) => {
+        const personId = resolveMemberPersonId(
           p.userId,
           p.displayName,
-          membersProp ??
-            contacts.map((c) => ({
-              personId: contactPersonId(c),
-              displayName: c.displayName,
-            }))
-        ),
-        displayName: p.displayName,
-        amount: String(p.amount),
-      }))
+          memberList,
+          mePersonId
+        )
+        const member = memberList.find((m) => m.personId === personId)
+        return {
+          personId,
+          displayName: member?.displayName || p.displayName,
+          amount: String(p.amount),
+        }
+      })
     }
-    return [{ personId: ME_PERSON_ID, displayName: 'Me', amount: '' }]
+    return [defaultPayerFromMembers(memberList, mePersonId)]
   })
 
   const [equalIncluded, setEqualIncluded] = React.useState<Set<string>>(() => {
-    const memberList =
-      membersProp ??
-      contacts.map((c) => ({
-        personId: contactPersonId(c),
-        displayName: c.displayName,
-      }))
+    const memberList = membersProp ?? []
     if (initialShares?.length && (initialSplitMode === 'equal' || !initialSplitMode)) {
       return new Set(
-        initialShares.map((s) => resolveMemberPersonId(s.userId, s.displayName, memberList))
+        initialShares.map((s) =>
+          resolveMemberPersonId(s.userId, s.displayName, memberList, mePersonId)
+        )
       )
     }
     if (initialPayers?.length) {
       return new Set(
-        initialPayers.map((p) => resolveMemberPersonId(p.userId, p.displayName, memberList))
+        initialPayers.map((p) =>
+          resolveMemberPersonId(p.userId, p.displayName, memberList, mePersonId)
+        )
       )
     }
-    return new Set([ME_PERSON_ID])
+    const fallback = defaultPayerFromMembers(memberList, mePersonId)
+    return new Set([fallback.personId])
   })
 
   const [customShares, setCustomShares] = React.useState<Record<string, string>>(() => {
     if (initialShares?.length && initialSplitMode === 'custom') {
-      const memberList =
-        membersProp ??
-        contacts.map((c) => ({
-          personId: contactPersonId(c),
-          displayName: c.displayName,
-        }))
+      const memberList = membersProp ?? []
       return Object.fromEntries(
         initialShares.map((s) => [
-          resolveMemberPersonId(s.userId, s.displayName, memberList),
+          resolveMemberPersonId(s.userId, s.displayName, memberList, mePersonId),
           String(s.amount),
         ])
       )
@@ -181,10 +201,44 @@ export function TransactionSplitSection({
     return {}
   })
 
+  // When trip members arrive / mePersonId is a real UID, remap legacy "Me" rows.
+  React.useEffect(() => {
+    if (!members.length) return
+    setPayers((prev) => {
+      let changed = false
+      const next = prev.map((p) => {
+        const resolved = resolveMemberPersonId(p.personId, p.displayName, members, mePersonId)
+        if (resolved === p.personId) return p
+        changed = true
+        const member = members.find((m) => m.personId === resolved)
+        return {
+          ...p,
+          personId: resolved,
+          displayName: member?.displayName || p.displayName,
+        }
+      })
+      return changed ? next : prev
+    })
+    setEqualIncluded((prev) => {
+      let changed = false
+      const next = new Set<string>()
+      for (const id of prev) {
+        const resolved = resolveMemberPersonId(id, id, members, mePersonId)
+        if (resolved !== id) changed = true
+        next.add(resolved)
+      }
+      if (next.size === 0) {
+        next.add(defaultPayerFromMembers(members, mePersonId).personId)
+        changed = true
+      }
+      return changed ? next : prev
+    })
+  }, [members, mePersonId])
+
   const payerParticipants = React.useMemo(() => {
     const seen = new Set<string>()
     return payers.filter((p) => {
-      if (seen.has(p.personId)) return false
+      if (!p.personId || seen.has(p.personId)) return false
       seen.add(p.personId)
       return true
     })
@@ -259,11 +313,15 @@ export function TransactionSplitSection({
   React.useEffect(() => {
     if (initialPayers?.length) {
       setPayers(
-        initialPayers.map((p) => ({
-          personId: resolveMemberPersonId(p.userId, p.displayName, members),
-          displayName: p.displayName,
-          amount: String(p.amount),
-        }))
+        initialPayers.map((p) => {
+          const personId = resolveMemberPersonId(p.userId, p.displayName, members, mePersonId)
+          const member = members.find((m) => m.personId === personId)
+          return {
+            personId,
+            displayName: member?.displayName || p.displayName,
+            amount: String(p.amount),
+          }
+        })
       )
     }
     if (initialSplitMode) setSplitMode(initialSplitMode)
@@ -272,7 +330,7 @@ export function TransactionSplitSection({
         setCustomShares(
           Object.fromEntries(
             initialShares.map((s) => [
-              resolveMemberPersonId(s.userId, s.displayName, members),
+              resolveMemberPersonId(s.userId, s.displayName, members, mePersonId),
               String(s.amount),
             ])
           )
@@ -280,16 +338,18 @@ export function TransactionSplitSection({
       } else if (initialSplitMode === 'equal' || !initialSplitMode) {
         setEqualIncluded(
           new Set(
-            initialShares.map((s) => resolveMemberPersonId(s.userId, s.displayName, members))
+            initialShares.map((s) =>
+              resolveMemberPersonId(s.userId, s.displayName, members, mePersonId)
+            )
           )
         )
       }
     }
-  }, [initialSplitKey, members])
+  }, [initialSplitKey, members, mePersonId])
 
   const addPayer = () => {
     const used = new Set(payers.map((p) => p.personId))
-    const next = members.find((m) => !used.has(m.personId))
+    const next = members.find((m) => m.personId && !used.has(m.personId))
     if (!next) return
     setPayers([...payers, { personId: next.personId, displayName: next.displayName, amount: '' }])
   }
@@ -311,7 +371,8 @@ export function TransactionSplitSection({
 
   const totalPaid = payers.slice(0, -1).reduce((s, p) => s + (parseFloat(p.amount) || 0), 0)
   const lastPayerSuggestion = Math.max(0, total - totalPaid)
-  const equalShareAmount = equalIncluded.size > 0 ? total / equalIncluded.size : 0
+  const equalShareAmount =
+    equalIncluded.size > 0 ? total / equalIncluded.size : 0
   const customTotal = Object.values(customShares).reduce((s, v) => s + (parseFloat(v) || 0), 0)
 
   const buildResult = React.useMemo((): {
@@ -346,11 +407,15 @@ export function TransactionSplitSection({
         amount: p.amount,
       }))
     } else if (splitMode === 'equal') {
-      if (equalIncluded.size === 0) errs.push('กรุณาเลือกอย่างน้อย 1 คน')
-      const share = parseFloat((total / equalIncluded.size).toFixed(2))
-      finalShares = payerParticipants
-        .filter((p) => equalIncluded.has(p.personId))
-        .map((p) => ({ userId: p.personId, displayName: p.displayName, amount: share }))
+      if (equalIncluded.size === 0) {
+        errs.push('กรุณาเลือกอย่างน้อย 1 คน')
+        finalShares = []
+      } else {
+        const share = parseFloat((total / equalIncluded.size).toFixed(2))
+        finalShares = payerParticipants
+          .filter((p) => equalIncluded.has(p.personId))
+          .map((p) => ({ userId: p.personId, displayName: p.displayName, amount: share }))
+      }
     } else {
       finalShares = payerParticipants
         .filter((p) => customShares[p.personId] && parseFloat(customShares[p.personId]) > 0)
@@ -439,13 +504,17 @@ export function TransactionSplitSection({
           )}
         </div>
         <div className="space-y-2">
-          {payers.map((payer, idx) => (
-            <div key={idx} className="space-y-0.5">
+          {payers.map((payer, idx) => {
+            const selectValue = members.some((m) => m.personId === payer.personId)
+              ? payer.personId
+              : members[0]?.personId
+            return (
+            <div key={`${payer.personId}-${idx}`} className="space-y-0.5">
               <div className="grid grid-cols-[1fr_5.25rem_2rem] items-center gap-1.5 sm:grid-cols-[1fr_6rem_2rem] sm:gap-2">
                 <Select
-                  value={payer.personId}
+                  value={selectValue || undefined}
                   onValueChange={(v) => updatePayerPerson(idx, v)}
-                  disabled={disabled}
+                  disabled={disabled || !selectValue}
                 >
                   <SelectTrigger className="h-8 min-w-0 text-xs">
                     <SelectValue />
@@ -501,7 +570,8 @@ export function TransactionSplitSection({
                 </p>
               )}
             </div>
-          ))}
+            )
+          })}
         </div>
       </div>
 

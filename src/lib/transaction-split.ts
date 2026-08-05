@@ -75,14 +75,18 @@ export function computeSplitTransfers(
   let j = 0;
 
   while (i < debtors.length && j < creditors.length) {
-    const amount = roundMoney(Math.min(debtors[i].amount, creditors[j].amount));
+    const left = debtors[i].amount;
+    const right = creditors[j].amount;
+    if (!Number.isFinite(left) || !Number.isFinite(right)) break;
+
+    const amount = roundMoney(Math.min(left, right));
     if (amount > 0.001) {
       transfers.push({ from: debtors[i].id, to: creditors[j].id, amount });
     }
     debtors[i].amount = roundMoney(debtors[i].amount - amount);
     creditors[j].amount = roundMoney(creditors[j].amount - amount);
-    if (debtors[i].amount < 0.001) i++;
-    if (creditors[j].amount < 0.001) j++;
+    if (!Number.isFinite(debtors[i].amount) || debtors[i].amount < 0.001) i++;
+    if (!Number.isFinite(creditors[j].amount) || creditors[j].amount < 0.001) j++;
   }
 
   return transfers;
