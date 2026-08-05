@@ -50,13 +50,13 @@ export const TransactionAiPanel = React.forwardRef<
   ) => {
     activeJobIdRef.current = jobId
     setPendingResult(result)
-    setReviewImmichIds(immichIds.length ? immichIds : pendingImmichIds)
+    setReviewImmichIds([...new Set([...immichIds, ...pendingImmichIds])])
     setReviewOpen(true)
   }
 
   const openDraftForm = (result: ReceiptParseResult) => {
     const draft = receiptParseToTransactionDraft(result, currency)
-    const ids = reviewImmichIds.length ? reviewImmichIds : pendingImmichIds
+    const ids = [...new Set([...reviewImmichIds, ...pendingImmichIds])]
     onOpenDraftForm(draft, ids.length ? ids : undefined)
     setPendingImmichIds([])
     setReviewImmichIds([])

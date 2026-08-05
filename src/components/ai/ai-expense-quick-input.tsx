@@ -15,6 +15,7 @@ import {
 } from '@/lib/ai/parse-jobs-storage'
 import { readApiJson } from '@/lib/api-json'
 import { authFetch } from '@/lib/api-auth-client'
+import { compressImageForUpload } from '@/lib/immich/compress-image'
 import { useImmichUploadDelivery } from '@/providers/immich-upload-context'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
@@ -145,8 +146,20 @@ export const AiExpenseQuickInput = React.forwardRef<
     extraInstructions: string
   ) => {
     try {
+      // Compress client-side first — full phone photos + Immich on a low-memory
+      // SSR instance regularly OOM into HTTP 500 when both run uncompressed.
+      const prepared = await compressImageForUpload(file)
+
+      // Store the same (compressed) receipt on Immich in the background so the
+      // user does not need a second full-size upload alongside AI parse.
+      enqueueNoteUpload(prepared, {
+        tripId,
+        label: file.name || 'รูปใบเสร็จ',
+        successToast: 'เก็บรูปใบเสร็จใน Immich แล้ว',
+      })
+
       const form = new FormData()
-      form.append('image', file)
+      form.append('image', prepared)
       if (tripId) form.append('tripId', tripId)
       form.append('provider', job.provider)
       if (extraInstructions.trim()) {
@@ -277,6 +290,9 @@ export const AiExpenseQuickInput = React.forwardRef<
 
       <div className="space-y-2 rounded-lg border bg-muted/30 p-3">
         <p className="text-xs font-medium text-muted-foreground">Receipt photo</p>
+        <p className="text-[11px] text-muted-foreground">
+          กดส่งแล้วระบบจะแยกด้วย AI และเก็บรูปลง Immich ให้พร้อมกัน (บีบอัดก่อนอัปโหลด)
+        </p>
         <div className="flex flex-wrap gap-2 items-center">
           <input
             ref={aiImageInputRef}

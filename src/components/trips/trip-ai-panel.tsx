@@ -60,7 +60,7 @@ export const TripAiPanel = React.forwardRef<TripAiPanelHandle, TripAiPanelProps>
     ) => {
       activeJobIdRef.current = jobId
       setPendingResult(result)
-      setReviewImmichIds(immichIds.length ? immichIds : pendingImmichIds)
+      setReviewImmichIds([...new Set([...immichIds, ...pendingImmichIds])])
       setReviewOpen(true)
     }
 
@@ -72,7 +72,7 @@ export const TripAiPanel = React.forwardRef<TripAiPanelHandle, TripAiPanelProps>
         getTripTimeZone(trip.countryCode, tripCurrency),
         user?.uid
       )
-      const ids = reviewImmichIds.length ? reviewImmichIds : pendingImmichIds
+      const ids = [...new Set([...reviewImmichIds, ...pendingImmichIds])]
       onOpenExpenseForm(expenseDraft, ids.length ? ids : undefined)
       setPendingImmichIds([])
       setReviewImmichIds([])
