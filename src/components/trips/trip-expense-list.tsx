@@ -153,6 +153,9 @@ function TripExpenseReceiptBreakdown({
             ราคาสินค้ารวม: {exSymbol}
             {expense.rawEx.baseAmount.toLocaleString()} · ภาษีรวม: {exSymbol}
             {(expense.rawEx.taxAmount || 0).toLocaleString()}
+            {expense.rawEx.discount != null && expense.rawEx.discount > 0 && (
+              <> · ส่วนลด: {exSymbol}{expense.rawEx.discount.toLocaleString()}</>
+            )}
           </span>
           <span className="font-semibold text-foreground">
             ยอดรวมทั้งหมด: {exSymbol}

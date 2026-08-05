@@ -209,6 +209,7 @@ export function receiptParseToTripExpenseDraft(
     items,
     baseAmount: parsed.baseAmount,
     taxAmount: parsed.taxAmount,
+    ...(parsed.discount && parsed.discount > 0 ? { discount: parsed.discount } : {}),
     taxMode: parsed.taxMode,
     currency,
     source: 'ai',

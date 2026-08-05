@@ -309,6 +309,8 @@ export interface TripExpense {
   items?: ReceiptItem[];
   baseAmount?: number;
   taxAmount?: number;
+  /** Discount applied to the grand total (positive number) */
+  discount?: number;
   taxMode?: TaxMode;
   currency?: TripCurrency;
   transactionId?: string | null;

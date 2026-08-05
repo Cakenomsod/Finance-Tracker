@@ -123,6 +123,9 @@ export function TripExpenseFormV2({
   const [totalAmount, setTotalAmount] = React.useState(initialData ? String(initialData.totalAmount) : '')
   const [subtotal, setSubtotal] = React.useState(initialData && initialData.items && initialData.items.length === 0 && initialData.baseAmount ? String(initialData.baseAmount) : '')
   const [tax, setTax] = React.useState(initialData && initialData.items && initialData.items.length === 0 && initialData.taxAmount ? String(initialData.taxAmount) : '')
+  const [discount, setDiscount] = React.useState(
+    initialData?.discount ? String(initialData.discount) : ''
+  )
   const [category, setCategory] = React.useState(initialData?.category || '')
   const [date, setDate] = React.useState(
     initialData?.date?.seconds
@@ -311,8 +314,29 @@ export function TripExpenseFormV2({
     }
   })
 
-  const manualTotal = parseFloat(totalAmount) || 0
-  const total = isReceiptActive ? totalReceiptAmount : manualTotal
+  const discountAmount = Math.max(0, parseFloat(discount) || 0)
+  const receiptGross = totalReceiptAmount
+  const receiptNet = Math.max(0, roundMoney(receiptGross - discountAmount))
+  const manualGross = parseFloat(totalAmount) || 0
+  // Standard: totalAmount field is kept as net when auto-calc'd from sub+tax−discount
+  const total = isReceiptActive ? receiptNet : manualGross
+
+  // Scale item shares when a receipt-level discount applies
+  if (isReceiptActive && discountAmount > 0 && receiptGross > 0) {
+    const scale = receiptNet / receiptGross
+    for (const key of Object.keys(itemShares)) {
+      itemShares[key] = roundMoney(itemShares[key] * scale)
+    }
+  }
+
+  const recalcStandardTotal = (subVal: string, taxVal: string, discVal: string) => {
+    const sub = parseFloat(subVal) || 0
+    const tx = parseFloat(taxVal) || 0
+    const disc = Math.max(0, parseFloat(discVal) || 0)
+    if (sub > 0 || tx > 0) {
+      setTotalAmount(Math.max(0, sub + tx - disc).toString())
+    }
+  }
 
   const splitMembers = React.useMemo(
     () => tripMembers.map((m) => ({ personId: m.key, displayName: m.displayName })),
@@ -337,6 +361,14 @@ export function TripExpenseFormV2({
     if (!description.trim()) errs.push('กรุณากรอกรายละเอียด')
     if (!total || total <= 0) errs.push('กรุณากรอกจำนวนเงิน')
     if (!category) errs.push('กรุณาเลือกหมวดหมู่')
+    const grossForDiscount = isReceiptActive ? receiptGross : (
+      (parseFloat(subtotal) || 0) > 0 || (parseFloat(tax) || 0) > 0
+        ? (parseFloat(subtotal) || 0) + (parseFloat(tax) || 0)
+        : total + discountAmount
+    )
+    if (discountAmount > 0 && grossForDiscount > 0 && discountAmount > grossForDiscount) {
+      errs.push('ส่วนลดต้องไม่เกินยอดรวม')
+    }
 
     let finalPayers: TripExpensePayer[]
     let finalShares: TripExpenseShare[]
@@ -399,6 +431,13 @@ export function TripExpenseFormV2({
         shares: result.shares,
         currency,
         source: initialData?.source || 'manual',
+      }
+
+      if (discountAmount > 0) {
+        payload.discount = discountAmount
+      } else {
+        // 0 signals clear on update; omitted on create via stripUndefined... keep explicit 0 for update path
+        payload.discount = 0
       }
 
       if (isReceiptActive) {
@@ -520,56 +559,82 @@ export function TripExpenseFormV2({
 
       {/* Amount + Category + Date */}
       {inputMode === 'standard' && (
-        <div className="grid grid-cols-1 gap-3 border p-3 rounded-lg bg-muted/20 sm:grid-cols-3">
-          <div className="space-y-1.5">
-            <Label className="text-xs">ราคาสินค้า ({curSymbol})</Label>
-            <Input 
-              type="number" 
-              step="0.01" 
-              placeholder="0.00"
-              value={subtotal}
-              onChange={e => {
-                const val = e.target.value
-                setSubtotal(val)
-                const sub = parseFloat(val) || 0
-                const tx = parseFloat(tax) || 0
-                setTotalAmount(sub > 0 || tx > 0 ? (sub + tx).toString() : '')
-              }}
-              className="h-9 text-xs tabular-nums"
-            />
+        <div className="space-y-2">
+          <div className="grid grid-cols-2 gap-3 border p-3 rounded-lg bg-muted/20 sm:grid-cols-4">
+            <div className="space-y-1.5">
+              <Label className="text-xs">ราคาสินค้า ({curSymbol})</Label>
+              <Input 
+                type="number" 
+                step="0.01" 
+                placeholder="0.00"
+                value={subtotal}
+                onChange={e => {
+                  const val = e.target.value
+                  setSubtotal(val)
+                  recalcStandardTotal(val, tax, discount)
+                }}
+                className="h-9 text-xs tabular-nums"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">ภาษี ({curSymbol})</Label>
+              <Input 
+                type="number" 
+                step="0.01" 
+                placeholder="0.00"
+                value={tax}
+                onChange={e => {
+                  const val = e.target.value
+                  setTax(val)
+                  recalcStandardTotal(subtotal, val, discount)
+                }}
+                className="h-9 text-xs tabular-nums"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">ส่วนลด ({curSymbol})</Label>
+              <Input 
+                type="number" 
+                step="0.01"
+                min="0"
+                placeholder="0.00"
+                value={discount}
+                onChange={e => {
+                  const val = e.target.value
+                  setDiscount(val)
+                  recalcStandardTotal(subtotal, tax, val)
+                }}
+                className="h-9 text-xs tabular-nums"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-primary">ยอดรวม ({curSymbol})</Label>
+              <Input 
+                type="number" 
+                step="0.01" 
+                placeholder="0.00"
+                value={totalAmount}
+                onChange={e => {
+                  setTotalAmount(e.target.value)
+                  setSubtotal('')
+                  setTax('')
+                }}
+                className="h-9 text-xs font-semibold tabular-nums border-primary/40 focus-visible:ring-primary"
+              />
+            </div>
           </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs">ภาษี ({curSymbol})</Label>
-            <Input 
-              type="number" 
-              step="0.01" 
-              placeholder="0.00"
-              value={tax}
-              onChange={e => {
-                const val = e.target.value
-                setTax(val)
-                const sub = parseFloat(subtotal) || 0
-                const tx = parseFloat(val) || 0
-                setTotalAmount(sub > 0 || tx > 0 ? (sub + tx).toString() : '')
-              }}
-              className="h-9 text-xs tabular-nums"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs font-semibold text-primary">ยอดรวม ({curSymbol})</Label>
-            <Input 
-              type="number" 
-              step="0.01" 
-              placeholder="0.00"
-              value={totalAmount}
-              onChange={e => {
-                setTotalAmount(e.target.value)
-                setSubtotal('')
-                setTax('')
-              }}
-              className="h-9 text-xs font-semibold tabular-nums border-primary/40 focus-visible:ring-primary"
-            />
-          </div>
+          {discountAmount > 0 && manualGross > 0 && (
+            <p className="text-[10px] text-muted-foreground tabular-nums px-1">
+              ยอดก่อนหักส่วนลด {curSymbol}
+              {(
+                (parseFloat(subtotal) || 0) > 0 || (parseFloat(tax) || 0) > 0
+                  ? (parseFloat(subtotal) || 0) + (parseFloat(tax) || 0)
+                  : manualGross + discountAmount
+              ).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              {' '}− ส่วนลด {curSymbol}
+              {discountAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </p>
+          )}
         </div>
       )}
 
@@ -579,7 +644,7 @@ export function TripExpenseFormV2({
             <Label>ยอดรวม ({curSymbol})</Label>
             <Input type="number" step="0.01" placeholder="0.00"
               disabled={true}
-              value={totalReceiptAmount.toFixed(2)} />
+              value={receiptNet.toFixed(2)} />
           </div>
         )}
         <div className={cn("space-y-1.5", inputMode === 'standard' && "col-span-2")}>
@@ -802,7 +867,7 @@ export function TripExpenseFormV2({
           </Button>
 
           {/* Receipt Level Summary & Tax Breakdown */}
-          <div className="grid grid-cols-1 gap-3 border-t pt-4 mt-2 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 border-t pt-4 mt-2 sm:grid-cols-2 lg:grid-cols-4">
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">ราคาสินค้ารวม (Subtotal)</Label>
               <div className="relative">
@@ -837,6 +902,23 @@ export function TripExpenseFormV2({
               </div>
             </div>
             <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">ส่วนลด (Discount)</Label>
+              <div className="relative">
+                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">
+                  {curSymbol}
+                </span>
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="0.00"
+                  className="pl-6 h-9 text-xs font-medium tabular-nums"
+                  value={discount}
+                  onChange={e => setDiscount(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground font-bold text-foreground">ยอดรวมสุทธิ (Total)</Label>
               <div className="relative">
                 <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">
@@ -846,11 +928,17 @@ export function TripExpenseFormV2({
                   type="number"
                   disabled
                   className="pl-6 h-9 text-xs bg-muted/30 font-bold tabular-nums text-foreground border-muted-foreground/30"
-                  value={totalReceiptAmount.toFixed(2)}
+                  value={receiptNet.toFixed(2)}
                 />
               </div>
-              {homeHint(totalReceiptAmount) && (
-                <p className="text-[10px] text-muted-foreground">≈ {homeHint(totalReceiptAmount)}</p>
+              {discountAmount > 0 && receiptGross > 0 && (
+                <p className="text-[10px] text-muted-foreground tabular-nums">
+                  รวม {curSymbol}{receiptGross.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  {' '}− ส่วนลด {curSymbol}{discountAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
+              )}
+              {homeHint(receiptNet) && (
+                <p className="text-[10px] text-muted-foreground">≈ {homeHint(receiptNet)}</p>
               )}
             </div>
           </div>

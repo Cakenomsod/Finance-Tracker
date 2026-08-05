@@ -8,6 +8,7 @@ import {
 } from '@/lib/firestore';
 import { collectImmichAssetIds } from '@/lib/immich/asset-ids';
 import { ExpenseSource, TripExpense, Transaction } from '@/lib/firestore-types';
+import { deleteField } from 'firebase/firestore';
 
 export type ImmichSyncOptions = {
   immichAssetId?: string | null;
@@ -55,6 +56,7 @@ function mapExpenseToTransaction(
     items: expense.items,
     baseAmount: expense.baseAmount,
     taxAmount: expense.taxAmount,
+    ...(expense.discount && expense.discount > 0 ? { discount: expense.discount } : {}),
     currency: expense.currency,
     tripExpenseId: expenseId,
     immichAssetId: primary,
@@ -106,6 +108,10 @@ export async function updateTripExpenseWithTransaction(
     patch.immichAssetIds = ids.length ? ids : undefined;
   }
 
+  if (expense.discount !== undefined && !(expense.discount > 0)) {
+    (patch as Record<string, unknown>).discount = deleteField();
+  }
+
   await updateTripExpense(expenseId, patch);
 
   if (!transactionId) return;
@@ -122,6 +128,12 @@ export async function updateTripExpenseWithTransaction(
   if (expense.items !== undefined) txUpdate.items = expense.items;
   if (expense.baseAmount !== undefined) txUpdate.baseAmount = expense.baseAmount;
   if (expense.taxAmount !== undefined) txUpdate.taxAmount = expense.taxAmount;
+  if (expense.discount !== undefined) {
+    txUpdate.discount =
+      expense.discount > 0
+        ? expense.discount
+        : (deleteField() as unknown as number);
+  }
   if (expense.currency !== undefined) txUpdate.currency = expense.currency;
 
   if (expense.payers?.[0]) {
