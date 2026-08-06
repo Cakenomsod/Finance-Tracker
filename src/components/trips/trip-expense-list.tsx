@@ -43,6 +43,7 @@ export type TripExpenseListItem = {
   paidBy: string
   splitLabel: string
   isLegacy: boolean
+  currency?: Transaction['currency']
   rawTx: Transaction | null
   rawEx: TripExpense | null
 }
@@ -85,7 +86,7 @@ function TripExpenseReceiptBreakdown({
       </div>
       <div className="space-y-1.5">
         {expense.rawEx.items.map((item, index) => {
-          const itemTotal = item.price + (item.tax || 0)
+          const itemTotal = (Number(item.price) || 0) + (Number(item.tax) || 0)
           return (
             <div
               key={index}
@@ -133,11 +134,11 @@ function TripExpenseReceiptBreakdown({
                     ({formatHomeConversion(itemTotal, exCurrency, trip)})
                   </span>
                 )}
-                {item.tax > 0 ? (
+                {item.tax != null && item.tax > 0 ? (
                   <span className="block text-[10px] text-muted-foreground tabular-nums">
                     (สินค้า {exSymbol}
-                    {item.price.toLocaleString()} + ภาษี {exSymbol}
-                    {item.tax.toLocaleString()})
+                    {(Number(item.price) || 0).toLocaleString()} + ภาษี {exSymbol}
+                    {(Number(item.tax) || 0).toLocaleString()})
                   </span>
                 ) : (
                   <span className="block text-[10px] text-success">Tax free</span>

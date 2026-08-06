@@ -4,6 +4,7 @@ import { db } from '@/lib/firebase';
 import { TripSettlement } from '@/lib/firestore-types';
 import { createTripSettlement, deleteTripSettlement } from '@/lib/firestore';
 import { createDebtSettlementTransaction } from '@/lib/debt-payment';
+import { isCurrentUserKey } from '@/lib/trip-balance';
 import { useAuth } from './use-auth';
 
 export function useTripSettlements(tripId?: string) {
@@ -49,12 +50,15 @@ export function useTripSettlements(tripId?: string) {
     return map;
   };
 
-  const recordSettlement = async (data: Omit<TripSettlement, 'id' | 'createdAt' | 'userId'>) => {
+  const recordSettlement = async (
+    data: Omit<TripSettlement, 'id' | 'createdAt' | 'userId'>,
+    cashOptions?: { accountId?: string; moneyPoolId?: string }
+  ) => {
     if (!user) throw new Error('Not logged in');
     const settlementRef = await createTripSettlement({ ...data, userId: user.uid });
 
-    const isPayer = data.fromUserId === user.uid;
-    const isReceiver = data.toUserId === user.uid;
+    const isPayer = isCurrentUserKey(data.fromUserId, user.uid);
+    const isReceiver = isCurrentUserKey(data.toUserId, user.uid);
     if (isPayer || isReceiver) {
       const counterpartyName = isPayer
         ? data.toDisplayName || data.toUserId
@@ -66,6 +70,8 @@ export function useTripSettlements(tripId?: string) {
         counterpartyName,
         note: data.tripId ? `trip:${data.tripId}` : undefined,
         date: data.date,
+        accountId: cashOptions?.accountId,
+        moneyPoolId: cashOptions?.moneyPoolId,
       });
     }
 

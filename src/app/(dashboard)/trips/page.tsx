@@ -68,6 +68,7 @@ import {
 } from '@/components/trips/trip-settings-fields'
 import { convertToHomeCurrency, formatCurrencySymbol, formatHomeConversion } from '@/lib/trip-currency'
 import { saveTripExpenseWithTransaction } from '@/lib/sync-expense-transaction'
+import { getTripSelfMemberKey } from '@/lib/trip-balance'
 import { Timestamp } from 'firebase/firestore'
 
 // --- Settlement calculation ---
@@ -608,6 +609,8 @@ export default function TripsPage() {
     key: k,
     displayName: expenseTrip?.memberProfiles?.[k]?.displayName || k,
   }))
+  const expenseSelfKey =
+    getTripSelfMemberKey(expenseTrip?.members || [], user?.uid) || user?.uid || 'Me'
 
   const loading = tripsLoading || tripsDataLoading
 
@@ -959,7 +962,7 @@ export default function TripsPage() {
           <TripExpenseFormV2
             tripId={expenseTripId || undefined}
             tripMembers={expenseMemberObjects}
-            myUserId={user?.uid || ''}
+            myUserId={expenseSelfKey}
             tripDefaults={expenseTrip ? {
               countryCode: expenseTrip.countryCode,
               tripCurrency: expenseTrip.tripCurrency,

@@ -20,7 +20,8 @@ export function calcTripMemberNet(
   trip: Trip,
   expenses: TripExpense[],
   settlements: TripSettlement[],
-  legacyTxs: Transaction[]
+  legacyTxs: Transaction[],
+  currentUserId?: string | null
 ): Record<string, number> {
   const members = trip.members || []
   const net: Record<string, number> = {}
@@ -28,11 +29,13 @@ export function calcTripMemberNet(
     net[m] = 0
   })
 
+  const resolve = (key: string) => resolveTripMemberKey(key, members, currentUserId)
+
   legacyTxs
     .filter((tx) => tx.tripId === trip.id && !tx.tripExpenseId)
     .forEach((tx) => {
       const amount = convertToHomeCurrency(Math.abs(tx.amount), tx.currency, trip)
-      const payer = tx.paidBy || members[0]
+      const payer = resolve(tx.paidBy || members[0]) || members[0]
       const split = tx.splitWith
 
       if (!split) return
@@ -41,7 +44,8 @@ export function calcTripMemberNet(
       if (split === 'all') {
         involved = members.filter((m) => net[m] !== undefined)
       } else {
-        involved = [payer, split].filter((m) => members.includes(m))
+        const other = resolve(split)
+        involved = [payer, other].filter((m): m is string => !!m && members.includes(m))
       }
 
       if (involved.length === 0) return
@@ -57,13 +61,15 @@ export function calcTripMemberNet(
     .filter((e) => e.tripId === trip.id)
     .forEach((ex) => {
       ex.payers.forEach((p) => {
-        if (net[p.userId] !== undefined) {
-          net[p.userId] += convertToHomeCurrency(p.amount, ex.currency, trip)
+        const key = resolve(p.userId)
+        if (key && net[key] !== undefined) {
+          net[key] += convertToHomeCurrency(p.amount, ex.currency, trip)
         }
       })
       ex.shares.forEach((s) => {
-        if (net[s.userId] !== undefined) {
-          net[s.userId] -= convertToHomeCurrency(s.amount, ex.currency, trip)
+        const key = resolve(s.userId)
+        if (key && net[key] !== undefined) {
+          net[key] -= convertToHomeCurrency(s.amount, ex.currency, trip)
         }
       })
     })
@@ -71,8 +77,10 @@ export function calcTripMemberNet(
   settlements
     .filter((s) => s.tripId === trip.id)
     .forEach((s) => {
-      if (net[s.fromUserId] !== undefined) net[s.fromUserId] += s.amount
-      if (net[s.toUserId] !== undefined) net[s.toUserId] -= s.amount
+      const from = resolve(s.fromUserId)
+      const to = resolve(s.toUserId)
+      if (from && net[from] !== undefined) net[from] += s.amount
+      if (to && net[to] !== undefined) net[to] -= s.amount
     })
 
   return net
@@ -111,11 +119,15 @@ export function getPairwiseDebtAmount(
   settlements: TripSettlement[],
   legacyTxs: Transaction[],
   fromUserId: string,
-  toUserId: string
+  toUserId: string,
+  currentUserId?: string | null
 ): number {
-  const net = calcTripMemberNet(trip, expenses, settlements, legacyTxs)
+  const net = calcTripMemberNet(trip, expenses, settlements, legacyTxs, currentUserId)
+  const members = trip.members || []
+  const from = resolveTripMemberKey(fromUserId, members, currentUserId) || fromUserId
+  const to = resolveTripMemberKey(toUserId, members, currentUserId) || toUserId
   const transfer = greedyPairwiseTransfers(net).find(
-    (t) => t.from === fromUserId && t.to === toUserId
+    (t) => t.from === from && t.to === to
   )
   return transfer?.amount ?? 0
 }
@@ -129,7 +141,8 @@ export function allocateSettlementAcrossTrips(
   legacyTxs: Transaction[],
   fromUserId: string,
   toUserId: string,
-  totalAmount: number
+  totalAmount: number,
+  currentUserId?: string | null
 ): Array<{ tripId: string; amount: number }> {
   const debts = tripIds
     .map((tripId) => {
@@ -141,7 +154,8 @@ export function allocateSettlementAcrossTrips(
         settlements,
         legacyTxs,
         fromUserId,
-        toUserId
+        toUserId,
+        currentUserId
       )
       return amount > 0.01 ? { tripId, debtAmount: amount } : null
     })
@@ -178,6 +192,41 @@ export function allocateSettlementAcrossTrips(
 
 export function isCurrentUserKey(key: string, userId: string): boolean {
   return key === userId || key.toLowerCase() === 'me'
+}
+
+/**
+ * Map a payer/settlement id onto the key stored in trip.members.
+ * Legacy trips use "Me"; newer ones use the Firebase uid — both must resolve.
+ */
+export function resolveTripMemberKey(
+  key: string,
+  members: string[],
+  currentUserId?: string | null
+): string | null {
+  if (!key) return null
+  if (members.includes(key)) return key
+  const uid = currentUserId || ''
+  if (uid && isCurrentUserKey(key, uid)) {
+    const match = members.find((m) => isCurrentUserKey(m, uid))
+    if (match) return match
+  }
+  // Key is a Firebase uid but trip still uses literal "Me"
+  if (uid && key === uid) {
+    const me = members.find((m) => m.toLowerCase() === 'me')
+    if (me) return me
+  }
+  return null
+}
+
+/** Current user's key inside trip.members (Me or uid). */
+export function getTripSelfMemberKey(
+  members: string[],
+  currentUserId?: string | null
+): string | null {
+  if (!currentUserId) {
+    return members.find((m) => m.toLowerCase() === 'me') ?? null
+  }
+  return members.find((m) => isCurrentUserKey(m, currentUserId)) ?? null
 }
 
 /** User's personal cost for a trip expense (their share, regardless of reimbursement status). */
@@ -231,7 +280,7 @@ export function aggregateTripDebtsForUser(
 
   trips.forEach((trip) => {
     if (!trip.id) return
-    const net = calcTripMemberNet(trip, expenses, settlements, legacyTxs)
+    const net = calcTripMemberNet(trip, expenses, settlements, legacyTxs, userId)
     const names: Record<string, string> = {}
     trip.members.forEach((m) => {
       names[m] = trip.memberProfiles?.[m]?.displayName || m

@@ -62,7 +62,7 @@ import { useDebts } from '@/hooks/use-debts'
 import { useTripDebts } from '@/hooks/use-trip-debts'
 import { useTripSettlements } from '@/hooks/use-trip-settlements'
 import { useTransactions } from '@/hooks/use-transactions'
-import { allocateSettlementAcrossTrips } from '@/lib/trip-balance'
+import { allocateSettlementAcrossTrips, resolveTripMemberKey, isCurrentUserKey } from '@/lib/trip-balance'
 import { useAuth } from '@/hooks/use-auth'
 import { Debt, Transaction, TripSettlement } from '@/lib/firestore-types'
 import { TransactionForm } from '@/components/transactions/transaction-form'
@@ -770,16 +770,25 @@ export default function DebtsPage() {
           tripBalanceData.legacyTxs,
           settleDebtData.fromUserId,
           settleDebtData.toUserId,
-          payAmount
+          payAmount,
+          user!.uid
         )
 
         for (const { tripId, amount } of allocations) {
+          const trip = tripBalanceData.trips.find((t) => t.id === tripId)
+          const members = trip?.members || []
+          const fromKey =
+            resolveTripMemberKey(settleDebtData.fromUserId, members, user!.uid) ||
+            settleDebtData.fromUserId
+          const toKey =
+            resolveTripMemberKey(settleDebtData.toUserId, members, user!.uid) ||
+            settleDebtData.toUserId
           await createTripSettlement({
             userId: user!.uid,
             tripId,
-            fromUserId: settleDebtData.fromUserId,
+            fromUserId: fromKey,
             fromDisplayName: settleDebtData.fromDisplayName || settleDebtData.fromUserId,
-            toUserId: settleDebtData.toUserId,
+            toUserId: toKey,
             toDisplayName: settleDebtData.toDisplayName || settleDebtData.toUserId,
             amount,
             isPartial: payAmount < settleDebtData.amount - 0.001,
@@ -787,14 +796,13 @@ export default function DebtsPage() {
           })
         }
 
-        const counterpartyName =
-          settleDebtData.fromUserId === user!.uid
-            ? settleDebtData.toDisplayName || settleDebtData.toUserId
-            : settleDebtData.fromDisplayName || settleDebtData.fromUserId
+        const counterpartyName = isCurrentUserKey(settleDebtData.fromUserId, user!.uid)
+          ? settleDebtData.toDisplayName || settleDebtData.toUserId
+          : settleDebtData.fromDisplayName || settleDebtData.fromUserId
 
         await createDebtSettlementTransaction(user!.uid, {
           amount: payAmount,
-          isPayer: settleDebtData.fromUserId === user!.uid,
+          isPayer: isCurrentUserKey(settleDebtData.fromUserId, user!.uid),
           counterpartyName,
           debtId: settleDebtData.id,
           note: 'trip-debt',

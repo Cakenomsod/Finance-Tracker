@@ -29,7 +29,11 @@ export function useTripExpenses(tripId: string, trip?: Trip | null) {
 
     const unsub = onSnapshot(q, (snap) => {
       const docs = snap.docs.map(d => ({ id: d.id, ...d.data() } as TripExpense));
-      docs.sort((a, b) => b.date.toMillis() - a.date.toMillis());
+      docs.sort((a, b) => {
+        const aTime = a.date?.toMillis?.() ?? (a.date?.seconds ?? 0) * 1000;
+        const bTime = b.date?.toMillis?.() ?? (b.date?.seconds ?? 0) * 1000;
+        return bTime - aTime;
+      });
       setExpenses(docs);
       setLoading(false);
     }, (err) => {
@@ -49,21 +53,36 @@ export function useTripExpenses(tripId: string, trip?: Trip | null) {
   );
 
   /** Calculate net balance per member across all TripExpenses */
-  const calcBalances = (memberIds: string[], displayNames: Record<string, string>): MemberBalance[] => {
+  const calcBalances = (
+    memberIds: string[],
+    displayNames: Record<string, string>,
+    currentUserId?: string | null
+  ): MemberBalance[] => {
     const paid: Record<string, number> = {};
     const share: Record<string, number> = {};
 
     memberIds.forEach(id => { paid[id] = 0; share[id] = 0; });
 
+    const resolve = (key: string) => {
+      if (memberIds.includes(key)) return key;
+      const uid = currentUserId || user?.uid || '';
+      if (uid && (key === uid || key.toLowerCase() === 'me')) {
+        return memberIds.find(m => m === uid || m.toLowerCase() === 'me') || null;
+      }
+      return null;
+    };
+
     expenses.forEach(expense => {
-      expense.payers.forEach(p => {
-        if (paid[p.userId] !== undefined) {
-          paid[p.userId] += convertToHomeCurrency(p.amount, expense.currency, trip);
+      (expense.payers || []).forEach(p => {
+        const key = resolve(p.userId);
+        if (key && paid[key] !== undefined) {
+          paid[key] += convertToHomeCurrency(p.amount, expense.currency, trip);
         }
       });
-      expense.shares.forEach(s => {
-        if (share[s.userId] !== undefined) {
-          share[s.userId] += convertToHomeCurrency(s.amount, expense.currency, trip);
+      (expense.shares || []).forEach(s => {
+        const key = resolve(s.userId);
+        if (key && share[key] !== undefined) {
+          share[key] += convertToHomeCurrency(s.amount, expense.currency, trip);
         }
       });
     });

@@ -65,6 +65,9 @@ function TripExpenseDetailView({ expense }: { expense: TripExpense }) {
   const txDate = toDateFromFirestore(expense.date)
   const currency = expense.currency || 'THB'
   const symbol = formatCurrencySymbol(currency)
+  const payers = expense.payers ?? []
+  const shares = expense.shares ?? []
+  const total = Number(expense.totalAmount) || 0
 
   return (
     <div className="space-y-4">
@@ -83,7 +86,7 @@ function TripExpenseDetailView({ expense }: { expense: TripExpense }) {
         )}
         <DetailRow
           label="ยอดรวม"
-          value={`${symbol}${expense.totalAmount.toLocaleString()}`}
+          value={`${symbol}${total.toLocaleString()}`}
           highlight
         />
         {expense.note && <DetailRow label="หมายเหตุ" value={expense.note} />}
@@ -101,18 +104,18 @@ function TripExpenseDetailView({ expense }: { expense: TripExpense }) {
         />
       </div>
 
-      {expense.payers.length > 0 && (
+      {payers.length > 0 && (
         <div className="space-y-2">
           <SectionLabel>ผู้จ่าย</SectionLabel>
           <div className="space-y-1.5">
-            {expense.payers.map((payer, index) => (
+            {payers.map((payer, index) => (
               <div
                 key={`${payer.userId}-${index}`}
                 className="flex items-center justify-between rounded-md border px-3 py-2 text-sm"
               >
                 <span className="min-w-0 truncate">{payer.displayName}</span>
                 <span className="ml-2 shrink-0 font-medium tabular-nums">
-                  {symbol}{payer.amount.toLocaleString()}
+                  {symbol}{(Number(payer.amount) || 0).toLocaleString()}
                 </span>
               </div>
             ))}
@@ -120,18 +123,18 @@ function TripExpenseDetailView({ expense }: { expense: TripExpense }) {
         </div>
       )}
 
-      {expense.shares.length > 0 && (
+      {shares.length > 0 && (
         <div className="space-y-2">
           <SectionLabel>ส่วนแบ่ง</SectionLabel>
           <div className="space-y-1.5">
-            {expense.shares.map((share, index) => (
+            {shares.map((share, index) => (
               <div
                 key={`${share.userId}-${index}`}
                 className="flex items-center justify-between rounded-md border px-3 py-2 text-sm"
               >
                 <span className="min-w-0 truncate">{share.displayName}</span>
                 <span className="ml-2 shrink-0 font-medium tabular-nums">
-                  {symbol}{share.amount.toLocaleString()}
+                  {symbol}{(Number(share.amount) || 0).toLocaleString()}
                 </span>
               </div>
             ))}
@@ -156,7 +159,7 @@ function TripExpenseDetailView({ expense }: { expense: TripExpense }) {
                   </div>
                 </div>
                 <span className="ml-2 shrink-0 font-semibold tabular-nums">
-                  {symbol}{(item.price + (item.tax || 0)).toLocaleString()}
+                  {symbol}{((Number(item.price) || 0) + (Number(item.tax) || 0)).toLocaleString()}
                 </span>
               </div>
             ))}

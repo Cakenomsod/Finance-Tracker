@@ -10,6 +10,7 @@ import {
 import { TripExpenseFormV2 } from '@/components/trips/trip-expense-form'
 import { Trip, TripExpense } from '@/lib/firestore-types'
 import { updateTripExpenseWithTransaction } from '@/lib/sync-expense-transaction'
+import { getTripSelfMemberKey } from '@/lib/trip-balance'
 
 interface TripExpenseDialogProps {
   open: boolean
@@ -32,6 +33,7 @@ export function TripExpenseDialog({
     key,
     displayName: trip.memberProfiles?.[key]?.displayName || key,
   }))
+  const selfKey = getTripSelfMemberKey(trip.members || [], myUserId) || myUserId || 'Me'
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -47,7 +49,7 @@ export function TripExpenseDialog({
         <TripExpenseFormV2
           key={expense.id}
           tripMembers={memberObjects}
-          myUserId={myUserId}
+          myUserId={selfKey}
           tripDefaults={{
             countryCode: trip.countryCode,
             tripCurrency: trip.tripCurrency,

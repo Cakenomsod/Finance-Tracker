@@ -32,6 +32,7 @@ import {
   getTripTimeZone,
   parseTripLocalDateTime,
 } from '@/lib/trip-currency'
+import { toDateFromFirestore } from '@/lib/datetime'
 
 export interface TripFormDefaults {
   countryCode?: string | null
@@ -127,15 +128,12 @@ export function TripExpenseFormV2({
     initialData?.discount ? String(initialData.discount) : ''
   )
   const [category, setCategory] = React.useState(initialData?.category || '')
+  const initialDate = toDateFromFirestore(initialData?.date) ?? new Date()
   const [date, setDate] = React.useState(
-    initialData?.date?.seconds
-      ? formatTripDate(new Date(initialData.date.seconds * 1000), getTripTimeZone(countryCode, initialData?.currency || defaultCurrency))
-      : formatTripDate(new Date(), getTripTimeZone(countryCode, defaultCurrency))
+    formatTripDate(initialDate, getTripTimeZone(countryCode, initialData?.currency || defaultCurrency))
   )
   const [time, setTime] = React.useState(
-    initialData?.date?.seconds
-      ? formatTripTime(new Date(initialData.date.seconds * 1000), getTripTimeZone(countryCode, initialData?.currency || defaultCurrency))
-      : formatTripTime(new Date(), getTripTimeZone(countryCode, defaultCurrency))
+    formatTripTime(initialDate, getTripTimeZone(countryCode, initialData?.currency || defaultCurrency))
   )
   const [note, setNote] = React.useState(initialData?.note || '')
 
@@ -220,6 +218,12 @@ export function TripExpenseFormV2({
   )
 
   const curSymbol = formatCurrencySymbol(currency)
+  const categoryOptions = React.useMemo(() => {
+    if (category && !categories.includes(category)) {
+      return [...categories, category]
+    }
+    return categories
+  }, [category])
   const tripForConversion = tripDefaults ? {
     tripCurrency: tripDefaults.tripCurrency,
     homeCurrency: tripDefaults.homeCurrency,
@@ -304,9 +308,10 @@ export function TripExpenseFormV2({
     }
 
     const total = lineAmounts[idx].itemTotal
-    if (total > 0 && item.splitWith.length > 0) {
-      const share = total / item.splitWith.length
-      item.splitWith.forEach(memberKey => {
+    const splitWith = item.splitWith || []
+    if (total > 0 && splitWith.length > 0) {
+      const share = total / splitWith.length
+      splitWith.forEach(memberKey => {
         if (itemShares[memberKey] !== undefined) {
           itemShares[memberKey] += share
         }
@@ -649,10 +654,10 @@ export function TripExpenseFormV2({
         )}
         <div className={cn("space-y-1.5", inputMode === 'standard' && "col-span-2")}>
           <Label>หมวดหมู่</Label>
-          <Select value={category} onValueChange={setCategory}>
+          <Select value={category || undefined} onValueChange={setCategory}>
             <SelectTrigger><SelectValue placeholder="เลือก..." /></SelectTrigger>
             <SelectContent>
-              {categories.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+              {categoryOptions.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
             </SelectContent>
           </Select>
         </div>
@@ -738,7 +743,7 @@ export function TripExpenseFormV2({
                     />
 
                     <Select
-                      value={item.category}
+                      value={item.category || undefined}
                       onValueChange={val => {
                         const next = [...receiptItems]
                         next[idx].category = val
@@ -752,7 +757,10 @@ export function TripExpenseFormV2({
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {categories.map(c => <SelectItem key={c} value={c} className="text-xs">{c}</SelectItem>)}
+                        {(item.category && !categories.includes(item.category)
+                          ? [...categories, item.category]
+                          : categories
+                        ).map(c => <SelectItem key={c} value={c} className="text-xs">{c}</SelectItem>)}
                       </SelectContent>
                     </Select>
 
@@ -777,7 +785,11 @@ export function TripExpenseFormV2({
                   <div className="flex flex-wrap items-center gap-2">
                     {hasAutoTax && taxRules.length > 0 && (
                       <Select
-                        value={item.taxCategoryId}
+                        value={
+                          taxRules.some((r) => r.id === item.taxCategoryId)
+                            ? item.taxCategoryId
+                            : taxRules[0]?.id
+                        }
                         onValueChange={val => {
                           const next = [...receiptItems]
                           next[idx].taxCategoryId = val as TaxCategoryId
@@ -809,7 +821,7 @@ export function TripExpenseFormV2({
                     <div className="flex flex-1 flex-wrap items-center gap-1 sm:justify-end">
                       <span className="text-[10px] text-muted-foreground">หาร:</span>
                       {tripMembers.map(m => {
-                        const included = item.splitWith.includes(m.key)
+                        const included = (item.splitWith || []).includes(m.key)
                         const initials = m.displayName.split(' ').map((w) => w[0]).join('').toUpperCase().substring(0, 2)
                         return (
                           <button
@@ -818,7 +830,7 @@ export function TripExpenseFormV2({
                             title={m.displayName}
                             onClick={() => {
                               const next = [...receiptItems]
-                              const currentSplit = next[idx].splitWith
+                              const currentSplit = next[idx].splitWith || []
                               if (currentSplit.includes(m.key)) {
                                 next[idx].splitWith = currentSplit.filter(k => k !== m.key)
                               } else {

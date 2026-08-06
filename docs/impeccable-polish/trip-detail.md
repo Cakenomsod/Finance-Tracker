@@ -51,5 +51,16 @@ Align the trip detail surface with DESIGN.md: clear balances/settlements, AI cap
 | Settle rows spill past phone edges | Horizontal flex: avatars + long Thai names + amount + button in one row; `truncate` fails without width budget | Stack who→whom / amount+action; `[overflow-wrap:anywhere]`; tighter mobile card padding (`px-4`); `min-w-0 overflow-hidden` on cards |
 | Tabs / page can force overflow | Missing `min-w-0` on flex/grid ancestors | Page + Tabs + TabsTriggers get `min-w-0`; compact tab padding on xs |
 
-Logic untouched (settlement algorithm, record payment, itemized debt states).
+## Follow-up — Analytics mobile overflow (2026-08-06)
+
+| Issue | Root cause | Fix |
+| --- | --- | --- |
+| Analytics charts spill past phone edges | Default `aspect-video` chart + wide Y-axis ticks + missing `min-w-0` | `aspect-auto`, compact Y ticks (`…k`), tighter margins/padding, `min-w-0 overflow-hidden` on cards |
+| Category totals mixed JPY+THB | Summed raw `ex.amount` | Convert via `convertToHomeCurrency` |
+
+## Follow-up — Me/uid balance bug (2026-08-06)
+
+Settlements stored with Firebase uid while trip.members used `"Me"` → 8 payments (~฿1,860) applied only to Bladen, making Your balance −34,655 vs correct −32,795. Fixed with `resolveTripMemberKey` / FIFO pool normalize; settlement pay now links bank account/pool going forward.
+
+Logic: settlement plan pay still FIFO-allocates onto oldest itemized debts first (unchanged intent; keys now match).
 

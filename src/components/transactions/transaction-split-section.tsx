@@ -66,8 +66,15 @@ function resolveMemberPersonId(
   mePersonId: string = ME_PERSON_ID
 ): string {
   if (userId === ME_PERSON_ID || userId === 'Me') {
-    if (members.some((m) => m.personId === mePersonId)) return mePersonId
-    return mePersonId
+    if (mePersonId && members.some((m) => m.personId === mePersonId)) {
+      return mePersonId
+    }
+    // Legacy trips store the current user as "Me" even when previewPersonId is a Firebase uid.
+    const meInMembers = members.find(
+      (m) => m.personId === ME_PERSON_ID || m.personId === 'Me'
+    )
+    if (meInMembers) return meInMembers.personId
+    return mePersonId || ME_PERSON_ID
   }
   if (members.some((m) => m.personId === userId)) return userId
   const byName = members.find(

@@ -195,22 +195,35 @@ export function computePoolBreakdownByAccount(
 }
 
 /**
- * Prefer explicit display allocations on the pool; otherwise derive from dual-tagged txs.
+ * Where pool money sits per ledger account:
+ * start from saved display allocations (opening snapshot), then apply dual-tagged tx deltas.
+ * So a pool can show e.g. ออมสิน 135,381 + SCB 4,000 after an income tagged to both pool and SCB.
  */
 export function resolvePoolAccountBreakdown(
   pool: MoneyPool,
   transactions: Transaction[],
   sourcesById: Map<string, PaymentSource>
 ): PoolAccountBreakdown[] {
+  const merged = new Map<string, number>();
+
   const stored = pool.accountAllocations;
   if (stored && stored.length > 0) {
-    return stored
-      .filter((row) => row.accountId && row.amount !== 0)
-      .map((row) => ({ accountId: row.accountId, amount: row.amount }))
-      .sort((a, b) => b.amount - a.amount);
+    for (const row of stored) {
+      if (!row.accountId || row.amount === 0) continue;
+      merged.set(row.accountId, (merged.get(row.accountId) ?? 0) + row.amount);
+    }
   }
-  if (!pool.id) return [];
-  return computePoolBreakdownByAccount(pool.id, transactions, sourcesById);
+
+  if (pool.id) {
+    for (const row of computePoolBreakdownByAccount(pool.id, transactions, sourcesById)) {
+      merged.set(row.accountId, (merged.get(row.accountId) ?? 0) + row.amount);
+    }
+  }
+
+  return Array.from(merged.entries())
+    .filter(([, amt]) => Math.abs(amt) > 0.001)
+    .map(([accountId, amount]) => ({ accountId, amount }))
+    .sort((a, b) => b.amount - a.amount);
 }
 
 export function groupSourcesByBank(sources: PaymentSource[]): Map<string, PaymentSource[]> {
