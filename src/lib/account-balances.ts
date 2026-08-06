@@ -1,6 +1,7 @@
 import { MoneyPool, PaymentSource, Transaction } from '@/lib/firestore-types';
 import { toDateFromFirestore } from '@/lib/datetime';
 import { getBankByCode } from '@/lib/thai-banks';
+import { getTransactionLedgerCashAmount } from '@/lib/transaction-payment';
 
 export type TransactionType = Transaction['type'];
 
@@ -58,7 +59,10 @@ export function computeBalanceDeltas(
   const poolDeltas = new Map<string, number>();
 
   for (const tx of transactions) {
-    const amount = Math.abs(tx.amount);
+    const amount =
+      tx.type === 'transfer'
+        ? Math.abs(tx.amount)
+        : getTransactionLedgerCashAmount(tx);
     if (amount <= 0) continue;
 
     const fromAccount = resolveLedgerSourceId(tx.accountId, sourcesById);
@@ -162,7 +166,10 @@ export function computePoolBreakdownByAccount(
   const breakdown = new Map<string, number>();
 
   for (const tx of transactions) {
-    const amount = Math.abs(tx.amount);
+    const amount =
+      tx.type === 'transfer'
+        ? Math.abs(tx.amount)
+        : getTransactionLedgerCashAmount(tx);
     if (amount <= 0) continue;
 
     const fromLedger = resolveLedgerSourceId(tx.accountId, sourcesById);

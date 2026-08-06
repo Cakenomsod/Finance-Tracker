@@ -298,6 +298,16 @@ export function getTransactionEffectiveAmount(tx: PaymentFields): number {
   return tx.amount;
 }
 
+/**
+ * Absolute cash that hits Me's linked account / money pool.
+ * Transfers move the full amount; Paotang expenses only move the user co-pay (40%),
+ * not the government subsidy share.
+ */
+export function getTransactionLedgerCashAmount(tx: PaymentFields): number {
+  if (tx.type === 'transfer') return Math.abs(tx.amount);
+  return Math.abs(getTransactionEffectiveAmount(tx));
+}
+
 export function buildPaotangPaymentFields(
   total: number,
   usage: PaotangQuotaUsage,
