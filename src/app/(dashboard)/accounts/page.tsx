@@ -18,16 +18,22 @@ import { useUserSettings } from '@/hooks/use-user-settings'
 import { usePaymentSources } from '@/hooks/use-payment-sources'
 import { useMoneyPools } from '@/hooks/use-money-pools'
 import { useTransactions } from '@/hooks/use-transactions'
+import { useExchangeRates } from '@/hooks/use-exchange-rates'
 import { PaymentSource } from '@/lib/firestore-types'
 import {
-  computeBalanceDeltas,
-  computePoolBalance,
+  computeBalanceDeltasByCurrency,
+  getPoolCurrencyBalances,
+  getSourceCurrencyBalances,
+  aggregateCurrencyBalances,
+  sumCurrencyBalancesInHome,
   resolvePoolAccountBreakdown,
-  computeSourceBalance,
   groupSourcesByBank,
+  type CurrencyBalanceRow,
 } from '@/lib/account-balances'
 import { getBankByCode } from '@/lib/thai-banks'
 import { formatMoney } from '@/lib/aggregate-transactions'
+import { isAppCurrency, STATIC_FALLBACK_RATES } from '@/lib/currency'
+import { CurrencyBreakdown, homeTotalLabel } from '@/components/accounts/currency-breakdown'
 import { cn, amountColorClass } from '@/lib/utils'
 
 function AccountsSkeleton() {
@@ -46,6 +52,13 @@ export default function AccountsPage() {
   const { activeSources, loading: sourcesLoading } = usePaymentSources()
   const { activePools, loading: poolsLoading } = useMoneyPools()
   const { transactions, loading: txLoading } = useTransactions()
+  const { rates } = useExchangeRates()
+
+  const homeCurrency = isAppCurrency(currency) ? currency : 'THB'
+  const effectiveRates = React.useMemo(
+    () => ({ ...STATIC_FALLBACK_RATES, ...rates }),
+    [rates]
+  )
 
   const [filterBank, setFilterBank] = React.useState<string>('__all__')
   const [filterSource, setFilterSource] = React.useState<string>('__all__')
@@ -59,8 +72,8 @@ export default function AccountsPage() {
     return map
   }, [activeSources])
 
-  const { accountDeltas, poolDeltas } = React.useMemo(
-    () => computeBalanceDeltas(transactions, sourcesById),
+  const { accountDeltasByCurrency, poolDeltasByCurrency } = React.useMemo(
+    () => computeBalanceDeltasByCurrency(transactions, sourcesById),
     [transactions, sourcesById]
   )
 
@@ -80,20 +93,41 @@ export default function AccountsPage() {
     })
   }, [ledgerSources, filterBank, filterSource])
 
+  const balancesForSource = React.useCallback(
+    (s: PaymentSource): CurrencyBalanceRow[] =>
+      getSourceCurrencyBalances(s, accountDeltasByCurrency, 'THB'),
+    [accountDeltasByCurrency]
+  )
+
   const totalBalance = React.useMemo(() => {
     if (filterPool !== '__all__') {
       const pool = activePools.find((p) => p.id === filterPool)
-      return pool ? computePoolBalance(pool, poolDeltas) : 0
+      if (!pool) return 0
+      const rows = getPoolCurrencyBalances(pool, poolDeltasByCurrency, 'THB')
+      return Math.round(sumCurrencyBalancesInHome(rows, homeCurrency, effectiveRates))
     }
-    return filteredLedger.reduce((sum, s) => sum + computeSourceBalance(s, accountDeltas), 0)
-  }, [filteredLedger, filterPool, activePools, poolDeltas, accountDeltas])
+    const rows = aggregateCurrencyBalances(filteredLedger.map(balancesForSource))
+    return Math.round(sumCurrencyBalancesInHome(rows, homeCurrency, effectiveRates))
+  }, [
+    filteredLedger,
+    filterPool,
+    activePools,
+    poolDeltasByCurrency,
+    balancesForSource,
+    homeCurrency,
+    effectiveRates,
+  ])
 
   const bankGroups = React.useMemo(() => {
     const groups = groupSourcesByBank(
       activeSources.filter((s) => {
         if (filterBank !== '__all__') {
           if (filterBank === '__cash__') return s.type === 'cash'
-          return s.bankCode === filterBank || (s.type === 'debit_card' && sourcesById.get(s.linkedSourceId ?? '')?.bankCode === filterBank)
+          return (
+            s.bankCode === filterBank ||
+            (s.type === 'debit_card' &&
+              sourcesById.get(s.linkedSourceId ?? '')?.bankCode === filterBank)
+          )
         }
         return true
       })
@@ -111,7 +145,11 @@ export default function AccountsPage() {
     return { codes: Array.from(codes), hasCash }
   }, [activeSources])
 
-  const loading = settingsLoading || (accountsEnabled && sourcesLoading) || (moneyPoolsEnabled && poolsLoading) || txLoading
+  const loading =
+    settingsLoading ||
+    (accountsEnabled && sourcesLoading) ||
+    (moneyPoolsEnabled && poolsLoading) ||
+    txLoading
   const featuresOff = !accountsEnabled && !moneyPoolsEnabled
 
   if (loading) {
@@ -184,7 +222,10 @@ export default function AccountsPage() {
               amountColorClass(totalBalance, 'text-foreground')
             )}
           >
-            {formatMoney(totalBalance, currency)}
+            {formatMoney(totalBalance, homeCurrency)}
+          </p>
+          <p className="text-[11px] text-muted-foreground">
+            {t('accounts.totalInHomeCurrency', { currency: homeCurrency })}
           </p>
         </CardHeader>
         <CardContent className="flex min-w-0 flex-wrap gap-2 pt-0">
@@ -203,15 +244,18 @@ export default function AccountsPage() {
                     const bank = getBankByCode(code)
                     return (
                       <SelectItem key={code} value={code}>
-                        {locale === 'th' ? bank?.nameTh : bank?.nameEn ?? code}
+                        {locale === 'th' ? bank?.nameTh ?? code : bank?.nameEn ?? code}
                       </SelectItem>
                     )
                   })}
                 </SelectContent>
               </Select>
               <Select value={filterSource} onValueChange={setFilterSource}>
-                <SelectTrigger className="w-full min-w-0 sm:w-[160px]" aria-label={t('accounts.filterSource')}>
-                  <SelectValue />
+                <SelectTrigger
+                  className="w-full min-w-0 sm:w-[180px]"
+                  aria-label={t('accounts.filterSource')}
+                >
+                  <SelectValue placeholder={t('accounts.filterSource')} />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__all__">{t('accounts.allSources')}</SelectItem>
@@ -227,13 +271,13 @@ export default function AccountsPage() {
           {moneyPoolsEnabled && activePools.length > 0 && (
             <Select value={filterPool} onValueChange={setFilterPool}>
               <SelectTrigger className="w-full min-w-0 sm:w-[160px]" aria-label={t('accounts.filterPool')}>
-                <SelectValue />
+                <SelectValue placeholder={t('accounts.filterPool')} />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="__all__">{t('accounts.allPools')}</SelectItem>
                 {activePools.map((p) => (
                   <SelectItem key={p.id} value={p.id!}>
-                    {p.icon} {p.name}
+                    {p.name}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -244,8 +288,11 @@ export default function AccountsPage() {
 
       {accountsEnabled && (
         <section className="space-y-3">
-          <h2 className="text-lg font-semibold tracking-tight">{t('accounts.byBank')}</h2>
-          {activeSources.length === 0 ? (
+          <h2 className="text-lg font-semibold tracking-tight flex items-center gap-2">
+            <Landmark className="size-5 text-muted-foreground" aria-hidden />
+            {t('accounts.byBank')}
+          </h2>
+          {ledgerSources.length === 0 ? (
             <Card className="shadow-sm">
               <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
                 <p className="text-sm text-muted-foreground text-pretty">{t('accounts.noSources')}</p>
@@ -258,7 +305,13 @@ export default function AccountsPage() {
             <ul className="space-y-3 list-none p-0 m-0">
               {sortedBankKeys.map((key) => {
                 const sources = bankGroups.get(key) ?? []
-                const accounts = sources.filter((s) => s.type === 'bank_account' || s.type === 'cash')
+                const accounts = sources.filter(
+                  (s) =>
+                    (s.type === 'bank_account' || s.type === 'cash') &&
+                    (filterSource === '__all__' || s.id === filterSource)
+                )
+                if (accounts.length === 0) return null
+
                 const debits = sources.filter((s) => s.type === 'debit_card')
                 const bank = key !== '__cash__' && key !== '__other__' ? getBankByCode(key) : null
                 const groupTitle =
@@ -267,9 +320,13 @@ export default function AccountsPage() {
                     : locale === 'th'
                       ? bank?.nameTh ?? key
                       : bank?.nameEn ?? key
-                const groupBalance = accounts.reduce(
-                  (sum, s) => sum + computeSourceBalance(s, accountDeltas),
-                  0
+
+                const accountRows = accounts.map(balancesForSource)
+                const groupCurrencyRows = aggregateCurrencyBalances(accountRows)
+                const groupHome = sumCurrencyBalancesInHome(
+                  groupCurrencyRows,
+                  homeCurrency,
+                  effectiveRates
                 )
 
                 return (
@@ -288,16 +345,26 @@ export default function AccountsPage() {
                           <span
                             className={cn(
                               'shrink-0 text-sm font-semibold tabular-nums sm:text-base',
-                              amountColorClass(groupBalance, 'text-foreground')
+                              amountColorClass(groupHome, 'text-foreground')
                             )}
                           >
-                            {formatMoney(groupBalance, currency)}
+                            {formatMoney(groupHome, homeCurrency)}
                           </span>
                         </div>
+                        {/* Bank-level currency breakdown (only currencies with balance) */}
+                        {groupCurrencyRows.length > 0 && (
+                          <CurrencyBreakdown
+                            rows={groupCurrencyRows}
+                            homeCurrency={homeCurrency}
+                            rates={effectiveRates}
+                            className="pl-6"
+                          />
+                        )}
                       </CardHeader>
                       <CardContent className="space-y-2 pt-0">
-                        {accounts.map((acct) => {
-                          const bal = computeSourceBalance(acct, accountDeltas)
+                        {accounts.map((acct, idx) => {
+                          const rows = accountRows[idx] ?? []
+                          const home = sumCurrencyBalancesInHome(rows, homeCurrency, effectiveRates)
                           const linkedDebits = debits.filter((d) => d.linkedSourceId === acct.id)
                           return (
                             <div key={acct.id} className="rounded-lg border p-3">
@@ -310,10 +377,20 @@ export default function AccountsPage() {
                                     </p>
                                   )}
                                 </div>
-                                <span className="font-semibold tabular-nums shrink-0">
-                                  {formatMoney(bal, currency)}
+                                <span
+                                  className={cn(
+                                    'font-semibold tabular-nums shrink-0',
+                                    amountColorClass(home)
+                                  )}
+                                >
+                                  {homeTotalLabel(rows, homeCurrency, effectiveRates)}
                                 </span>
                               </div>
+                              <CurrencyBreakdown
+                                rows={rows}
+                                homeCurrency={homeCurrency}
+                                rates={effectiveRates}
+                              />
                               {linkedDebits.length > 0 && (
                                 <ul className="mt-2 space-y-1 border-t pt-2 list-none p-0 m-0">
                                   {linkedDebits.map((d) => (
@@ -360,7 +437,8 @@ export default function AccountsPage() {
               {activePools
                 .filter((p) => filterPool === '__all__' || p.id === filterPool)
                 .map((pool) => {
-                  const bal = computePoolBalance(pool, poolDeltas)
+                  const rows = getPoolCurrencyBalances(pool, poolDeltasByCurrency, 'THB')
+                  const bal = sumCurrencyBalancesInHome(rows, homeCurrency, effectiveRates)
                   const breakdown = resolvePoolAccountBreakdown(
                     pool,
                     transactions,
@@ -387,12 +465,18 @@ export default function AccountsPage() {
                               <span className="min-w-0 truncate">{pool.name}</span>
                             </CardTitle>
                             <span className="shrink-0 text-sm font-semibold tabular-nums sm:text-base">
-                              {formatMoney(bal, currency)}
+                              {formatMoney(bal, homeCurrency)}
                             </span>
                           </div>
+                          <CurrencyBreakdown
+                            rows={rows}
+                            homeCurrency={homeCurrency}
+                            rates={effectiveRates}
+                            className="pl-11"
+                          />
                           {pool.targetAmount != null && (
                             <CardDescription className="text-pretty break-words tabular-nums">
-                              {t('accounts.target')}: {formatMoney(pool.targetAmount, currency)}
+                              {t('accounts.target')}: {formatMoney(pool.targetAmount, homeCurrency)}
                               {progress != null ? ` · ${progress}%` : ''}
                             </CardDescription>
                           )}
@@ -414,7 +498,7 @@ export default function AccountsPage() {
                           </CardContent>
                         )}
                         {breakdown.length > 0 && (
-                          <CardContent className={cn('pt-0', progress != null && 'pt-0')}>
+                          <CardContent className="pt-0">
                             <p className="text-xs font-medium text-muted-foreground mb-2">
                               {t('accounts.poolBreakdown')}
                             </p>
@@ -430,7 +514,7 @@ export default function AccountsPage() {
                                       {src?.name ?? row.accountId}
                                     </span>
                                     <span className="tabular-nums shrink-0">
-                                      {formatMoney(row.amount, currency)}
+                                      {formatMoney(row.amount, homeCurrency)}
                                     </span>
                                   </li>
                                 )

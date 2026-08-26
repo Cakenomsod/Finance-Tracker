@@ -2,8 +2,22 @@ import { MoneyPool, PaymentSource, Transaction } from '@/lib/firestore-types';
 import { toDateFromFirestore } from '@/lib/datetime';
 import { getBankByCode } from '@/lib/thai-banks';
 import { getTransactionLedgerCashAmount } from '@/lib/transaction-payment';
+import {
+  AppCurrency,
+  convertCurrency,
+  isAppCurrency,
+  STATIC_FALLBACK_RATES,
+} from '@/lib/currency';
 
 export type TransactionType = Transaction['type'];
+
+/** currency code → signed amount in that currency */
+export type CurrencyAmountMap = Map<string, number>;
+
+export interface CurrencyBalanceRow {
+  currency: string;
+  amount: number;
+}
 
 /** Resolve debit card selection to linked bank account for ledger posting. */
 export function resolveLedgerSourceId(
@@ -36,29 +50,57 @@ export function getSourceDisplaySubtitle(source: PaymentSource): string | null {
   return parts.length > 0 ? parts.join(' · ') : null;
 }
 
-function applyAccountDelta(
-  deltas: Map<string, number>,
-  sourceId: string | null,
+function resolveTxCurrencyCode(tx: Transaction): string {
+  return isAppCurrency(tx.currency) ? tx.currency : 'THB';
+}
+
+function applyCurrencyDelta(
+  map: Map<string, CurrencyAmountMap>,
+  id: string | null,
+  currency: string,
   delta: number
 ) {
-  if (!sourceId || delta === 0) return;
-  deltas.set(sourceId, (deltas.get(sourceId) ?? 0) + delta);
+  if (!id || delta === 0) return;
+  let inner = map.get(id);
+  if (!inner) {
+    inner = new Map();
+    map.set(id, inner);
+  }
+  inner.set(currency, (inner.get(currency) ?? 0) + delta);
 }
 
-function applyPoolDelta(deltas: Map<string, number>, poolId: string | null, delta: number) {
-  if (!poolId || delta === 0) return;
-  deltas.set(poolId, (deltas.get(poolId) ?? 0) + delta);
+function flattenCurrencyMaps(byCurrency: Map<string, CurrencyAmountMap>): Map<string, number> {
+  const flat = new Map<string, number>();
+  for (const [id, curMap] of byCurrency) {
+    let sum = 0;
+    for (const amt of curMap.values()) sum += amt;
+    flat.set(id, sum);
+  }
+  return flat;
 }
 
-/** Compute running balance deltas from transactions for accounts and pools. */
-export function computeBalanceDeltas(
+function rowsFromMap(merged: Map<string, number>): CurrencyBalanceRow[] {
+  return Array.from(merged.entries())
+    .filter(([, amount]) => Math.abs(amount) > 0.001)
+    .map(([currency, amount]) => ({ currency, amount }))
+    .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
+}
+
+/**
+ * Compute running balance deltas per account/pool, split by transaction currency.
+ */
+export function computeBalanceDeltasByCurrency(
   transactions: Transaction[],
   sourcesById: Map<string, PaymentSource>
-): { accountDeltas: Map<string, number>; poolDeltas: Map<string, number> } {
-  const accountDeltas = new Map<string, number>();
-  const poolDeltas = new Map<string, number>();
+): {
+  accountDeltasByCurrency: Map<string, CurrencyAmountMap>;
+  poolDeltasByCurrency: Map<string, CurrencyAmountMap>;
+} {
+  const accountDeltasByCurrency = new Map<string, CurrencyAmountMap>();
+  const poolDeltasByCurrency = new Map<string, CurrencyAmountMap>();
 
   for (const tx of transactions) {
+    const currency = resolveTxCurrencyCode(tx);
     const amount =
       tx.type === 'transfer'
         ? Math.abs(tx.amount)
@@ -69,38 +111,130 @@ export function computeBalanceDeltas(
     const toAccount = resolveLedgerSourceId(tx.transferToAccountId, sourcesById);
 
     if (tx.type === 'transfer') {
-      if (fromAccount) applyAccountDelta(accountDeltas, fromAccount, -amount);
-      if (toAccount) applyAccountDelta(accountDeltas, toAccount, amount);
-      if (tx.moneyPoolId) applyPoolDelta(poolDeltas, tx.moneyPoolId, -amount);
-      if (tx.transferToPoolId) applyPoolDelta(poolDeltas, tx.transferToPoolId, amount);
+      if (fromAccount) applyCurrencyDelta(accountDeltasByCurrency, fromAccount, currency, -amount);
+      if (toAccount) applyCurrencyDelta(accountDeltasByCurrency, toAccount, currency, amount);
+      if (tx.moneyPoolId) applyCurrencyDelta(poolDeltasByCurrency, tx.moneyPoolId, currency, -amount);
+      if (tx.transferToPoolId) {
+        applyCurrencyDelta(poolDeltasByCurrency, tx.transferToPoolId, currency, amount);
+      }
       continue;
     }
 
     if (tx.type === 'income') {
-      if (fromAccount) applyAccountDelta(accountDeltas, fromAccount, amount);
-      if (tx.moneyPoolId) applyPoolDelta(poolDeltas, tx.moneyPoolId, amount);
+      if (fromAccount) applyCurrencyDelta(accountDeltasByCurrency, fromAccount, currency, amount);
+      if (tx.moneyPoolId) applyCurrencyDelta(poolDeltasByCurrency, tx.moneyPoolId, currency, amount);
     } else if (tx.type === 'expense') {
-      if (fromAccount) applyAccountDelta(accountDeltas, fromAccount, -amount);
-      if (tx.moneyPoolId) applyPoolDelta(poolDeltas, tx.moneyPoolId, -amount);
+      if (fromAccount) applyCurrencyDelta(accountDeltasByCurrency, fromAccount, currency, -amount);
+      if (tx.moneyPoolId) applyCurrencyDelta(poolDeltasByCurrency, tx.moneyPoolId, currency, -amount);
     }
   }
 
-  return { accountDeltas, poolDeltas };
+  return { accountDeltasByCurrency, poolDeltasByCurrency };
+}
+
+/** Flat deltas — mixes currencies; prefer computeBalanceDeltasByCurrency for display. */
+export function computeBalanceDeltas(
+  transactions: Transaction[],
+  sourcesById: Map<string, PaymentSource>
+): { accountDeltas: Map<string, number>; poolDeltas: Map<string, number> } {
+  const { accountDeltasByCurrency, poolDeltasByCurrency } = computeBalanceDeltasByCurrency(
+    transactions,
+    sourcesById
+  );
+  return {
+    accountDeltas: flattenCurrencyMaps(accountDeltasByCurrency),
+    poolDeltas: flattenCurrencyMaps(poolDeltasByCurrency),
+  };
+}
+
+function ledgerIdForSource(source: PaymentSource): string {
+  if (source.type === 'debit_card' && source.linkedSourceId) return source.linkedSourceId;
+  return source.id!;
+}
+
+/**
+ * Per-currency balances for a ledger source.
+ * Opening balance is attributed to `openingCurrency` (default THB).
+ */
+export function getSourceCurrencyBalances(
+  source: PaymentSource,
+  accountDeltasByCurrency: Map<string, CurrencyAmountMap>,
+  openingCurrency: string = 'THB'
+): CurrencyBalanceRow[] {
+  const id = ledgerIdForSource(source);
+  const deltas = accountDeltasByCurrency.get(id) ?? new Map<string, number>();
+  const merged = new Map<string, number>();
+
+  const opening = source.openingBalance ?? 0;
+  if (Math.abs(opening) > 0.0001) {
+    merged.set(openingCurrency, opening);
+  }
+
+  for (const [cur, amt] of deltas) {
+    merged.set(cur, (merged.get(cur) ?? 0) + amt);
+  }
+
+  if (source.type === 'debit_card' && source.linkedSourceId) {
+    const linkedDeltas = accountDeltasByCurrency.get(source.linkedSourceId) ?? new Map();
+    const out = new Map<string, number>();
+    if (Math.abs(opening) > 0.0001) out.set(openingCurrency, opening);
+    for (const [cur, amt] of linkedDeltas) {
+      out.set(cur, (out.get(cur) ?? 0) + amt);
+    }
+    return rowsFromMap(out);
+  }
+
+  return rowsFromMap(merged);
+}
+
+export function getPoolCurrencyBalances(
+  pool: MoneyPool,
+  poolDeltasByCurrency: Map<string, CurrencyAmountMap>,
+  openingCurrency: string = 'THB'
+): CurrencyBalanceRow[] {
+  const deltas = pool.id ? poolDeltasByCurrency.get(pool.id) ?? new Map() : new Map();
+  const merged = new Map<string, number>();
+  const opening = pool.openingBalance ?? 0;
+  if (Math.abs(opening) > 0.0001) merged.set(openingCurrency, opening);
+  for (const [cur, amt] of deltas) {
+    merged.set(cur, (merged.get(cur) ?? 0) + amt);
+  }
+  return rowsFromMap(merged);
+}
+
+/** Aggregate currency rows from multiple sources (e.g. all accounts under a bank). */
+export function aggregateCurrencyBalances(rowsList: CurrencyBalanceRow[][]): CurrencyBalanceRow[] {
+  const merged = new Map<string, number>();
+  for (const rows of rowsList) {
+    for (const row of rows) {
+      merged.set(row.currency, (merged.get(row.currency) ?? 0) + row.amount);
+    }
+  }
+  return rowsFromMap(merged);
+}
+
+export function sumCurrencyBalancesInHome(
+  rows: CurrencyBalanceRow[],
+  homeCurrency: AppCurrency | string,
+  rates: Record<string, number>
+): number {
+  const home: AppCurrency = isAppCurrency(homeCurrency) ? homeCurrency : 'THB';
+  const effectiveRates = { ...STATIC_FALLBACK_RATES, ...rates };
+  return rows.reduce((sum, row) => {
+    const from: AppCurrency = isAppCurrency(row.currency) ? row.currency : 'THB';
+    return sum + convertCurrency(row.amount, from, home, effectiveRates);
+  }, 0);
 }
 
 export function computeSourceBalance(
   source: PaymentSource,
   accountDeltas: Map<string, number>
 ): number {
-  const id = source.type === 'debit_card' && source.linkedSourceId
-    ? source.linkedSourceId
-    : source.id!;
+  const id = ledgerIdForSource(source);
   const delta = accountDeltas.get(id) ?? 0;
   if (source.type === 'debit_card') {
-    // Debit cards don't hold separate balance; show linked account balance
     const linked = source.linkedSourceId ? accountDeltas.get(source.linkedSourceId) : undefined;
     if (source.linkedSourceId && linked !== undefined) {
-      // Return linked balance only when displaying debit as proxy — use opening from linked in overview
       return (source.openingBalance ?? 0) + (linked ?? 0);
     }
     return (source.openingBalance ?? 0) + delta;
@@ -112,14 +246,12 @@ export function computePoolBalance(pool: MoneyPool, poolDeltas: Map<string, numb
   return (pool.openingBalance ?? 0) + (poolDeltas.get(pool.id!) ?? 0);
 }
 
-/** Cash + bank accounts that hold a balance (excludes debit cards to avoid double-counting). */
 export function getLedgerSources(sources: PaymentSource[]): PaymentSource[] {
   return sources.filter(
     (s) => !s.archived && (s.type === 'bank_account' || s.type === 'cash')
   );
 }
 
-/** Total liquid balance across all ledger accounts — matches the Accounts page total. */
 export function computeTotalLedgerBalance(
   sources: PaymentSource[],
   accountDeltas: Map<string, number>
@@ -132,22 +264,44 @@ export function computeTotalLedgerBalance(
   );
 }
 
-/**
- * Ledger total through the end of a month: opening balances + only transactions
- * with account/pool links that fall on or before that month.
- */
+export function computeTotalLedgerBalanceInHome(
+  sources: PaymentSource[],
+  accountDeltasByCurrency: Map<string, CurrencyAmountMap>,
+  homeCurrency: AppCurrency | string,
+  rates: Record<string, number>,
+  openingCurrency: string = 'THB'
+): number {
+  const home: AppCurrency = isAppCurrency(homeCurrency) ? homeCurrency : 'THB';
+  const total = getLedgerSources(sources).reduce((sum, s) => {
+    const rows = getSourceCurrencyBalances(s, accountDeltasByCurrency, openingCurrency);
+    return sum + sumCurrencyBalancesInHome(rows, home, rates);
+  }, 0);
+  return Math.round(total);
+}
+
 export function computeTotalLedgerBalanceUpToMonth(
   transactions: Transaction[],
   sources: PaymentSource[],
   sourcesById: Map<string, PaymentSource>,
   year: number,
-  month: number
+  month: number,
+  homeCurrency?: AppCurrency | string,
+  rates?: Record<string, number>
 ): number {
   const endOfMonth = new Date(year, month + 1, 0, 23, 59, 59, 999);
   const scoped = transactions.filter((tx) => {
     const d = toDateFromFirestore(tx.date);
     return d !== null && d <= endOfMonth;
   });
+  const { accountDeltasByCurrency } = computeBalanceDeltasByCurrency(scoped, sourcesById);
+  if (homeCurrency && rates) {
+    return computeTotalLedgerBalanceInHome(
+      sources,
+      accountDeltasByCurrency,
+      homeCurrency,
+      rates
+    );
+  }
   const { accountDeltas } = computeBalanceDeltas(scoped, sourcesById);
   return computeTotalLedgerBalance(sources, accountDeltas);
 }
@@ -157,13 +311,17 @@ export interface PoolAccountBreakdown {
   amount: number;
 }
 
-/** How much of a pool's tagged money sits in each ledger account (dual-tag). */
 export function computePoolBreakdownByAccount(
   poolId: string,
   transactions: Transaction[],
   sourcesById: Map<string, PaymentSource>
 ): PoolAccountBreakdown[] {
   const breakdown = new Map<string, number>();
+
+  const applyAccountDelta = (deltas: Map<string, number>, sourceId: string | null, delta: number) => {
+    if (!sourceId || delta === 0) return;
+    deltas.set(sourceId, (deltas.get(sourceId) ?? 0) + delta);
+  };
 
   for (const tx of transactions) {
     const amount =
@@ -176,11 +334,9 @@ export function computePoolBreakdownByAccount(
     const toLedger = resolveLedgerSourceId(tx.transferToAccountId, sourcesById);
 
     if (tx.type === 'transfer') {
-      // Debit the FROM pool against the FROM account
       if (tx.moneyPoolId === poolId && fromLedger) {
         applyAccountDelta(breakdown, fromLedger, -amount);
       }
-      // Credit the TO pool against the TO account (not the from account)
       if (tx.transferToPoolId === poolId) {
         applyAccountDelta(breakdown, toLedger ?? fromLedger, amount);
       }
@@ -201,11 +357,6 @@ export function computePoolBreakdownByAccount(
     .sort((a, b) => b.amount - a.amount);
 }
 
-/**
- * Where pool money sits per ledger account:
- * start from saved display allocations (opening snapshot), then apply dual-tagged tx deltas.
- * So a pool can show e.g. ออมสิน 135,381 + SCB 4,000 after an income tagged to both pool and SCB.
- */
 export function resolvePoolAccountBreakdown(
   pool: MoneyPool,
   transactions: Transaction[],

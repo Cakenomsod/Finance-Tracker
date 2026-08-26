@@ -61,6 +61,7 @@ import {
   computeCumulativeBalanceUpToMonth,
   collectMonthsWithData,
   resolveTxCurrency,
+  formatMoney,
 } from '@/lib/aggregate-transactions'
 import { computeTotalLedgerBalanceUpToMonth } from '@/lib/account-balances'
 import { usePaymentSources } from '@/hooks/use-payment-sources'
@@ -343,7 +344,9 @@ export default function TransactionsPage() {
         activeSources,
         sourcesById,
         selectedMonth.year,
-        selectedMonth.month
+        selectedMonth.month,
+        prefCurrency,
+        effectiveRates
       )
     }
     return computeCumulativeBalanceUpToMonth(
@@ -358,6 +361,8 @@ export default function TransactionsPage() {
     allTransactions,
     summaryCombined,
     selectedMonth,
+    prefCurrency,
+    effectiveRates,
   ])
 
   const monthScopedTransactions = React.useMemo(() => {
@@ -601,7 +606,7 @@ export default function TransactionsPage() {
                     valueKey={`${monthKey}-income`}
                     className="block truncate text-lg font-semibold tabular-nums text-success duration-200 ease-out sm:text-xl"
                   >
-                    +฿{summaryTotals.income.toLocaleString()}
+                    +{formatMoney(summaryTotals.income, prefCurrency)}
                   </MonthAnimatedValue>
                 </div>
                 <div className="min-w-0 space-y-1 border-b border-border px-3 py-3 sm:border-b-0 sm:border-r sm:px-4 sm:py-3.5">
@@ -610,7 +615,7 @@ export default function TransactionsPage() {
                     valueKey={`${monthKey}-expenses`}
                     className="block truncate text-lg font-semibold tabular-nums text-destructive duration-200 ease-out sm:text-xl"
                   >
-                    -฿{summaryTotals.expenses.toLocaleString()}
+                    -{formatMoney(summaryTotals.expenses, prefCurrency)}
                   </MonthAnimatedValue>
                 </div>
                 <div className="min-w-0 space-y-1 border-r border-border px-3 py-3 sm:px-4 sm:py-3.5">
@@ -622,8 +627,7 @@ export default function TransactionsPage() {
                       amountColorClass(summaryTotals.net, 'text-foreground')
                     )}
                   >
-                    {summaryTotals.net >= 0 ? '+' : ''}฿
-                    {Math.abs(summaryTotals.net).toLocaleString()}
+                    {formatMoney(summaryTotals.net, prefCurrency, true)}
                   </MonthAnimatedValue>
                 </div>
                 <div className="min-w-0 space-y-1 px-3 py-3 sm:px-4 sm:py-3.5">
@@ -635,8 +639,7 @@ export default function TransactionsPage() {
                       amountColorClass(cumulativeBalance, 'text-foreground')
                     )}
                   >
-                    {cumulativeBalance >= 0 ? '' : '-'}฿
-                    {Math.abs(cumulativeBalance).toLocaleString()}
+                    {formatMoney(cumulativeBalance, prefCurrency)}
                   </MonthAnimatedValue>
                   <p className="text-[11px] leading-tight text-muted-foreground">
                     {accountsEnabled

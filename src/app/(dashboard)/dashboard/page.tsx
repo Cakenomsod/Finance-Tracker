@@ -30,6 +30,9 @@ import { useAllTripExpenses } from '@/hooks/use-all-trip-expenses'
 import { useAuth } from '@/hooks/use-auth'
 import { useTransactions } from '@/hooks/use-transactions'
 import { useUserSettings } from '@/hooks/use-user-settings'
+import { usePaymentSources } from '@/hooks/use-payment-sources'
+import { useExchangeRates } from '@/hooks/use-exchange-rates'
+import { isAppCurrency, STATIC_FALLBACK_RATES } from '@/lib/currency'
 import { useQuickAdd } from '@/components/quick-add-context'
 import { IncomeExpensesScrollChart } from '@/components/analytics/income-expenses-scroll-chart'
 import { InsightsPanel } from '@/components/analytics/insights-panel'
@@ -71,7 +74,6 @@ import {
   type CombinedTransaction,
 } from '@/lib/aggregate-transactions'
 import { computeTotalLedgerBalanceUpToMonth } from '@/lib/account-balances'
-import { usePaymentSources } from '@/hooks/use-payment-sources'
 import { PaymentSource } from '@/lib/firestore-types'
 
 const chartConfig = {
@@ -181,6 +183,12 @@ export default function DashboardPage() {
   const { user } = useAuth()
   const { profile, accountsEnabled } = useUserSettings()
   const { activeSources } = usePaymentSources()
+  const { rates } = useExchangeRates()
+  const homeCurrency = isAppCurrency(profile?.currency) ? profile.currency : 'THB'
+  const effectiveRates = React.useMemo(
+    () => ({ ...STATIC_FALLBACK_RATES, ...rates }),
+    [rates]
+  )
 
   const sourcesById = React.useMemo(() => {
     const map = new Map<string, PaymentSource>()
@@ -212,17 +220,25 @@ export default function DashboardPage() {
   const { debts, loading: debtLoading } = useDebts()
   const { tripDebts, loading: tripDebtLoading } = useTripsData()
 
-  const currency = profile?.currency || 'THB'
+  const currency = homeCurrency
   const loading = analyticsLoading || dashboardDataLoading || debtLoading || tripDebtLoading
 
   const historicalCombined = React.useMemo(
-    () => mergeTransactions(dashboardTransactions, dashboardTripExpenses, user?.uid),
-    [dashboardTransactions, dashboardTripExpenses, user?.uid]
+    () =>
+      mergeTransactions(
+        dashboardTransactions,
+        dashboardTripExpenses,
+        user?.uid,
+        homeCurrency,
+        effectiveRates
+      ),
+    [dashboardTransactions, dashboardTripExpenses, user?.uid, homeCurrency, effectiveRates]
   )
 
   const summaryCombined = React.useMemo(
-    () => mergeTransactions(allTransactions, fullTripExpenses, user?.uid),
-    [allTransactions, fullTripExpenses, user?.uid]
+    () =>
+      mergeTransactions(allTransactions, fullTripExpenses, user?.uid, homeCurrency, effectiveRates),
+    [allTransactions, fullTripExpenses, user?.uid, homeCurrency, effectiveRates]
   )
 
   const selectedMonthTxs = React.useMemo(
@@ -247,7 +263,9 @@ export default function DashboardPage() {
         activeSources,
         sourcesById,
         selectedMonth.year,
-        selectedMonth.month
+        selectedMonth.month,
+        homeCurrency,
+        effectiveRates
       )
     }
     return computeCumulativeBalanceUpToMonth(
@@ -262,6 +280,8 @@ export default function DashboardPage() {
     allTransactions,
     summaryCombined,
     selectedMonth,
+    homeCurrency,
+    effectiveRates,
   ])
 
   const netChange = React.useMemo(
