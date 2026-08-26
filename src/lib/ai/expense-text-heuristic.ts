@@ -48,7 +48,11 @@ export function tryParseExpenseTextStrictFormat(
 ): ReceiptParseResult | null {
   const trimmed = normalizeExpenseInput(text);
   if (!trimmed || trimmed.length > 80) return null;
-  if (/ครับ|ค่ะ|ช่วย|ฝาก|แล้ว|ที่ร้าน|หน่อย|ให้|เพื่อน|เมื่อ|ตอน|พรุ่งนี้|เมื่อวาน/.test(trimmed)) {
+  if (/ครับ|ค่ะ|ช่วย|ฝาก|แล้ว|ที่ร้าน|หน่อย|เพื่อน|เมื่อ|พรุ่งนี้|เมื่อวาน/.test(trimmed)) {
+    return null;
+  }
+  // Allow "ตอน HH.mm"; reject other chatty "ตอน"
+  if (/ตอน/.test(trimmed) && !/ตอน\s*\d{1,2}[.:]\d{2}/.test(trimmed)) {
     return null;
   }
 

@@ -20,6 +20,11 @@ import { tryParseExpenseTextStrictFormat } from '@/lib/ai/expense-text-heuristic
 import { normalizeReceiptDateTime, aiTimeZoneFromContext } from '@/lib/ai/ai-datetime';
 import { getGoogleAiApiKey } from '@/lib/ai/env';
 import { isAppCurrency } from '@/lib/currency';
+import {
+  extractTimeFromLine,
+  shouldForceLineSplit,
+  splitExpenseTextIntoSegments,
+} from '@/lib/ai/expense-text-split';
 
 export interface AiProviderConfig {
   provider: AiTextProvider;
@@ -45,62 +50,51 @@ export async function parseReceiptImageWithProvider(
     );
   }
 
-  // Default to Gemma API
   return normalizeReceiptDateTime(
     await parseReceiptImage(imageBuffer, mimeType, context),
     aiTimeZoneFromContext(context)
   );
 }
 
-/**
- * Parse natural-language expense text (e.g. "ไก่ทอด 20 กาแฟ 45").
- * Returns an array of parsed drafts (multi-item input → multiple drafts).
- */
-export async function parseExpenseTextWithProvider(
+async function parseExpenseTextOnce(
   text: string,
   config: AiProviderConfig,
-  context?: ExpenseTextAiContext,
-  contacts?: AiContact[]
+  context?: ExpenseTextAiContext
 ): Promise<ReceiptParseResult[]> {
   const fallbackCurrency: 'THB' | 'JPY' = context?.currency === 'JPY' ? 'JPY' : 'THB';
-  const timeZone = aiTimeZoneFromContext(context);
-  const defaultCurrency = isAppCurrency(context?.currency) ? context.currency : 'THB';
 
   const strictMatch = tryParseExpenseTextStrictFormat(text, fallbackCurrency);
-  if (strictMatch) return [normalizeReceiptDateTime(strictMatch, timeZone)];
+  if (strictMatch) return [strictMatch];
 
-  const enrichedContext: ExpenseTextAiContext = {
-    ...context,
-    currency: defaultCurrency,
-    contactsHint: contacts?.length ? buildContactsPromptHint(contacts) : context?.contactsHint,
-  };
-
-  let results: ReceiptParseResult[];
   try {
     if (config.provider === 'local') {
       if (!config.localAiConfig?.baseUrl) {
         throw new Error('Local AI is not configured. Please set up Local AI URL in Settings.');
       }
-      results = await parseExpenseTextLocal(text, config.localAiConfig, enrichedContext);
-    } else {
-      results = await parseExpenseText(text, enrichedContext);
+      return await parseExpenseTextLocal(text, config.localAiConfig, context);
     }
+    return await parseExpenseText(text, context);
   } catch (aiError) {
     const retry = tryParseExpenseTextStrictFormat(text, fallbackCurrency);
-    if (retry) return [normalizeReceiptDateTime(retry, timeZone)];
+    if (retry) return [retry];
 
     if (config.provider === 'local' && getGoogleAiApiKey()) {
       try {
-        results = await parseExpenseText(text, enrichedContext);
+        return await parseExpenseText(text, context);
       } catch {
         throw aiError;
       }
-    } else {
-      throw aiError;
     }
+    throw aiError;
   }
+}
 
-  return results.map((result) => {
+function finalizeDrafts(
+  drafts: ReceiptParseResult[],
+  contacts: AiContact[] | undefined,
+  timeZone: string
+): ReceiptParseResult[] {
+  return drafts.map((result) => {
     const resolved = contacts?.length
       ? {
           ...result,
@@ -113,8 +107,81 @@ export async function parseExpenseTextWithProvider(
 }
 
 /**
- * Send a chat message using the specified AI provider
+ * If the model still returns one receipt with items[] for a multi-time journal,
+ * expand items into separate drafts (last-resort safeguard).
  */
+function expandCollapsedReceiptIfNeeded(
+  drafts: ReceiptParseResult[],
+  originalText: string
+): ReceiptParseResult[] {
+  if (drafts.length !== 1) return drafts;
+  const only = drafts[0];
+  const items = (only.items ?? []).filter(
+    (i) => i?.name?.trim() && Number.isFinite(i.price) && i.price > 0
+  );
+  if (items.length < 2) return drafts;
+  if (!shouldForceLineSplit(originalText)) return drafts;
+
+  return items.map((item) => ({
+    ...only,
+    description: item.name.trim(),
+    category: item.category?.trim() || only.category,
+    totalAmount: item.price,
+    items: undefined,
+    baseAmount: undefined,
+    taxAmount: undefined,
+    discount: undefined,
+    time: undefined,
+  }));
+}
+
+/**
+ * Parse natural-language expense text.
+ * Multi-line journals with different times are split into separate drafts
+ * before the model runs (so they cannot collapse into one receipt).
+ */
+export async function parseExpenseTextWithProvider(
+  text: string,
+  config: AiProviderConfig,
+  context?: ExpenseTextAiContext,
+  contacts?: AiContact[]
+): Promise<ReceiptParseResult[]> {
+  const timeZone = aiTimeZoneFromContext(context);
+  const defaultCurrency = isAppCurrency(context?.currency) ? context.currency : 'THB';
+
+  const enrichedContext: ExpenseTextAiContext = {
+    ...context,
+    currency: defaultCurrency,
+    contactsHint: contacts?.length ? buildContactsPromptHint(contacts) : context?.contactsHint,
+  };
+
+  let results: ReceiptParseResult[];
+
+  if (shouldForceLineSplit(text)) {
+    const segments = splitExpenseTextIntoSegments(text, timeZone);
+    const settled = await Promise.all(
+      segments.map(async (segment) => {
+        const lineResults = await parseExpenseTextOnce(segment.text, config, enrichedContext);
+        const lineTime = extractTimeFromLine(segment.text);
+        return lineResults.map((draft) => ({
+          ...draft,
+          items: undefined,
+          date: segment.dateHint || draft.date,
+          time: lineTime || draft.time,
+        }));
+      })
+    );
+    const perLine = settled.flat();
+    results =
+      perLine.length > 0 ? perLine : await parseExpenseTextOnce(text, config, enrichedContext);
+  } else {
+    results = await parseExpenseTextOnce(text, config, enrichedContext);
+    results = expandCollapsedReceiptIfNeeded(results, text);
+  }
+
+  return finalizeDrafts(results, contacts, timeZone);
+}
+
 export async function sendChatWithProvider(
   message: string,
   config: AiProviderConfig,
@@ -130,9 +197,6 @@ export async function sendChatWithProvider(
   return sendChatMessageGemma(message, history);
 }
 
-/**
- * Generate structured financial insights using the specified AI provider.
- */
 export async function generateInsightsWithProvider(
   prompt: string,
   config: AiProviderConfig
