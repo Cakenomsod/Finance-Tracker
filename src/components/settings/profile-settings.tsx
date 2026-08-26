@@ -123,7 +123,7 @@ export function ProfileSettings() {
 
   const handleLocaleChange = async (value: string) => {
     try {
-      await setLocale(value as 'en' | 'th');
+      await setLocale(value as 'en' | 'th' | 'zh');
       toast.success(t('settings.saved'));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to save language');
@@ -230,6 +230,7 @@ export function ProfileSettings() {
               <SelectContent>
                 <SelectItem value="en">{t('settings.language.en')}</SelectItem>
                 <SelectItem value="th">{t('settings.language.th')}</SelectItem>
+                <SelectItem value="zh">{t('settings.language.zh')}</SelectItem>
               </SelectContent>
             </Select>
           </div>

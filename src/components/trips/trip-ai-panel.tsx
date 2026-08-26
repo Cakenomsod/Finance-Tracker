@@ -60,7 +60,9 @@ export const TripAiPanel = React.forwardRef<TripAiPanelHandle, TripAiPanelProps>
     ) => {
       activeJobIdRef.current = jobId
       setPendingResult(result)
-      setReviewImmichIds([...new Set([...immichIds, ...pendingImmichIds])])
+      // FIX: use only the job's own immich IDs — do NOT merge pendingImmichIds here,
+      // those are consumed at job-creation time via onConsumePendingImmichIds.
+      setReviewImmichIds(immichIds)
       setReviewOpen(true)
     }
 
@@ -72,9 +74,8 @@ export const TripAiPanel = React.forwardRef<TripAiPanelHandle, TripAiPanelProps>
         getTripTimeZone(trip.countryCode, tripCurrency),
         user?.uid
       )
-      const ids = [...new Set([...reviewImmichIds, ...pendingImmichIds])]
-      onOpenExpenseForm(expenseDraft, ids.length ? ids : undefined)
-      setPendingImmichIds([])
+      // FIX: use only reviewImmichIds — pendingImmichIds already consumed at job creation
+      onOpenExpenseForm(expenseDraft, reviewImmichIds.length ? reviewImmichIds : undefined)
       setReviewImmichIds([])
     }
 
@@ -86,6 +87,9 @@ export const TripAiPanel = React.forwardRef<TripAiPanelHandle, TripAiPanelProps>
           storageScope={`trip:${tripId}`}
           pendingImmichIds={pendingImmichIds}
           onImmichNoteReady={(id) => setPendingImmichIds((p) => [...new Set([...p, id])])}
+          onConsumePendingImmichIds={(ids) =>
+            setPendingImmichIds((p) => p.filter((id) => !ids.includes(id)))
+          }
           onReview={handleReview}
         />
 

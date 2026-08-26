@@ -67,6 +67,7 @@ import {
   type TripSettingsValue,
 } from '@/components/trips/trip-settings-fields'
 import { convertToHomeCurrency, formatCurrencySymbol, formatHomeConversion } from '@/lib/trip-currency'
+import type { TripCurrencyCode } from '@/lib/tax/countries'
 import { saveTripExpenseWithTransaction } from '@/lib/sync-expense-transaction'
 import { getTripSelfMemberKey } from '@/lib/trip-balance'
 import { Timestamp } from 'firebase/firestore'
@@ -193,7 +194,7 @@ function TripCard({
   members.forEach((m) => { net[m] = 0; paid[m] = 0 })
 
   tripTransactions.forEach((tx) => {
-    const amount = convertToHomeCurrency(Math.abs(tx.amount), tx.currency, trip)
+    const amount = convertToHomeCurrency(Math.abs(tx.amount), tx.currency as TripCurrencyCode | undefined, trip)
     const payer = tx.paidBy || members[0]
     const split = tx.splitWith
 
@@ -272,7 +273,7 @@ function TripCard({
 
   const settlements = calculateSettlements(participants)
   const totalLegacyExpenses = tripTransactions.reduce(
-    (sum, tx) => sum + convertToHomeCurrency(Math.abs(tx.amount), tx.currency, trip),
+    (sum, tx) => sum + convertToHomeCurrency(Math.abs(tx.amount), tx.currency as TripCurrencyCode | undefined, trip),
     0
   )
   const totalNewExpenses = tripExpenses.reduce(
@@ -525,12 +526,12 @@ function TripCard({
                     </div>
                     <div className="shrink-0 text-right">
                       <span className="block text-sm font-semibold tabular-nums text-destructive">
-                        −{formatCurrencySymbol(tx.currency || trip.tripCurrency || 'THB')}
+                        −{formatCurrencySymbol((tx.currency || trip.tripCurrency || 'THB') as TripCurrencyCode)}
                         {Math.abs(tx.amount).toLocaleString()}
                       </span>
-                      {formatHomeConversion(Math.abs(tx.amount), tx.currency, trip) && (
+                      {formatHomeConversion(Math.abs(tx.amount), tx.currency as TripCurrencyCode | undefined, trip) && (
                         <span className="block text-xs font-normal text-muted-foreground tabular-nums">
-                          ({formatHomeConversion(Math.abs(tx.amount), tx.currency, trip)})
+                          ({formatHomeConversion(Math.abs(tx.amount), tx.currency as TripCurrencyCode | undefined, trip)})
                         </span>
                       )}
                     </div>
@@ -686,7 +687,7 @@ export default function TripsPage() {
   // Stats
   const totalLegacyExpenses = allTripTransactions.reduce((sum, tx) => {
     const trip = tx.tripId ? tripById.get(tx.tripId) : undefined
-    return sum + convertToHomeCurrency(Math.abs(tx.amount), tx.currency, trip)
+    return sum + convertToHomeCurrency(Math.abs(tx.amount), tx.currency as TripCurrencyCode | undefined, trip)
   }, 0)
   const totalNewExpenses = allTripExpenses.reduce((sum, ex) => {
     const trip = tripById.get(ex.tripId)

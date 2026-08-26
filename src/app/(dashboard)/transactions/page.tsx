@@ -60,10 +60,13 @@ import {
   computeMonthTotals,
   computeCumulativeBalanceUpToMonth,
   collectMonthsWithData,
+  resolveTxCurrency,
 } from '@/lib/aggregate-transactions'
 import { computeTotalLedgerBalanceUpToMonth } from '@/lib/account-balances'
 import { usePaymentSources } from '@/hooks/use-payment-sources'
 import { useUserSettings } from '@/hooks/use-user-settings'
+import { useExchangeRates } from '@/hooks/use-exchange-rates'
+import { isAppCurrency, convertCurrency, STATIC_FALLBACK_RATES } from '@/lib/currency'
 import { PaymentSource } from '@/lib/firestore-types'
 import { useCategories } from '@/hooks/use-categories'
 import { TransactionForm } from '@/components/transactions/transaction-form'
@@ -92,6 +95,7 @@ import {
   toDateFromFirestore,
 } from '@/lib/datetime'
 import { shouldIgnoreRowClick } from '@/lib/row-click'
+import { MoneyAmount } from '@/components/money-amount'
 
 const ALL_CATEGORIES = 'ทุกหมวดหมู่'
 
@@ -139,7 +143,8 @@ export default function TransactionsPage() {
   const { allTripExpenses: fullTripExpenses } = useAllTripExpenses()
   const { categories } = useCategories()
   const { trips } = useTrips()
-  const { accountsEnabled } = useUserSettings()
+  const { accountsEnabled, currency: preferenceCurrency } = useUserSettings()
+  const { rates } = useExchangeRates()
   const { activeSources } = usePaymentSources()
 
   const sourcesById = React.useMemo(() => {
@@ -232,19 +237,26 @@ export default function TransactionsPage() {
   const [pendingImmichAssetIds, setPendingImmichAssetIds] = React.useState<string[]>([])
   const transactionAiPanelRef = React.useRef<TransactionAiPanelHandle>(null)
 
+  const prefCurrency = isAppCurrency(preferenceCurrency) ? preferenceCurrency : 'THB'
+  const effectiveRates = React.useMemo(
+    () => ({ ...STATIC_FALLBACK_RATES, ...rates }),
+    [rates]
+  )
+
   // Merge legacy transactions and trip expenses (trip rows show only the user's share)
   const allCombined = React.useMemo((): TransactionsPageRow[] => {
     const legacy = transactions
       .filter((tx) => !tx.tripExpenseId)
       .map((tx) => {
-      const factor = tx.currency === 'JPY' ? 0.22 : 1
+      const txCurrency = resolveTxCurrency(tx)
       const effectiveAmount = getTransactionEffectiveAmount(tx)
+      const amountInHome = convertCurrency(effectiveAmount, txCurrency, prefCurrency, effectiveRates)
       return {
         id: tx.id!,
         description: tx.description,
         amount: effectiveAmount,
         fullAmount: tx.amount,
-        amountThb: effectiveAmount * factor,
+        amountThb: amountInHome,
         category: tx.category,
         date: tx.date,
         paidBy: tx.paidBy || 'Me',
@@ -263,7 +275,7 @@ export default function TransactionsPage() {
       const myShare = user ? getTripExpenseUserShare(ex, user.uid) : ex.totalAmount
       if (user && myShare <= 0) return []
 
-      const factor = ex.currency === 'JPY' ? 0.22 : 1
+      const exCurrency = resolveTxCurrency(ex)
       const payersStr = ex.payers.map((p) => p.displayName).join(', ')
       const personalExpense = user
         ? getTripExpensePersonalExpenseAmount(ex, user.uid)
@@ -274,7 +286,7 @@ export default function TransactionsPage() {
         id: ex.id!,
         description: ex.description,
         amount: personalAmount,
-        amountThb: personalAmount * factor,
+        amountThb: convertCurrency(personalAmount, exCurrency, prefCurrency, effectiveRates),
         category: ex.category || 'Other',
         date: ex.date,
         paidBy: payersStr,
@@ -288,7 +300,7 @@ export default function TransactionsPage() {
         rawEx: ex,
         note: ex.note,
         isTripDebtPending: isPending,
-        expenseAmountThb: -personalExpense * factor,
+        expenseAmountThb: convertCurrency(-personalExpense, exCurrency, prefCurrency, effectiveRates),
       }]
     })
 
@@ -299,11 +311,11 @@ export default function TransactionsPage() {
       return dateB - dateA
     })
     return combined
-  }, [transactions, allTripExpenses, user?.uid])
+  }, [transactions, allTripExpenses, user?.uid, prefCurrency, effectiveRates])
 
   const summaryCombined = React.useMemo(
-    () => mergeTransactions(allTransactions, fullTripExpenses, user?.uid),
-    [allTransactions, fullTripExpenses, user?.uid]
+    () => mergeTransactions(allTransactions, fullTripExpenses, user?.uid, prefCurrency, effectiveRates),
+    [allTransactions, fullTripExpenses, user?.uid, prefCurrency, effectiveRates]
   )
 
   const monthsWithData = React.useMemo(
@@ -529,6 +541,7 @@ export default function TransactionsPage() {
                 key={editingTransaction?.id || (ocrDraft ? 'ocr-draft' : 'new')}
                 initialData={editingTransaction || (ocrDraft as Transaction | null)}
                 pendingImmichAssetIds={pendingImmichAssetIds}
+                currency={preferenceCurrency}
                 onSubmit={async (data) => {
                   if (editingTransaction) {
                     await editTransaction(editingTransaction.id!, data)
@@ -652,6 +665,8 @@ export default function TransactionsPage() {
         hasActiveFilters={hasActiveFilters}
         showLoadOlderHint={showLoadOlderHint}
         emptyVariant={emptyVariant}
+        preferenceCurrency={preferenceCurrency}
+        rates={effectiveRates}
         onView={handleViewTransaction}
         onEdit={(tx) => {
           setEditingTransaction(tx)
@@ -767,24 +782,32 @@ export default function TransactionsPage() {
                     )}
                   >
                     {(() => {
-                      const isJpy = transaction.rawTx?.currency === 'JPY' || transaction.rawEx?.currency === 'JPY'
+                      const recordedCurrency =
+                        transaction.rawTx?.currency ??
+                        transaction.rawEx?.currency ??
+                        'THB'
                       const displayAmount = transaction.amount
                       const fullAmount = transaction.fullAmount ?? transaction.amount
                       return (
                         <>
-                          <span className="block">
-                            {displayAmount > 0 ? '+' : ''}{isJpy ? '¥' : '฿'}
-                            {Math.abs(displayAmount).toLocaleString()}
-                          </span>
+                          <MoneyAmount
+                            amount={displayAmount}
+                            currency={recordedCurrency}
+                            preferenceCurrency={preferenceCurrency}
+                            rates={effectiveRates}
+                            showSign
+                            forcePreference={!!transaction.rawEx}
+                            className="block"
+                          />
                           {transaction.isPaotang && Math.abs(fullAmount) !== Math.abs(displayAmount) && (
                             <span className="block text-[10px] font-normal text-muted-foreground">
-                              เต็ม ฿{Math.abs(fullAmount).toLocaleString()}
+                              เต็ม {fullAmount > 0 ? '+' : ''}{recordedCurrency === 'JPY' ? '¥' : '฿'}{Math.abs(fullAmount).toLocaleString()}
                               {' · '}รัฐ {PAOTANG_GOV_PERCENT}% (ตามโควต้า)
                             </span>
                           )}
                           {!transaction.isLegacy && Math.abs(fullAmount) !== Math.abs(displayAmount) && (
                             <span className="block text-[10px] font-normal text-muted-foreground">
-                              เต็ม {isJpy ? '¥' : '฿'}{Math.abs(fullAmount).toLocaleString()}
+                              เต็ม {recordedCurrency === 'JPY' ? '¥' : '฿'}{Math.abs(fullAmount).toLocaleString()}
                             </span>
                           )}
                           {transaction.isPaotang && transaction.paotangQuotaCapped && (
@@ -795,11 +818,6 @@ export default function TransactionsPage() {
                           {transaction.isTripDebtPending && (
                             <span className="block text-[10px] font-normal text-muted-foreground">
                               ยังไม่นับในรายจ่าย — จ่ายคืนในหน้าทริป
-                            </span>
-                          )}
-                          {isJpy && (
-                            <span className="block text-[10px] font-normal tabular-nums text-muted-foreground">
-                              ({displayAmount > 0 ? '+' : ''}฿{(Math.abs(displayAmount) * 0.22).toLocaleString()})
                             </span>
                           )}
                         </>

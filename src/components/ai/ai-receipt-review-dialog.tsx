@@ -24,7 +24,7 @@ export interface AiReceiptReviewDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   result: ReceiptParseResult | null
-  defaultCurrency?: 'THB' | 'JPY'
+  defaultCurrency?: string
   onConfirm: () => void
 }
 

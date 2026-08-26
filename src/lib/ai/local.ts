@@ -1,5 +1,6 @@
 import {
   receiptParseSchema,
+  expenseTextMultiParseSchema,
   RECEIPT_PARSE_PROMPT,
   EXPENSE_TEXT_PARSE_PROMPT,
   type ReceiptParseResult,
@@ -155,7 +156,7 @@ export async function parseExpenseTextLocal(
   text: string,
   config: LocalAiConfig,
   context?: ExpenseTextAiContext
-): Promise<ReceiptParseResult> {
+): Promise<ReceiptParseResult[]> {
   if (!config.baseUrl) {
     throw new Error('Local AI baseUrl is not configured');
   }
@@ -168,6 +169,9 @@ export async function parseExpenseTextLocal(
     : '';
   const contactsHint = context?.contactsHint || '';
 
+  const fallbackCurrency: 'THB' | 'JPY' =
+    context?.currency === 'JPY' ? 'JPY' : 'THB';
+
   try {
     const response = await fetch(`${baseUrl}/v1/chat/completions`, {
       method: 'POST',
@@ -178,7 +182,7 @@ export async function parseExpenseTextLocal(
           {
             role: 'system',
             content:
-              'You are a JSON API. Reply with a single valid JSON object only in the message content field. ' +
+              'You are a JSON API. Reply with a single valid JSON object with a "drafts" array only in the message content field. ' +
               'Do not use chain-of-thought or reasoning — no markdown, no explanation, no preamble.',
           },
           {
@@ -210,23 +214,15 @@ export async function parseExpenseTextLocal(
     );
 
     if (!content) {
-      const currency =
-        context?.currency === 'JPY' || context?.currency === 'THB'
-          ? context.currency
-          : 'THB';
-      const fallback = tryParseExpenseTextStrictFormat(text, currency);
-      if (fallback) return fallback;
+      const fallback = tryParseExpenseTextStrictFormat(text, fallbackCurrency);
+      if (fallback) return [fallback];
       throw new Error('No response from local AI (ลองพิมพ์แบบ "ชื่อรายการ จำนวนเงิน" เช่น ไก่ทอด 20)');
     }
 
-    return receiptParseSchema.parse(parseJsonFromAiContent(content));
+    return expenseTextMultiParseSchema.parse(parseJsonFromAiContent(content)).drafts;
   } catch (error) {
-    const currency =
-      context?.currency === 'JPY' || context?.currency === 'THB'
-        ? context.currency
-        : 'THB';
-    const fallback = tryParseExpenseTextStrictFormat(text, currency);
-    if (fallback) return fallback;
+    const fallback = tryParseExpenseTextStrictFormat(text, fallbackCurrency);
+    if (fallback) return [fallback];
     throw wrapLocalAiError(error, 'Failed to parse expense text with local AI');
   }
 }

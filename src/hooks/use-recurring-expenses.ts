@@ -81,7 +81,7 @@ export function useRecurringExpenses() {
   }, []);
 
   const confirmPayment = useCallback(
-    async (expense: RecurringExpense, paidBy: string) => {
+    async (expense: RecurringExpense, paidBy: string, currency = 'THB') => {
       if (!user) throw new Error('Not logged in');
       if (!expense.id) throw new Error('Missing recurring expense id');
 
@@ -97,7 +97,7 @@ export function useRecurringExpenses() {
         tripId: null,
         receiptUrl: null,
         source: 'manual',
-        currency: 'THB',
+        currency,
         accountId: expense.accountId,
       });
 

@@ -23,6 +23,8 @@ import {
   toDateFromFirestore,
 } from '@/lib/datetime'
 import { shouldIgnoreRowClick } from '@/lib/row-click'
+import { MoneyAmount } from '@/components/money-amount'
+import { STATIC_FALLBACK_RATES } from '@/lib/currency'
 
 type CombinedTransaction = {
   id: string | undefined
@@ -51,6 +53,10 @@ interface TransactionMobileListProps {
   hasActiveFilters: boolean
   showLoadOlderHint: boolean
   emptyVariant?: 'no-data' | 'no-results' | 'filtered-load-older' | 'no-month-data'
+  /** User's current preference currency (ISO 4217). Used for secondary converted display. */
+  preferenceCurrency?: string
+  /** Live FX rates map (USD = 1 base). Falls back to static rates when absent. */
+  rates?: Record<string, number>
   onView: (transaction: CombinedTransaction) => void
   onEdit: (tx: Transaction) => void
   onDelete: (id: string, tx: Transaction | null) => void
@@ -71,12 +77,15 @@ export function TransactionMobileList({
   hasActiveFilters,
   showLoadOlderHint,
   emptyVariant: emptyVariantProp,
+  preferenceCurrency = 'THB',
+  rates,
   onView,
   onEdit,
   onDelete,
   onAddClick,
   onClearFilters,
 }: TransactionMobileListProps) {
+  const effectiveRates = rates ?? (STATIC_FALLBACK_RATES as Record<string, number>)
   const grouped = React.useMemo(
     () =>
       groupItemsByDate(transactions, (transaction) =>
@@ -119,9 +128,10 @@ export function TransactionMobileList({
               const txId = transaction.id!
               const cat = categoryByName.get(transaction.category)
               const txDate = toDateFromFirestore(transaction.date)
-              const isJpy =
-                transaction.rawTx?.currency === 'JPY' ||
-                transaction.rawEx?.currency === 'JPY'
+              const recordedCurrency =
+                transaction.rawTx?.currency ??
+                transaction.rawEx?.currency ??
+                'THB'
               const displayAmount = transaction.amount
               const fullAmount = transaction.fullAmount ?? transaction.amount
 
@@ -174,27 +184,23 @@ export function TransactionMobileList({
                         </div>
                       </div>
                       <div className="shrink-0 text-right">
-                        <p
+                        <MoneyAmount
+                          amount={displayAmount}
+                          currency={recordedCurrency}
+                          preferenceCurrency={preferenceCurrency}
+                          rates={effectiveRates}
+                          showSign
+                          forcePreference={!!transaction.rawEx}
                           className={cn(
-                            'text-sm font-semibold tabular-nums',
+                            'text-sm font-semibold',
                             transaction.isTripDebtPending
                               ? 'text-muted-foreground'
                               : amountColorClass(displayAmount)
                           )}
-                        >
-                          {displayAmount > 0 ? '+' : ''}
-                          {isJpy ? '¥' : '฿'}
-                          {Math.abs(displayAmount).toLocaleString()}
-                        </p>
+                        />
                         {transaction.isTripDebtPending && (
                           <p className="text-[10px] text-muted-foreground">
                             ยังไม่นับในรายจ่าย
-                          </p>
-                        )}
-                        {isJpy && (
-                          <p className="text-[10px] tabular-nums text-muted-foreground">
-                            ({displayAmount > 0 ? '+' : ''}฿
-                            {(Math.abs(displayAmount) * 0.22).toLocaleString()})
                           </p>
                         )}
                       </div>
@@ -252,7 +258,7 @@ export function TransactionMobileList({
                     {transaction.isPaotang &&
                       Math.abs(fullAmount) !== Math.abs(displayAmount) && (
                         <p className="mt-1 text-[10px] text-muted-foreground">
-                          เต็ม ฿{Math.abs(fullAmount).toLocaleString()} · รัฐ{' '}
+                          เต็ม {recordedCurrency === 'JPY' ? '¥' : '฿'}{Math.abs(fullAmount).toLocaleString()} · รัฐ{' '}
                           {PAOTANG_GOV_PERCENT}% (ตามโควต้า)
                         </p>
                       )}

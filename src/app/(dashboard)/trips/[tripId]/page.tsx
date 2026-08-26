@@ -71,6 +71,7 @@ import {
   getTripTimeZone,
   LEGACY_JPY_TO_THB,
 } from '@/lib/trip-currency'
+import type { TripCurrencyCode } from '@/lib/tax/countries'
 import { collectImmichAssetIds } from '@/lib/immich/asset-ids'
 import { requestDeleteImmichAssets } from '@/lib/immich/delete-from-browser'
 import {
@@ -287,7 +288,7 @@ export default function TripDetailPage() {
 
   // --- Calculations ---
   const totalLegacyExpenses = tripTxs.reduce(
-    (s, tx) => s + convertToHomeCurrency(Math.abs(tx.amount), tx.currency, trip),
+    (s, tx) => s + convertToHomeCurrency(Math.abs(tx.amount), tx.currency as TripCurrencyCode | undefined, trip),
     0
   )
   const totalNewExpenses = tripExpenses.reduce(
@@ -306,7 +307,7 @@ export default function TripDetailPage() {
     members.forEach((m) => { net[m] = 0; paid[m] = 0 })
 
     tripTxs.forEach((tx) => {
-      const amount = convertToHomeCurrency(Math.abs(tx.amount), tx.currency, trip)
+      const amount = convertToHomeCurrency(Math.abs(tx.amount), tx.currency as TripCurrencyCode | undefined, trip)
       const payer = resolveMember(tx.paidBy || members[0]) || members[0]
       const split = tx.splitWith // null = solo, 'all' = everyone, 'Name' = specific
 
@@ -385,7 +386,7 @@ export default function TripDetailPage() {
       paidBy: tx.paidBy,
       splitLabel: !tx.splitWith ? 'Solo' : tx.splitWith === 'all' ? 'All' : tx.splitWith,
       isLegacy: true,
-      currency: tx.currency,
+      currency: tx.currency as TripCurrencyCode | undefined,
       rawTx: tx,
       rawEx: null
     }))
@@ -1093,7 +1094,7 @@ export default function TripDetailPage() {
                       const transfers = calculateExpenseTransfers(ex)
                       if (transfers.length === 0) return null
 
-                      const exCurrency = ex.rawTx?.currency || ex.rawEx?.currency || trip?.tripCurrency || 'THB'
+                      const exCurrency = (ex.rawTx?.currency || ex.rawEx?.currency || trip?.tripCurrency || 'THB') as TripCurrencyCode
                       const exSymbol = formatCurrencySymbol(exCurrency)
                       const exHomeHint = formatHomeConversion(ex.amount, exCurrency, trip)
                       return (

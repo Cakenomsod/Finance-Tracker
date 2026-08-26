@@ -8,6 +8,13 @@ import {
   getTripExpenseUserShare,
   isTripExpensePendingDebt,
 } from '@/lib/trip-balance'
+import {
+  AppCurrency,
+  convertCurrency,
+  formatMoneyAmount,
+  isAppCurrency,
+  STATIC_FALLBACK_RATES,
+} from '@/lib/currency'
 
 export interface CombinedTransaction {
   id?: string
@@ -43,6 +50,7 @@ export function getCountedNetThb(tx: CombinedTransaction): number {
   return getCountedIncomeThb(tx) - getCountedExpenseThb(tx)
 }
 
+/** Legacy JPY→THB fallback rate used when no live rates are available. */
 const JPY_TO_THB = 0.22
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -70,10 +78,47 @@ export const CATEGORY_ICONS: Record<string, string> = {
 }
 
 export function formatMoney(amount: number, currency = 'THB', showSign = false): string {
-  const symbol = currency === 'THB' ? '฿' : currency === 'JPY' ? '¥' : `${currency} `
-  const rounded = Math.round(Math.abs(amount))
-  const sign = showSign && amount !== 0 ? (amount > 0 ? '+' : '-') : ''
-  return `${sign}${symbol}${rounded.toLocaleString()}`
+  const resolved: AppCurrency = isAppCurrency(currency) ? currency : 'THB'
+  return formatMoneyAmount(amount, resolved, { showSign, maximumFractionDigits: 0 })
+}
+
+/** Resolve a raw currency string (from Firestore) to a known AppCurrency, falling back to THB. */
+export function resolveTxCurrency(tx: { currency?: string | null }): AppCurrency {
+  return isAppCurrency(tx.currency) ? tx.currency : 'THB'
+}
+
+/**
+ * Format a primary+secondary money pair for display.
+ * - primary: amount in recordedCurrency
+ * - secondary: ≈ amount in preferenceCurrency (null when same currency)
+ * When forceHomeDisplay=true, swaps: primary is preference-converted, secondary is null.
+ */
+export function formatMoneyPair(
+  amount: number,
+  recordedCurrency: string,
+  preferenceCurrency: string,
+  rates: Record<string, number>,
+  opts?: { showSign?: boolean; forceHomeDisplay?: boolean }
+): { primary: string; secondary: string | null } {
+  const recorded: AppCurrency = isAppCurrency(recordedCurrency) ? recordedCurrency : 'THB'
+  const pref: AppCurrency = isAppCurrency(preferenceCurrency) ? preferenceCurrency : 'THB'
+  const effectiveRates = { ...STATIC_FALLBACK_RATES, ...rates }
+
+  if (opts?.forceHomeDisplay) {
+    const converted = convertCurrency(amount, recorded, pref, effectiveRates)
+    return {
+      primary: formatMoneyAmount(converted, pref, { showSign: opts.showSign }),
+      secondary: null,
+    }
+  }
+
+  const primary = formatMoneyAmount(amount, recorded, { showSign: opts?.showSign })
+  if (recorded === pref) return { primary, secondary: null }
+
+  const converted = convertCurrency(Math.abs(amount), recorded, pref, effectiveRates)
+  const sign = amount > 0 ? '+' : amount < 0 ? '−' : ''
+  const secondary = `≈ ${sign}${formatMoneyAmount(converted, pref)}`
+  return { primary, secondary }
 }
 
 export function getDateFromTx(tx: { date: { seconds: number } | null }): Date {
@@ -86,18 +131,32 @@ export function getDateFromTx(tx: { date: { seconds: number } | null }): Date {
 export function mergeTransactions(
   transactions: Transaction[],
   allTripExpenses: TripExpense[],
-  userId?: string
+  userId?: string,
+  homeCurrency?: AppCurrency,
+  rates?: Record<string, number>
 ): CombinedTransaction[] {
+  const effectiveRates = rates ? { ...STATIC_FALLBACK_RATES, ...rates } : undefined
+  const home = homeCurrency ?? 'THB'
+
+  function toHome(amount: number, currency: string): number {
+    const from: AppCurrency = isAppCurrency(currency) ? currency : 'THB'
+    if (effectiveRates) {
+      return convertCurrency(amount, from, home, effectiveRates)
+    }
+    // Legacy fallback: JPY→THB fixed rate, else 1:1
+    return from === 'JPY' ? amount * JPY_TO_THB : amount
+  }
+
   const legacy = transactions
     .filter((tx) => !tx.tripExpenseId)
     .map((tx) => {
-    const factor = tx.currency === 'JPY' ? JPY_TO_THB : 1
+    const txCurrency = tx.currency ?? 'THB'
     const effectiveAmount = getTransactionEffectiveAmount(tx)
     return {
       id: tx.id,
       description: tx.description,
       amount: effectiveAmount,
-      amountThb: effectiveAmount * factor,
+      amountThb: toHome(effectiveAmount, txCurrency),
       category: tx.category,
       date: tx.date,
       paidBy: tx.paidBy || 'Me',
@@ -112,7 +171,7 @@ export function mergeTransactions(
     const myShare = userId ? getTripExpenseUserShare(ex, userId) : ex.totalAmount
     if (userId && myShare <= 0) return []
 
-    const factor = ex.currency === 'JPY' ? JPY_TO_THB : 1
+    const exCurrency = ex.currency ?? 'THB'
     const payersStr = ex.payers.map((p) => p.displayName).join(', ')
     const personalExpense = userId
       ? getTripExpensePersonalExpenseAmount(ex, userId)
@@ -124,8 +183,8 @@ export function mergeTransactions(
       id: ex.id,
       description: ex.description,
       amount: personalAmount,
-      amountThb: personalAmount * factor,
-      expenseAmountThb: expenseAmount * factor,
+      amountThb: toHome(personalAmount, exCurrency),
+      expenseAmountThb: toHome(expenseAmount, exCurrency),
       isTripDebtPending: isPending,
       category: ex.category || 'Other',
       date: ex.date,

@@ -3,7 +3,6 @@
 import * as React from 'react'
 import { ImagePlus, Loader2, Paperclip, Send, Sparkles, Bookmark, CheckCircle2, AlertCircle, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { ReceiptParseResult } from '@/lib/ai/receipt-schema'
@@ -16,6 +15,7 @@ import {
 import { readApiJson } from '@/lib/api-json'
 import { authFetch } from '@/lib/api-auth-client'
 import { compressImageForUpload } from '@/lib/immich/compress-image'
+import { uploadImmichImage } from '@/lib/immich/upload-client'
 import { useImmichUploadDelivery } from '@/providers/immich-upload-context'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
@@ -28,6 +28,8 @@ export interface AiExpenseQuickInputProps {
   onReview?: (result: ReceiptParseResult, immichIds: string[], jobId: string) => void
   pendingImmichIds?: string[]
   onImmichNoteReady?: (assetId: string) => void
+  /** Called with the snapshot of pending Immich IDs consumed when a new job is created */
+  onConsumePendingImmichIds?: (ids: string[]) => void
 }
 
 function statusLabel(job: AiParseJob) {
@@ -50,6 +52,7 @@ export const AiExpenseQuickInput = React.forwardRef<
     onReview,
     pendingImmichIds = [],
     onImmichNoteReady,
+    onConsumePendingImmichIds,
   },
   ref
 ) {
@@ -67,6 +70,8 @@ export const AiExpenseQuickInput = React.forwardRef<
   pendingImmichRef.current = pendingImmichIds
   const onImmichNoteReadyRef = React.useRef(onImmichNoteReady)
   onImmichNoteReadyRef.current = onImmichNoteReady
+  const onConsumePendingImmichIdsRef = React.useRef(onConsumePendingImmichIds)
+  onConsumePendingImmichIdsRef.current = onConsumePendingImmichIds
 
   const noteDeliveryKey = `ai-notes:${storageScope}`
   const { enqueue: enqueueNoteUpload, uploadingCount: uploadingNoteCount } =
@@ -127,10 +132,43 @@ export const AiExpenseQuickInput = React.forwardRef<
           provider: job.provider,
         }),
       })
-      const data = await readApiJson<{ error?: string; draft?: ReceiptParseResult }>(res)
+      const data = await readApiJson<{
+        error?: string
+        draft?: ReceiptParseResult
+        drafts?: ReceiptParseResult[]
+      }>(res)
       if (!res.ok) throw new Error(data.error || 'Parse failed')
 
-      updateJob(job.id, { status: 'done', result: data.draft as ReceiptParseResult })
+      const drafts = data.drafts?.length
+        ? data.drafts
+        : data.draft
+          ? [data.draft]
+          : []
+
+      if (drafts.length === 0) throw new Error('No drafts returned from AI')
+
+      if (drafts.length === 1) {
+        updateJob(job.id, { status: 'done', result: drafts[0] })
+      } else {
+        // Replace original placeholder job with one done-job per draft
+        setJobs((prev) => {
+          const without = prev.filter((j) => j.id !== job.id)
+          const newJobs = drafts.map((d, i) =>
+            Object.assign(
+              createAiParseJob({
+                provider: job.provider,
+                kind: 'text',
+                inputLabel: d.description || `รายการ ${i + 1}`,
+                // Only first draft inherits the note immich ids
+                immichIds: i === 0 ? job.immichIds : [],
+              }),
+              { status: 'done' as const, result: d }
+            )
+          )
+          return [...newJobs, ...without]
+        })
+      }
+
       toast.success('แยกรายการเสร็จแล้ว — กดตรวจสอบ/แก้ไข')
     } catch (err) {
       updateJob(job.id, {
@@ -150,14 +188,7 @@ export const AiExpenseQuickInput = React.forwardRef<
       // SSR instance regularly OOM into HTTP 500 when both run uncompressed.
       const prepared = await compressImageForUpload(file)
 
-      // Store the same (compressed) receipt on Immich in the background so the
-      // user does not need a second full-size upload alongside AI parse.
-      enqueueNoteUpload(prepared, {
-        tripId,
-        label: file.name || 'รูปใบเสร็จ',
-        successToast: 'เก็บรูปใบเสร็จใน Immich แล้ว',
-      })
-
+      // Upload + AI parse in parallel; bind Immich asset only to THIS job.
       const form = new FormData()
       form.append('image', prepared)
       if (tripId) form.append('tripId', tripId)
@@ -168,11 +199,26 @@ export const AiExpenseQuickInput = React.forwardRef<
 
       const endpoint = tripId ? '/api/ai/receipt/parse' : '/api/ai/transaction/parse'
 
-      const res = await authFetch(endpoint, { method: 'POST', body: form })
-      const data = await readApiJson<{ error?: string; draft?: ReceiptParseResult }>(res)
-      if (!res.ok) throw new Error(data.error || 'Parse failed')
+      const [uploadResult, parseRes] = await Promise.all([
+        uploadImmichImage(prepared, { tripId, compress: false }).catch(() => null),
+        authFetch(endpoint, { method: 'POST', body: form }),
+      ])
 
-      updateJob(job.id, { status: 'done', result: data.draft as ReceiptParseResult })
+      const data = await readApiJson<{ error?: string; draft?: ReceiptParseResult }>(parseRes)
+      if (!parseRes.ok) throw new Error(data.error || 'Parse failed')
+
+      const boundIds = uploadResult?.assetId
+        ? [...new Set([...job.immichIds, uploadResult.assetId])]
+        : job.immichIds
+
+      updateJob(job.id, {
+        status: 'done',
+        result: data.draft as ReceiptParseResult,
+        immichIds: boundIds,
+      })
+      if (uploadResult?.assetId) {
+        toast.success('เก็บรูปใบเสร็จใน Immich แล้ว')
+      }
       toast.success('แยกรายการจากรูปเสร็จแล้ว — กดตรวจสอบ/แก้ไข')
     } catch (err) {
       updateJob(job.id, {
@@ -183,27 +229,37 @@ export const AiExpenseQuickInput = React.forwardRef<
   }
 
   const enqueueTextParse = (text: string) => {
+    // Snapshot pending ids NOW so they belong exclusively to this job
+    const snapshotIds = [...pendingImmichRef.current]
     const job = createAiParseJob({
       provider: 'gemma',
       kind: 'text',
       inputLabel: text.length > 80 ? `${text.slice(0, 80)}…` : text,
-      immichIds: [...pendingImmichRef.current],
+      immichIds: snapshotIds,
     })
     setJobs((prev) => [job, ...prev])
     setInput('')
+    if (snapshotIds.length > 0) {
+      onConsumePendingImmichIdsRef.current?.(snapshotIds)
+    }
     void runTextJob(job, text)
   }
 
   const enqueueReceiptParse = (file: File, extraInstructions: string) => {
+    // Snapshot note pending ids — receipt will get its own immich id from upload
+    const snapshotIds = [...pendingImmichRef.current]
     const job = createAiParseJob({
       provider: 'gemma',
       kind: 'receipt',
       inputLabel: file.name || 'รูปใบเสร็จ',
-      immichIds: [...pendingImmichRef.current],
+      immichIds: snapshotIds,
     })
     setJobs((prev) => [job, ...prev])
     setPendingReceiptFile(null)
     setReceiptExtraInstructions('')
+    if (snapshotIds.length > 0) {
+      onConsumePendingImmichIdsRef.current?.(snapshotIds)
+    }
     void runReceiptJob(job, file, extraInstructions)
   }
 
@@ -244,7 +300,7 @@ export const AiExpenseQuickInput = React.forwardRef<
         </div>
         <div className="min-w-0">
           <p className="text-sm font-semibold tracking-tight">Add with AI</p>
-          <p className="text-xs text-muted-foreground">Type an expense or attach a receipt</p>
+          <p className="text-xs text-muted-foreground">Type expenses or attach a receipt</p>
         </div>
         <div className="ml-auto flex shrink-0 items-center gap-1.5">
           <Badge variant="secondary" className="text-[10px]">
@@ -263,17 +319,18 @@ export const AiExpenseQuickInput = React.forwardRef<
             aria-label="คำสั่งเพิ่มเติมสำหรับวิเคราะห์ใบเสร็จ"
           />
         ) : (
-          <Input
-            placeholder='เช่น "ไก่ทอด 20" หรือ "ไก่ทอด 20 กาแฟ 45"'
+          <Textarea
+            placeholder={'เช่น "ไก่ทอด 20" หรือวางหลายบรรทัด:\nนั่งวิน 10\nข้าว 45\nทั้งหมดนี้วันที่ 25 สิงหา 69\n(Ctrl+Enter เพื่อส่ง)'}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') {
+              if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
                 e.preventDefault()
                 if (!primaryDisabled) handlePrimarySend()
               }
             }}
-            className="h-9 flex-1"
+            className="min-h-[80px] text-sm resize-y flex-1"
+            aria-label="พิมพ์รายการค่าใช้จ่าย"
           />
         )}
         <Button

@@ -19,6 +19,7 @@ import {
 import { cn } from '@/lib/utils'
 import { useQuickAdd } from '@/components/quick-add-context'
 import { useFriends } from '@/hooks/use-friends'
+import { useLocale } from '@/components/locale-provider'
 import { Badge } from '@/components/ui/badge'
 import {
   Sheet,
@@ -27,20 +28,26 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet'
+import type { MessageKey } from '@/lib/i18n'
 
-const primaryNav = [
-  { title: 'Transactions', icon: Receipt, href: '/' },
-  { title: 'Trips', icon: Plane, href: '/trips' },
-  { title: 'Debts', icon: Users, href: '/debts' },
+const primaryNav: { titleKey: MessageKey; icon: typeof Receipt; href: string }[] = [
+  { titleKey: 'nav.transactions', icon: Receipt, href: '/' },
+  { titleKey: 'nav.trips', icon: Plane, href: '/trips' },
+  { titleKey: 'nav.debts', icon: Users, href: '/debts' },
 ]
 
-const moreNav = [
-  { title: 'Accounts', icon: Landmark, href: '/accounts' },
-  { title: 'Friends', icon: UserPlus2, href: '/friends', badge: 'friends' as const },
-  { title: 'Dashboard', icon: LayoutDashboard, href: '/dashboard' },
-  { title: 'AI Insights', icon: Sparkles, href: '/insights' },
-  { title: 'LINE Bot', icon: MessageCircle, href: '/line' },
-  { title: 'Settings', icon: Settings, href: '/settings' },
+const moreNav: {
+  titleKey: MessageKey
+  icon: typeof Landmark
+  href: string
+  badge?: 'friends'
+}[] = [
+  { titleKey: 'nav.accounts', icon: Landmark, href: '/accounts' },
+  { titleKey: 'nav.friends', icon: UserPlus2, href: '/friends', badge: 'friends' },
+  { titleKey: 'nav.dashboard', icon: LayoutDashboard, href: '/dashboard' },
+  { titleKey: 'nav.insights', icon: Sparkles, href: '/insights' },
+  { titleKey: 'nav.line', icon: MessageCircle, href: '/line' },
+  { titleKey: 'nav.settings', icon: Settings, href: '/settings' },
 ]
 
 function isActive(pathname: string, href: string) {
@@ -52,6 +59,7 @@ export function MobileBottomNav() {
   const pathname = usePathname()
   const { openQuickAdd } = useQuickAdd()
   const { pendingReceived } = useFriends()
+  const { t } = useLocale()
   const pendingCount = pendingReceived.length
   const [moreOpen, setMoreOpen] = React.useState(false)
 
@@ -72,7 +80,7 @@ export function MobileBottomNav() {
               )}
             >
               <item.icon className={cn('size-5', active && 'text-primary')} />
-              <span>{item.title}</span>
+              <span>{t(item.titleKey)}</span>
             </Link>
           )
         })}
@@ -81,7 +89,7 @@ export function MobileBottomNav() {
           type="button"
           onClick={openQuickAdd}
           className="flex flex-1 flex-col items-center justify-center"
-          aria-label="Add transaction"
+          aria-label={t('nav.transactions')}
         >
           <span className="flex size-11 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-md">
             <Plus className="size-5" />
@@ -100,7 +108,7 @@ export function MobileBottomNav() {
               )}
             >
               <item.icon className={cn('size-5', active && 'text-primary')} />
-              <span>{item.title}</span>
+              <span>{t(item.titleKey)}</span>
             </Link>
           )
         })}
@@ -115,12 +123,12 @@ export function MobileBottomNav() {
               )}
             >
               <MoreHorizontal className={cn('size-5', moreIsActive && 'text-primary')} />
-              <span>More</span>
+              <span>{t('nav.more')}</span>
             </button>
           </SheetTrigger>
           <SheetContent side="bottom" className="pb-[env(safe-area-inset-bottom)]">
             <SheetHeader>
-              <SheetTitle>More</SheetTitle>
+              <SheetTitle>{t('nav.more')}</SheetTitle>
             </SheetHeader>
             <div className="mt-4 grid gap-1">
               {moreNav.map((item) => (
@@ -134,7 +142,7 @@ export function MobileBottomNav() {
                   )}
                 >
                   <item.icon className="size-5" />
-                  <span className="flex-1">{item.title}</span>
+                  <span className="flex-1">{t(item.titleKey)}</span>
                   {item.badge === 'friends' && pendingCount > 0 && (
                     <Badge className="h-5 min-w-5 rounded-full bg-destructive text-destructive-foreground text-[10px] px-1">
                       {pendingCount}

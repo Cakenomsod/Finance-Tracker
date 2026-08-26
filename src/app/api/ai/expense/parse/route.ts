@@ -45,6 +45,10 @@ export async function POST(request: NextRequest) {
     let context: ExpenseTextAiContext | undefined;
     let contacts = await loadUserContactsForAi(session.uid);
 
+    const userDoc = await adminDb().collection('users').doc(session.uid).get();
+    const userCurrency =
+      typeof userDoc.data()?.currency === 'string' ? userDoc.data()!.currency : 'THB';
+
     if (tripId) {
       if (typeof tripId !== 'string') {
         return NextResponse.json({ error: 'Invalid tripId' }, { status: 400 });
@@ -57,13 +61,15 @@ export async function POST(request: NextRequest) {
       const trip = tripDoc.data();
       context = {
         tripName: trip?.name,
-        currency: trip?.tripCurrency,
+        currency: trip?.tripCurrency || userCurrency,
         countryCode: trip?.countryCode,
       };
       contacts = await mergeTripMembersIntoContacts(contacts, tripId);
+    } else {
+      context = { currency: userCurrency };
     }
 
-    const draft = await parseExpenseTextWithProvider(
+    const drafts = await parseExpenseTextWithProvider(
       text.trim(),
       {
         provider,
@@ -73,7 +79,8 @@ export async function POST(request: NextRequest) {
       contacts
     );
 
-    return NextResponse.json({ draft, provider });
+    // drafts[0] kept as `draft` for backward compatibility with older clients
+    return NextResponse.json({ drafts, draft: drafts[0], provider });
   } catch (error) {
     console.error('[API] POST /api/ai/expense/parse failed:', {
       message: error instanceof Error ? error.message : String(error),

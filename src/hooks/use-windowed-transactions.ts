@@ -436,7 +436,7 @@ export function useWindowedTransactions(userId: string | undefined) {
 
       if (!user) throw new Error('Must be logged in to add a transaction');
 
-      const txData = { ...data, userId: user.uid, currency: 'THB' as const };
+      const txData = { ...data, userId: user.uid, currency: data.currency ?? 'THB' };
 
       const txRef = await createTransaction(txData);
 
@@ -470,7 +470,8 @@ export function useWindowedTransactions(userId: string | undefined) {
 
       if (!existing) throw new Error('Transaction not found');
 
-      const merged = { ...existing, ...data, currency: 'THB' as const };
+      const resolvedCurrency = data.currency ?? existing.currency ?? 'THB';
+      const merged = { ...existing, ...data, currency: resolvedCurrency };
 
       const cacheBefore = captureWindowedState(
 
@@ -484,7 +485,7 @@ export function useWindowedTransactions(userId: string | undefined) {
 
       try {
 
-        await updateTransaction(id, { ...data, currency: 'THB' });
+        await updateTransaction(id, { ...data, currency: resolvedCurrency });
 
         await syncTransactionDebts(user.uid, id, merged);
 

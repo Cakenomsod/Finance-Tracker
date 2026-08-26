@@ -1,5 +1,6 @@
 import type { Trip, TripExpense, TripSettlement, Transaction } from '@/lib/firestore-types'
 import { convertToHomeCurrency } from '@/lib/trip-currency'
+import type { TripCurrencyCode } from '@/lib/tax/countries'
 
 export interface PairwiseTransfer {
   from: string
@@ -34,7 +35,7 @@ export function calcTripMemberNet(
   legacyTxs
     .filter((tx) => tx.tripId === trip.id && !tx.tripExpenseId)
     .forEach((tx) => {
-      const amount = convertToHomeCurrency(Math.abs(tx.amount), tx.currency, trip)
+      const amount = convertToHomeCurrency(Math.abs(tx.amount), tx.currency as TripCurrencyCode | undefined, trip)
       const payer = resolve(tx.paidBy || members[0]) || members[0]
       const split = tx.splitWith
 

@@ -19,6 +19,7 @@ import type { AiContact } from '@/lib/ai/contact-resolve';
 import { tryParseExpenseTextStrictFormat } from '@/lib/ai/expense-text-heuristic';
 import { normalizeReceiptDateTime, aiTimeZoneFromContext } from '@/lib/ai/ai-datetime';
 import { getGoogleAiApiKey } from '@/lib/ai/env';
+import { isAppCurrency } from '@/lib/currency';
 
 export interface AiProviderConfig {
   provider: AiTextProvider;
@@ -52,46 +53,45 @@ export async function parseReceiptImageWithProvider(
 }
 
 /**
- * Parse natural-language expense text (e.g. "ไก่ทอด 20 กาแฟ 45")
+ * Parse natural-language expense text (e.g. "ไก่ทอด 20 กาแฟ 45").
+ * Returns an array of parsed drafts (multi-item input → multiple drafts).
  */
 export async function parseExpenseTextWithProvider(
   text: string,
   config: AiProviderConfig,
   context?: ExpenseTextAiContext,
   contacts?: AiContact[]
-): Promise<ReceiptParseResult> {
-  const currency =
-    context?.currency === 'JPY' || context?.currency === 'THB'
-      ? context.currency
-      : 'THB';
-
+): Promise<ReceiptParseResult[]> {
+  const fallbackCurrency: 'THB' | 'JPY' = context?.currency === 'JPY' ? 'JPY' : 'THB';
   const timeZone = aiTimeZoneFromContext(context);
+  const defaultCurrency = isAppCurrency(context?.currency) ? context.currency : 'THB';
 
-  const strictMatch = tryParseExpenseTextStrictFormat(text, currency);
-  if (strictMatch) return normalizeReceiptDateTime(strictMatch, timeZone);
+  const strictMatch = tryParseExpenseTextStrictFormat(text, fallbackCurrency);
+  if (strictMatch) return [normalizeReceiptDateTime(strictMatch, timeZone)];
 
   const enrichedContext: ExpenseTextAiContext = {
     ...context,
+    currency: defaultCurrency,
     contactsHint: contacts?.length ? buildContactsPromptHint(contacts) : context?.contactsHint,
   };
 
-  let result: ReceiptParseResult;
+  let results: ReceiptParseResult[];
   try {
     if (config.provider === 'local') {
       if (!config.localAiConfig?.baseUrl) {
         throw new Error('Local AI is not configured. Please set up Local AI URL in Settings.');
       }
-      result = await parseExpenseTextLocal(text, config.localAiConfig, enrichedContext);
+      results = await parseExpenseTextLocal(text, config.localAiConfig, enrichedContext);
     } else {
-      result = await parseExpenseText(text, enrichedContext);
+      results = await parseExpenseText(text, enrichedContext);
     }
   } catch (aiError) {
-    const retry = tryParseExpenseTextStrictFormat(text, currency);
-    if (retry) return normalizeReceiptDateTime(retry, timeZone);
+    const retry = tryParseExpenseTextStrictFormat(text, fallbackCurrency);
+    if (retry) return [normalizeReceiptDateTime(retry, timeZone)];
 
     if (config.provider === 'local' && getGoogleAiApiKey()) {
       try {
-        result = await parseExpenseText(text, enrichedContext);
+        results = await parseExpenseText(text, enrichedContext);
       } catch {
         throw aiError;
       }
@@ -100,18 +100,16 @@ export async function parseExpenseTextWithProvider(
     }
   }
 
-  if (contacts?.length) {
-    return normalizeReceiptDateTime(
-      {
-        ...result,
-        payers: resolveSplitPeople(result.payers, contacts),
-        shares: resolveSplitPeople(result.shares, contacts),
-      },
-      timeZone
-    );
-  }
-
-  return normalizeReceiptDateTime(result, timeZone);
+  return results.map((result) => {
+    const resolved = contacts?.length
+      ? {
+          ...result,
+          payers: resolveSplitPeople(result.payers, contacts),
+          shares: resolveSplitPeople(result.shares, contacts),
+        }
+      : result;
+    return normalizeReceiptDateTime(resolved, timeZone);
+  });
 }
 
 /**

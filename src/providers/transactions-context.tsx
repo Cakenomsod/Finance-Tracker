@@ -99,7 +99,7 @@ export function TransactionsProvider({ children }: { children: ReactNode }) {
       data: Omit<Transaction, 'id' | 'createdAt' | 'userId'>
     ) => {
       if (!user) throw new Error('Must be logged in to add a transaction');
-      const txData = { ...data, userId: user.uid, currency: 'THB' as const };
+      const txData = { ...data, userId: user.uid, currency: data.currency ?? 'THB' };
       const txRef = await createTransaction(txData);
       await syncTransactionDebts(user.uid, txRef.id, txData);
       return txRef;
@@ -112,8 +112,9 @@ export function TransactionsProvider({ children }: { children: ReactNode }) {
       if (!user) throw new Error('Must be logged in to edit a transaction');
       const existing = transactions.find((t) => t.id === id);
       if (!existing) throw new Error('Transaction not found');
-      const merged = { ...existing, ...data, currency: 'THB' as const };
-      await updateTransaction(id, { ...data, currency: 'THB' });
+      const resolvedCurrency = data.currency ?? existing.currency ?? 'THB';
+      const merged = { ...existing, ...data, currency: resolvedCurrency };
+      await updateTransaction(id, { ...data, currency: resolvedCurrency });
       await syncTransactionDebts(user.uid, id, merged);
     };
 

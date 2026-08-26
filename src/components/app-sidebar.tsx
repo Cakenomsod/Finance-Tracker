@@ -50,26 +50,28 @@ import { cn } from '@/lib/utils'
 import { useAuth } from '@/hooks/use-auth'
 import { useFriends } from '@/hooks/use-friends'
 import { useQuickAdd } from '@/components/quick-add-context'
+import { useLocale } from '@/components/locale-provider'
 import { MobileBottomNav } from '@/components/mobile-bottom-nav'
 import { AppLogo } from '@/components/app-logo'
 import { Badge } from '@/components/ui/badge'
+import type { MessageKey } from '@/lib/i18n'
 
-const mainNavItems = [
-  { title: 'Transactions', icon: Receipt, href: '/' },
-  { title: 'Accounts', icon: Landmark, href: '/accounts' },
-  { title: 'Debts & Shared', icon: Users, href: '/debts' },
-  { title: 'Trip Mode', icon: Plane, href: '/trips' },
-  { title: 'Friends', icon: UserPlus2, href: '/friends' },
+const mainNavItems: { titleKey: MessageKey; icon: typeof Receipt; href: string }[] = [
+  { titleKey: 'nav.transactions', icon: Receipt, href: '/' },
+  { titleKey: 'nav.accounts', icon: Landmark, href: '/accounts' },
+  { titleKey: 'nav.debts', icon: Users, href: '/debts' },
+  { titleKey: 'nav.trips', icon: Plane, href: '/trips' },
+  { titleKey: 'nav.friends', icon: UserPlus2, href: '/friends' },
 ]
 
-const insightsNavItems = [
-  { title: 'Dashboard', icon: LayoutDashboard, href: '/dashboard' },
-  { title: 'AI Insights', icon: Sparkles, href: '/insights' },
+const insightsNavItems: { titleKey: MessageKey; icon: typeof LayoutDashboard; href: string }[] = [
+  { titleKey: 'nav.dashboard', icon: LayoutDashboard, href: '/dashboard' },
+  { titleKey: 'nav.insights', icon: Sparkles, href: '/insights' },
 ]
 
-const integrationNavItems = [
-  { title: 'LINE Bot', icon: MessageCircle, href: '/line' },
-  { title: 'Settings', icon: Settings, href: '/settings' },
+const integrationNavItems: { titleKey: MessageKey; icon: typeof MessageCircle; href: string }[] = [
+  { titleKey: 'nav.line', icon: MessageCircle, href: '/line' },
+  { titleKey: 'nav.settings', icon: Settings, href: '/settings' },
 ]
 
 export function AppSidebar({ children }: { children: React.ReactNode }) {
@@ -77,6 +79,7 @@ export function AppSidebar({ children }: { children: React.ReactNode }) {
   const { user, signOut } = useAuth()
   const { pendingReceived } = useFriends()
   const { openQuickAdd, openSearch } = useQuickAdd()
+  const { t } = useLocale()
   const pendingCount = pendingReceived.length
 
   return (
@@ -102,7 +105,7 @@ export function AppSidebar({ children }: { children: React.ReactNode }) {
 
         <SidebarContent>
           <SidebarGroup>
-            <SidebarGroupLabel>Overview</SidebarGroupLabel>
+            <SidebarGroupLabel>{t('nav.overview')}</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
                 {mainNavItems.map((item) => (
@@ -110,11 +113,11 @@ export function AppSidebar({ children }: { children: React.ReactNode }) {
                     <SidebarMenuButton
                       asChild
                       isActive={pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href + '/'))}
-                      tooltip={item.title}
+                      tooltip={t(item.titleKey)}
                     >
                       <Link href={item.href} className="relative flex items-center gap-2">
                         <item.icon className="size-4" />
-                        <span>{item.title}</span>
+                        <span>{t(item.titleKey)}</span>
                         {item.href === '/friends' && pendingCount > 0 && (
                           <Badge className="ml-auto h-5 min-w-5 rounded-full bg-destructive text-destructive-foreground text-[10px] px-1">
                             {pendingCount}
@@ -131,7 +134,7 @@ export function AppSidebar({ children }: { children: React.ReactNode }) {
           <SidebarSeparator />
 
           <SidebarGroup>
-            <SidebarGroupLabel>Insights</SidebarGroupLabel>
+            <SidebarGroupLabel>{t('nav.insightsGroup')}</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
                 {insightsNavItems.map((item) => (
@@ -139,11 +142,11 @@ export function AppSidebar({ children }: { children: React.ReactNode }) {
                     <SidebarMenuButton
                       asChild
                       isActive={pathname === item.href}
-                      tooltip={item.title}
+                      tooltip={t(item.titleKey)}
                     >
                       <Link href={item.href}>
                         <item.icon className="size-4" />
-                        <span>{item.title}</span>
+                        <span>{t(item.titleKey)}</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
@@ -155,7 +158,7 @@ export function AppSidebar({ children }: { children: React.ReactNode }) {
           <SidebarSeparator />
 
           <SidebarGroup>
-            <SidebarGroupLabel>Integrations</SidebarGroupLabel>
+            <SidebarGroupLabel>{t('nav.integrations')}</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
                 {integrationNavItems.map((item) => (
@@ -163,11 +166,11 @@ export function AppSidebar({ children }: { children: React.ReactNode }) {
                     <SidebarMenuButton
                       asChild
                       isActive={pathname === item.href}
-                      tooltip={item.title}
+                      tooltip={t(item.titleKey)}
                     >
                       <Link href={item.href}>
                         <item.icon className="size-4" />
-                        <span>{item.title}</span>
+                        <span>{t(item.titleKey)}</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>

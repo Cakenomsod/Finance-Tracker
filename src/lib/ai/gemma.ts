@@ -1,6 +1,7 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import {
   receiptParseSchema,
+  expenseTextMultiParseSchema,
   RECEIPT_PARSE_PROMPT,
   EXPENSE_TEXT_PARSE_PROMPT,
   type ReceiptParseResult,
@@ -100,16 +101,54 @@ export async function parseReceiptImage(
   );
 }
 
+async function generateMultiJsonWithModels(
+  modelNames: string[],
+  parts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }>
+): Promise<ReceiptParseResult[]> {
+  const genAI = getClient();
+  let lastError: Error | null = null;
+
+  for (const modelName of modelNames) {
+    try {
+      const model = genAI.getGenerativeModel({
+        model: modelName,
+        generationConfig: {
+          responseMimeType: 'application/json',
+          temperature: 0.1,
+        },
+      });
+
+      const result = await model.generateContent(parts);
+      const text = result.response.text();
+      if (!text?.trim()) {
+        throw new Error('Empty response from Google AI');
+      }
+
+      const parsed = parseJsonFromAiContent(text);
+      return expenseTextMultiParseSchema.parse(parsed).drafts;
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      console.error('[Gemini] generateMultiJsonWithModels failed', {
+        model: modelName,
+        message: lastError.message,
+        stack: lastError.stack?.split('\n').slice(0, 4).join(' | '),
+      });
+    }
+  }
+
+  throw lastError ?? new Error('All Google AI models failed');
+}
+
 export async function parseExpenseText(
   text: string,
   context?: ExpenseTextAiContext
-): Promise<ReceiptParseResult> {
+): Promise<ReceiptParseResult[]> {
   const contextHint = context
     ? `\nContext: trip="${context.tripName || ''}", default currency=${context.currency || 'THB'}, country=${context.countryCode || 'TH'}`
     : '';
   const contactsHint = context?.contactsHint || '';
 
-  return generateJsonWithModels(
+  return generateMultiJsonWithModels(
     geminiModelCandidates(getChatModel()),
     [{ text: EXPENSE_TEXT_PARSE_PROMPT + buildAiDateContext(aiTimeZoneFromContext(context)) + contextHint + contactsHint + `\n\nUser input:\n${text.trim()}` }]
   );

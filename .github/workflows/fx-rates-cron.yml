@@ -1,0 +1,49 @@
+# Daily FX rate refresh (open.er-api.com → Firestore system/fx_rates)
+#
+# Required repo secrets:
+# - CRON_SECRET — must match server env CRON_SECRET
+# - APP_URL     — production base URL (no trailing slash)
+
+name: FX Rates Cron
+
+on:
+  schedule:
+    # Daily 00:00 UTC (= 07:00 ICT)
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+jobs:
+  refresh-fx:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call FX cron API
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -euo pipefail
+          if [ -z "${APP_URL:-}" ]; then
+            echo "Missing secret APP_URL"
+            exit 1
+          fi
+          if [ -z "${CRON_SECRET:-}" ]; then
+            echo "Missing secret CRON_SECRET"
+            exit 1
+          fi
+
+          BASE="${APP_URL%/}"
+          echo "POST ${BASE}/api/fx/cron"
+
+          HTTP_CODE=$(curl -sS -o /tmp/fx-cron-response.json -w "%{http_code}" \
+            -X POST "${BASE}/api/fx/cron" \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            -H "x-cron-secret: ${CRON_SECRET}")
+
+          echo "HTTP ${HTTP_CODE}"
+          cat /tmp/fx-cron-response.json
+          echo
+
+          if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
+            echo "FX cron request failed"
+            exit 1
+          fi

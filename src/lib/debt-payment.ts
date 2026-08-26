@@ -39,6 +39,8 @@ export async function createDebtSettlementTransaction(
     /** Payment source used when settling (payer) or receiving into (receiver) */
     accountId?: string;
     moneyPoolId?: string;
+    /** ISO 4217 currency code (defaults to 'THB') */
+    currency?: string;
   }
 ) {
   // Lazy-load client Firestore helpers so server API routes can import pure
@@ -55,6 +57,7 @@ export async function createDebtSettlementTransaction(
     date = Timestamp.now(),
     accountId,
     moneyPoolId,
+    currency = 'THB',
   } = params;
 
   const absAmount = Math.abs(amount);
@@ -76,7 +79,7 @@ export async function createDebtSettlementTransaction(
       debtPaymentDebtId: debtId ?? null,
       debtTracking: false,
       note,
-      currency: 'THB',
+      currency,
       accountId: accountId || undefined,
       moneyPoolId: moneyPoolId || undefined,
     });
@@ -97,7 +100,7 @@ export async function createDebtSettlementTransaction(
     debtPaymentDebtId: debtId ?? null,
     debtTracking: false,
     note,
-    currency: 'THB',
+    currency,
     accountId: accountId || undefined,
     moneyPoolId: moneyPoolId || undefined,
   });

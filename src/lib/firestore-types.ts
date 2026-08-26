@@ -198,7 +198,8 @@ export interface Transaction {
   taxAmount?: number;
   /** Discount applied before final amount (positive number) */
   discount?: number;
-  currency?: TripCurrency;
+  /** ISO 4217 currency code recorded at save time. Broadened to string so any AppCurrency can be stored. */
+  currency?: string;
   /** How the expense was paid — transactions only (not trip expenses) */
   paymentMethod?: PaymentMethod;
   /** Paotang: gov share at save time (after quota caps) */

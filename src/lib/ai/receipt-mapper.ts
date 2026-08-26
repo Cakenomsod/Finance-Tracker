@@ -5,6 +5,7 @@ import { parseLocalDateTime } from '@/lib/datetime';
 import { parseTripLocalDateTime } from '@/lib/trip-currency';
 import { TripExpense, TripCurrency, Transaction, TripExpensePayer, TripExpenseShare } from '@/lib/firestore-types';
 import { ME_PERSON_ID, TransactionSplitMode } from '@/lib/transaction-split';
+import type { AppCurrency } from '@/lib/currency';
 
 const VALID_CATEGORIES = [
   'Food & Dining', 'Transport', 'Shopping', 'Entertainment',
@@ -165,7 +166,7 @@ export function receiptParseToTripExpenseDraft(
 ): Omit<TripExpense, 'id' | 'createdAt' | 'userId' | 'tripId' | 'transactionId'> {
   const memberKeys = tripMembers.map((m) => m.key);
   const primaryMember = tripMembers[0];
-  const currency = parsed.currency || defaultCurrency || 'THB';
+  const currency = (parsed.currency || defaultCurrency || 'THB') as TripCurrency;
   const hasItems = parsed.items && parsed.items.length > 0;
   const { category, itemCategory } = resolveDraftCategories(parsed);
 
@@ -216,14 +217,27 @@ export function receiptParseToTripExpenseDraft(
   };
 }
 
+/** Extended draft type that carries AI account hints (stripped before Firestore save). */
+export type TransactionDraft = Omit<Transaction, 'id' | 'createdAt' | 'userId'> & {
+  accountHint?: string;
+  transferToAccountHint?: string;
+};
+
 export function receiptParseToTransactionDraft(
   parsed: ReceiptParseResult,
-  defaultCurrency: 'THB' | 'JPY' = 'THB'
-): Omit<Transaction, 'id' | 'createdAt' | 'userId'> {
-  const currency = parsed.currency || defaultCurrency;
+  defaultCurrency: AppCurrency = 'THB'
+): TransactionDraft {
+  // Cast to TripCurrency for compatibility; AppCurrency codes beyond THB/JPY are stored as-is
+  const currency = (parsed.currency || defaultCurrency) as unknown as TripCurrency;
   const hasItems = parsed.items && parsed.items.length > 0;
   const split = buildSplitFromParsed(parsed);
   const { category, itemCategory } = resolveDraftCategories(parsed);
+
+  const txType = parsed.txType ?? 'expense';
+  const rawAmount = Math.abs(parsed.totalAmount);
+  const amount = txType === 'income' ? rawAmount : -rawAmount;
+  const type: Transaction['type'] =
+    txType === 'income' ? 'income' : txType === 'transfer' ? 'transfer' : 'expense';
 
   const items = hasItems
     ? parsed.items!.map((item) => ({
@@ -245,8 +259,8 @@ export function receiptParseToTransactionDraft(
         : undefined;
 
   return {
-    amount: -Math.abs(parsed.totalAmount),
-    type: 'expense',
+    amount,
+    type,
     category,
     description: parsed.description,
     date: Timestamp.fromDate(toFirestoreDate(parsed)),
@@ -265,5 +279,7 @@ export function receiptParseToTransactionDraft(
     paymentMethod: parsed.paymentMethod,
     debtTracking,
     tripId: null,
+    ...(parsed.accountHint ? { accountHint: parsed.accountHint } : {}),
+    ...(parsed.transferToAccountHint ? { transferToAccountHint: parsed.transferToAccountHint } : {}),
   };
 }

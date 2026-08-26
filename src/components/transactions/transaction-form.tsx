@@ -104,6 +104,8 @@ type TransactionFormValues = z.infer<typeof formSchema>
 interface TransactionFormProps {
   initialData?: Transaction | null;
   pendingImmichAssetIds?: string[];
+  /** Preference currency to use for new transactions. Editing preserves the recorded currency. */
+  currency?: string;
   onSubmit: (data: Omit<Transaction, 'id' | 'createdAt' | 'userId'>) => Promise<void>;
   onCancel: () => void;
 }
@@ -117,13 +119,15 @@ interface ReceiptItemInput {
 export function TransactionForm({
   initialData,
   pendingImmichAssetIds,
+  currency: currencyProp,
   onSubmit,
   onCancel,
 }: TransactionFormProps) {
   const [isSubmitting, setIsSubmitting] = React.useState(false)
   const { activeTrips } = useTrips()
   const { categories, expenseCategories, incomeCategories, loading: categoriesLoading } = useCategories()
-  const { accountsEnabled, moneyPoolsEnabled } = useUserSettings()
+  const { accountsEnabled, moneyPoolsEnabled, currency: settingsCurrency } = useUserSettings()
+  const saveCurrency = currencyProp ?? settingsCurrency ?? 'THB'
   const { activeSources, defaultSource } = usePaymentSources()
   const { activePools } = useMoneyPools()
   const { t } = useLocale()
@@ -422,7 +426,7 @@ export function TransactionForm({
           tripId: null,
           receiptUrl: null,
           source: initialData?.source || 'manual',
-          currency: 'THB',
+          currency: initialData?.currency ?? saveCurrency,
           note: note.trim() || undefined,
           accountId: accountId || undefined,
           moneyPoolId: moneyPoolId || undefined,
@@ -521,7 +525,7 @@ export function TransactionForm({
         tripId: values.tripId && values.tripId !== 'none' ? values.tripId : null,
         receiptUrl: primaryAttachment ? `/api/immich/asset/${primaryAttachment}` : null,
         source: initialData?.source || 'manual',
-        currency: 'THB',
+        currency: initialData?.currency ?? saveCurrency,
         note: note.trim() || undefined,
         debtTracking: !isIncome ? debtTracking : undefined,
         accountId:
