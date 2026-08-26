@@ -361,6 +361,8 @@ export default function AccountsPage() {
                           />
                         )}
                       </CardHeader>
+                      {/* Nested only when 2+ accounts, or debit cards under this group */}
+                      {(accounts.length > 1 || debits.length > 0) && (
                       <CardContent className="space-y-2 pt-0">
                         {accounts.map((acct, idx) => {
                           const rows = accountRows[idx] ?? []
@@ -408,6 +410,7 @@ export default function AccountsPage() {
                           )
                         })}
                       </CardContent>
+                      )}
                     </Card>
                   </li>
                 )
