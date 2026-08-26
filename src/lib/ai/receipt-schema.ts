@@ -348,7 +348,7 @@ ALWAYS use this output shape:
       "time": "HH:mm" (optional, 24-hour),
       "totalAmount": number,
       "currency": "THB" | "USD" | "EUR" | "JPY" | ... (optional ISO code),
-      "items": [{ "name": string, "category": string, "price": number }] (optional),
+      "items": [{ "name": string, "category": string, "price": number }] (optional — only for ONE receipt / same purchase),
       "accountHint": string (optional — bank/wallet name as spoken: "SCB", "Kplus", "เงินสด", "กรุงไทย"),
       "transferToAccountHint": string (optional — only for txType "transfer"),
       "paymentMethod": "normal" | "paotang" (optional),
@@ -361,19 +361,32 @@ ALWAYS use this output shape:
   ]
 }
 
---- Multi-draft rules ---
+--- Split vs combine (MOST IMPORTANT) ---
+SPLIT into separate drafts when events happen at DIFFERENT times or are clearly different events:
+- Different times on lines (09.00, 10.30, 10.40, ตอน 12.02, etc.) → ONE draft per line/event
+- Different kinds of events mixed (expense + income + transfer) → separate drafts even without times
+- Multi-line journal / diary of spending across the day → separate drafts
+- Example:
+  "รถไฟ ไป 45 09.00\\nกลับ 45 10.30 เงินสด\\nลูกค้าโอนเงินเข้า 4500 เข้า SCB 10.40\\nนั่งวินตอน 09.40 30 บาท\\nข้าวเที่ยง 276 เงินสด ตอน 12.02\\nทั้งหมดนี้วันที่ 25 สิงหา 69"
+  → many drafts (one per line), each with its own time — NEVER one combined receipt
+
+COMBINE into ONE draft (receipt-style with items[]) ONLY when it is clearly ONE purchase at ONE time:
+- Same store/bill, no different times: "ไก่ทอด 20 กาแฟ 45" → 1 draft, items=[{ไก่ทอด,20},{กาแฟ,45}], totalAmount=65
+- Explicit one bill: "ใบเสร็จร้านกาแฟ กาแฟ 45 เค้ก 80 รวม 125" → 1 draft with items
+- If unsure whether same purchase: prefer SEPARATE drafts (safer)
+
+Other multi-draft rules:
 - ALWAYS return { "drafts": [ ... ] } — even for a single expense
-- Each separate transaction/event/purchase = ONE separate draft in the array
-- Multi-line input: each line that describes a distinct purchase or event = its own draft
-- Example: "นั่งวิน 10\nข้าวเที่ยง 45\nกาแฟ 30" → 3 drafts
-- One-liner multi-item "ไก่ทอด 20 กาแฟ 45": if clearly one purchase/receipt → 1 draft with items[]; if clearly separate → 2 drafts
+- Date-block lines like "ทั้งหมดนี้วันที่ …" are markers only (not drafts); apply that date to preceding lines until the next date marker
+- Income / transfer lines are always their own drafts (never items inside an expense receipt)
 
 --- Date & time rules ---
 - "ทั้งหมดนี้วันที่ 25 สิงหา 69" or similar date-block markers in THAI BUDDHIST YEAR (พ.ศ.) — convert to CE: BE 2569 → CE 2026; apply that date to all drafts in the block until a new date marker appears
 - Buddhist months: ม.ค.=01 ก.พ.=02 มี.ค.=03 เม.ย.=04 พ.ค.=05 มิ.ย.=06 ก.ค.=07 ส.ค.=08 ก.ย.=09 ต.ค.=10 พ.ย.=11 ธ.ค.=12; full names: มกราคม=01 กุมภาพันธ์=02 มีนาคม=03 เมษายน=04 พฤษภาคม=05 มิถุนายน=06 กรกฎาคม=07 สิงหาคม=08 กันยายน=09 ตุลาคม=10 พฤศจิกายน=11 ธันวาคม=12
 - "สิงหา 69" = August 2026; "ธ.ค. 67" = December 2024
-- Times like "09.00", "10.40", "09:00" → time "09:00", "10:40"
-- Use today's date if no date is stated; use current time HH:mm if no time stated
+- Times like "09.00", "10.40", "09:00", "ตอน 12.02" → time "09:00", "10:40", "12:02"
+- Each draft must keep its OWN time when the line states one — do not reuse one time for every draft
+- Use today's date if no date is stated; if a line has no time, omit time (do not invent one time for the whole block)
 - "บ่าย 3" = 15:00; "2 ทุ่ม" = 20:00; "ตี 1" = 01:00
 
 --- txType rules ---

@@ -169,7 +169,11 @@ export const AiExpenseQuickInput = React.forwardRef<
         })
       }
 
-      toast.success('แยกรายการเสร็จแล้ว — กดตรวจสอบ/แก้ไข')
+      toast.success(
+        drafts.length > 1
+          ? `แยกได้ ${drafts.length} รายการ — กดตรวจสอบ/แก้ไขทีละรายการ`
+          : 'แยกรายการเสร็จแล้ว — กดตรวจสอบ/แก้ไข'
+      )
     } catch (err) {
       updateJob(job.id, {
         status: 'error',
