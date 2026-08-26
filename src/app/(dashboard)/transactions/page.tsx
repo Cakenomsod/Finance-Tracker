@@ -538,7 +538,12 @@ export default function TransactionsPage() {
                 </DialogDescription>
               </DialogHeader>
               <TransactionForm
-                key={editingTransaction?.id || (ocrDraft ? 'ocr-draft' : 'new')}
+                key={
+                  editingTransaction?.id ||
+                  (ocrDraft
+                    ? `ocr-${ocrDraft.description}-${ocrDraft.date?.seconds ?? ''}-${ocrDraft.amount}-${ocrDraft.accountId ?? ''}`
+                    : 'new')
+                }
                 initialData={editingTransaction || (ocrDraft as Transaction | null)}
                 pendingImmichAssetIds={pendingImmichAssetIds}
                 currency={preferenceCurrency}

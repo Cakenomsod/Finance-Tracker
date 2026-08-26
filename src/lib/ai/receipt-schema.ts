@@ -397,9 +397,15 @@ Other multi-draft rules:
 - Expense (txType "expense"): purchases, bills, นั่งวิน, ข้าว, จ่าย, etc.
 
 --- Account hint rules ---
+- ALWAYS fill accountHint / transferToAccountHint when the user names cash or a bank/wallet
 - เงินสด, cash → accountHint "เงินสด"
-- SCB, กสิกร, กรุงไทย, BBL, Kplus, ทรูมันนี่, TrueMoney → accountHint as spoken
-- Only set accountHint when user clearly names a source account
+- SCB, กสิกร, Kplus, K+, กรุงไทย, BBL, TrueMoney → accountHint as spoken
+- "จาก X" → accountHint = X (money leaves this account)
+- "เข้า X" / "เงินเข้า X" → for income: accountHint = X (money arrives here)
+- "ไป X" / "โอนเงินออก A ไป B" / "โอนจาก A ไป B" → accountHint = A, transferToAccountHint = B, txType = "transfer"
+- Trailing account word: "นั่งวิน 30 บาท เงินสด" → accountHint "เงินสด"; "… 25 บาท kplus" → accountHint "Kplus"
+- "โอนให้เบล จาก kplus" / "ให้เบล จาก SCB" is an EXPENSE (not transfer) — accountHint = source account only
+- Only omit accountHint when the user does not name any account at all
 
 --- Category rules ---
 - Food & Dining, Transport, Shopping, Entertainment, Bills & Utilities, Health & Fitness, Accommodation, Activities, Others

@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { receiptParseToTransactionDraft } from '@/lib/ai/receipt-mapper'
+import { receiptParseToTransactionDraft, type TransactionDraft } from '@/lib/ai/receipt-mapper'
 import { ReceiptParseResult } from '@/lib/ai/receipt-schema'
 import { Transaction } from '@/lib/firestore-types'
 import { AiReceiptReviewDialog } from '@/components/ai/ai-receipt-review-dialog'
@@ -10,7 +10,9 @@ import {
   type AiExpenseQuickInputHandle,
 } from '@/components/ai/ai-expense-quick-input'
 import { useUserSettings } from '@/hooks/use-user-settings'
+import { usePaymentSources } from '@/hooks/use-payment-sources'
 import { isAppCurrency, type AppCurrency } from '@/lib/currency'
+import { resolveAccountHint } from '@/lib/ai/account-hint'
 
 export interface TransactionAiPanelProps {
   currency?: AppCurrency | string
@@ -29,6 +31,7 @@ export const TransactionAiPanel = React.forwardRef<
   TransactionAiPanelProps
 >(function TransactionAiPanel({ currency: currencyProp, onOpenDraftForm }, ref) {
   const { currency: settingsCurrency } = useUserSettings()
+  const { activeSources } = usePaymentSources()
   const currency: AppCurrency = isAppCurrency(currencyProp)
     ? currencyProp
     : isAppCurrency(settingsCurrency)
@@ -63,9 +66,23 @@ export const TransactionAiPanel = React.forwardRef<
   }
 
   const openDraftForm = (result: ReceiptParseResult) => {
-    const draft = receiptParseToTransactionDraft(result, currency)
+    const draft: TransactionDraft = receiptParseToTransactionDraft(result, currency)
+
+    const accountId = resolveAccountHint(draft.accountHint, activeSources)
+    const transferToAccountId = resolveAccountHint(
+      draft.transferToAccountHint,
+      activeSources
+    )
+
+    const { accountHint: _a, transferToAccountHint: _b, ...rest } = draft
+    const resolved: Omit<Transaction, 'id' | 'createdAt' | 'userId'> = {
+      ...rest,
+      ...(accountId ? { accountId } : {}),
+      ...(transferToAccountId ? { transferToAccountId } : {}),
+    }
+
     const ids = [...reviewImmichIds]
-    onOpenDraftForm(draft, ids.length ? ids : undefined)
+    onOpenDraftForm(resolved, ids.length ? ids : undefined)
     setReviewImmichIds([])
   }
 

@@ -138,10 +138,17 @@ export function TransactionForm({
   const [transferToPoolId, setTransferToPoolId] = React.useState(initialData?.transferToPoolId ?? '')
 
   React.useEffect(() => {
-    if (!accountId && defaultSource?.id && accountsEnabled) {
+    // Do not override an AI/manual account with the default (e.g. always Kplus).
+    // Only auto-pick default when the form has no account yet and the draft didn't set one.
+    if (
+      !accountId &&
+      defaultSource?.id &&
+      accountsEnabled &&
+      !initialData?.accountId
+    ) {
       setAccountId(defaultSource.id)
     }
-  }, [accountId, defaultSource?.id, accountsEnabled])
+  }, [accountId, defaultSource?.id, accountsEnabled, initialData?.accountId])
 
   const expenseCategoryNames = React.useMemo(
     () => expenseCategories.map((c) => c.name),
