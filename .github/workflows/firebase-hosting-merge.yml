@@ -50,6 +50,9 @@ jobs:
           echo "AI_CHAT_MODEL=${{ secrets.AI_CHAT_MODEL }}" >> .env
           echo "IMMICH_API_KEY=${{ secrets.IMMICH_API_KEY }}" >> .env
           echo "CRON_SECRET=${{ secrets.CRON_SECRET }}" >> .env
+          echo "LINE_CHANNEL_SECRET=${{ secrets.LINE_CHANNEL_SECRET }}" >> .env
+          echo "LINE_CHANNEL_ACCESS_TOKEN=${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}" >> .env
+          echo "NEXT_PUBLIC_LINE_BOT_ID=${{ secrets.NEXT_PUBLIC_LINE_BOT_ID }}" >> .env
 
       - name: Deploy to Firebase
         uses: FirebaseExtended/action-hosting-deploy@v0
@@ -72,3 +75,6 @@ jobs:
           AI_CHAT_MODEL: ${{ secrets.AI_CHAT_MODEL }}
           IMMICH_API_KEY: ${{ secrets.IMMICH_API_KEY }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          LINE_CHANNEL_SECRET: ${{ secrets.LINE_CHANNEL_SECRET }}
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          NEXT_PUBLIC_LINE_BOT_ID: ${{ secrets.NEXT_PUBLIC_LINE_BOT_ID }}

@@ -46,6 +46,9 @@ jobs:
           echo "GOOGLE_AI_API_KEY=${{ secrets.GOOGLE_AI_API_KEY }}" >> .env
           echo "AI_RECEIPT_MODEL=${{ secrets.AI_RECEIPT_MODEL }}" >> .env
           echo "AI_CHAT_MODEL=${{ secrets.AI_CHAT_MODEL }}" >> .env
+          echo "LINE_CHANNEL_SECRET=${{ secrets.LINE_CHANNEL_SECRET }}" >> .env
+          echo "LINE_CHANNEL_ACCESS_TOKEN=${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}" >> .env
+          echo "NEXT_PUBLIC_LINE_BOT_ID=${{ secrets.NEXT_PUBLIC_LINE_BOT_ID }}" >> .env
 
       - name: Deploy Preview
         uses: FirebaseExtended/action-hosting-deploy@v0
@@ -65,3 +68,6 @@ jobs:
           GOOGLE_AI_API_KEY: ${{ secrets.GOOGLE_AI_API_KEY }}
           AI_RECEIPT_MODEL: ${{ secrets.AI_RECEIPT_MODEL }}
           AI_CHAT_MODEL: ${{ secrets.AI_CHAT_MODEL }}
+          LINE_CHANNEL_SECRET: ${{ secrets.LINE_CHANNEL_SECRET }}
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          NEXT_PUBLIC_LINE_BOT_ID: ${{ secrets.NEXT_PUBLIC_LINE_BOT_ID }}
