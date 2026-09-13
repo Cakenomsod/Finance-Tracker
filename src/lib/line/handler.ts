@@ -2,11 +2,9 @@ import { webhook, messagingApi } from '@line/bot-sdk';
 import { getLineClient, downloadMessageContent } from './sdk';
 import { createReviewExpenseFlexMessage, createSuccessFlexMessage, createLinkPromptFlexMessage } from './flex-messages';
 import { parseExpenseText, parseReceiptImage } from '@/lib/ai/gemma';
-import { db } from '@/lib/firebase';
 import { adminDb } from '@/lib/firebase-admin';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { ReceiptParseResult } from '@/lib/ai/receipt-schema';
-import { createTransaction } from '@/lib/firestore';
 
 export async function handleLineEvent(event: webhook.Event) {
   if (event.type !== 'message' && event.type !== 'postback') return;
@@ -83,7 +81,7 @@ export async function handleLineEvent(event: webhook.Event) {
         
         if (drafts.length > 0) {
           const draft = drafts[0];
-          await sendReviewFlexMessage(client, replyToken, draft);
+          await sendReviewFlexMessage(client, replyToken, draft, userId);
         } else {
           await client.replyMessage({
             replyToken,
@@ -94,24 +92,27 @@ export async function handleLineEvent(event: webhook.Event) {
         const buffer = await downloadMessageContent(message.id);
         const draft = await parseReceiptImage(buffer, 'image/jpeg', { currency: userData.currency || 'THB' });
         
-        await sendReviewFlexMessage(client, replyToken, draft);
+        await sendReviewFlexMessage(client, replyToken, draft, userId);
       }
     } else if (event.type === 'postback') {
       const data = new URLSearchParams(event.postback.data);
       const action = data.get('action');
+      const draftId = data.get('id');
 
-      if (action === 'save') {
-        const draftJson = data.get('data');
-        if (draftJson) {
-          const draft = JSON.parse(draftJson) as ReceiptParseResult;
+      if (action === 'save' && draftId) {
+        const draftRef = adminDb().collection('line_drafts').doc(draftId);
+        const draftSnap = await draftRef.get();
+        
+        if (draftSnap.exists) {
+          const draftData = draftSnap.data() as ReceiptParseResult;
           
           await adminDb().collection('transactions').add({
             userId,
-            amount: draft.totalAmount,
+            amount: draftData.totalAmount,
             type: 'expense',
-            category: draft.category || 'other',
-            description: draft.description || 'รายการจาก LINE',
-            date: draft.date ? Timestamp.fromDate(new Date(draft.date)) : FieldValue.serverTimestamp(),
+            category: draftData.category || 'other',
+            description: draftData.description || 'รายการจาก LINE',
+            date: draftData.date ? Timestamp.fromDate(new Date(draftData.date)) : FieldValue.serverTimestamp(),
             paidBy: userId,
             splitWith: null,
             tripId: null,
@@ -121,12 +122,21 @@ export async function handleLineEvent(event: webhook.Event) {
             currency: userData.currency || 'THB',
           });
 
+          await draftRef.delete();
+
           await client.replyMessage({
             replyToken,
-            messages: [{ type: 'flex', altText: 'บันทึกสำเร็จ', contents: createSuccessFlexMessage(`บันทึก ${draft.description || 'รายการ'} จำนวน ฿${draft.totalAmount} เรียบร้อยแล้ว`) }]
+            messages: [{ type: 'flex', altText: 'บันทึกสำเร็จ', contents: createSuccessFlexMessage(`บันทึก ${draftData.description || 'รายการ'} จำนวน ฿${draftData.totalAmount} เรียบร้อยแล้ว`) }]
+          });
+        } else {
+          await client.replyMessage({
+            replyToken,
+            messages: [{ type: 'text', text: '❌ ไม่พบรายการนี้ หรือรายการนี้ถูกบันทึก/ยกเลิกไปแล้วครับ' }]
           });
         }
-      } else if (action === 'cancel') {
+      } else if (action === 'cancel' && draftId) {
+        const draftRef = adminDb().collection('line_drafts').doc(draftId);
+        await draftRef.delete();
         await client.replyMessage({
           replyToken,
           messages: [{ type: 'text', text: 'ยกเลิกรายการเรียบร้อยแล้วครับ' }]
@@ -146,12 +156,19 @@ export async function handleLineEvent(event: webhook.Event) {
   }
 }
 
-async function sendReviewFlexMessage(client: messagingApi.MessagingApiClient, replyToken: string, draft: ReceiptParseResult) {
+async function sendReviewFlexMessage(client: messagingApi.MessagingApiClient, replyToken: string, draft: ReceiptParseResult, userId: string) {
   const dateStr = draft.date ? new Date(draft.date).toLocaleDateString('th-TH') : 'วันนี้';
   const summary = `ประเภท: รายจ่าย\nรายการ: ${draft.description || '-'}\nหมวดหมู่: ${draft.category || '-'}\nวันที่: ${dateStr}\nจำนวนเงิน: ฿${draft.totalAmount}`;
   
+  // Save draft to firestore to avoid 300 char limit in postback data
+  const draftRef = await adminDb().collection('line_drafts').add({
+    ...draft,
+    userId,
+    createdAt: FieldValue.serverTimestamp(),
+  });
+
   await client.replyMessage({
     replyToken,
-    messages: [{ type: 'flex', altText: 'ตรวจสอบข้อมูล', contents: createReviewExpenseFlexMessage(summary, JSON.stringify(draft)) }]
+    messages: [{ type: 'flex', altText: 'ตรวจสอบข้อมูล', contents: createReviewExpenseFlexMessage(summary, draftRef.id) }]
   });
 }

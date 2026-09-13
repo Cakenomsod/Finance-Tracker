@@ -2,7 +2,7 @@ import { messagingApi } from '@line/bot-sdk';
 
 export function createReviewExpenseFlexMessage(
   summary: string,
-  draftJsonStr: string
+  draftId: string
 ): messagingApi.FlexContainer {
   return {
     type: 'bubble',
@@ -44,7 +44,7 @@ export function createReviewExpenseFlexMessage(
           action: {
             type: 'postback',
             label: 'บันทึกรายการ',
-            data: `action=save&data=${encodeURIComponent(draftJsonStr)}`,
+            data: `action=save&id=${draftId}`,
           },
         },
         {
@@ -54,7 +54,7 @@ export function createReviewExpenseFlexMessage(
           action: {
             type: 'postback',
             label: 'ยกเลิก',
-            data: 'action=cancel',
+            data: `action=cancel&id=${draftId}`,
           },
         },
       ],
