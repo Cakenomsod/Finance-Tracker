@@ -34,6 +34,7 @@ export const tripExpensesRef = collection(db, 'trip_expenses');
 export const tripSettlementsRef = collection(db, 'trip_settlements');
 export const friendRequestsRef = collection(db, 'friend_requests');
 export const customFriendsRef = collection(db, 'custom_friends');
+export const lineLinkingTokensRef = collection(db, 'line_linking_tokens');
 
 // --- Transactions ---
 

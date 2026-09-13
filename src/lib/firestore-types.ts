@@ -43,6 +43,8 @@ export interface UserProfile {
   accountsEnabled?: boolean;
   /** Enable money pool (envelope) tracking */
   moneyPoolsEnabled?: boolean;
+  /** Linked LINE User ID for Bot integration */
+  lineUserId?: string | null;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }
@@ -401,4 +403,13 @@ export interface RecurringExpense {
   /** Default payment source when confirming payment */
   accountId?: string;
   createdAt: Timestamp;
+}
+
+// line_linking_tokens/{tokenId}
+export interface LineLinkingToken {
+  id?: string;
+  userId: string;
+  token: string;
+  createdAt: Timestamp;
+  expiresAt: Timestamp;
 }
