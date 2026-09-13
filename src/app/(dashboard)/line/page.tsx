@@ -14,6 +14,8 @@ export default function LinePage() {
   const { profile, loading } = useUserSettings()
   const [isLinking, setIsLinking] = useState(false)
   const [isUnlinking, setIsUnlinking] = useState(false)
+  const [linkToken, setLinkToken] = useState<string | null>(null)
+  const [redirectUrl, setRedirectUrl] = useState<string | null>(null)
   const router = useRouter()
 
   const isLinked = !!profile?.lineUserId
@@ -26,7 +28,16 @@ export default function LinePage() {
       const data = await res.json()
       
       if (data.redirectUrl) {
-        window.location.href = data.redirectUrl
+        // Extract token from redirectUrl (it's encoded like %2Flink%20<token>)
+        const match = data.redirectUrl.match(/%2Flink%20([a-zA-Z0-9]+)/i);
+        if (match) {
+          setLinkToken(match[1]);
+        }
+        setRedirectUrl(data.redirectUrl);
+        // Try to open automatically
+        setTimeout(() => {
+          window.location.href = data.redirectUrl;
+        }, 1500);
       } else {
         throw new Error('No redirect URL returned')
       }
@@ -105,12 +116,40 @@ export default function LinePage() {
               <div className="rounded-full bg-muted p-4">
                 <Unplug className="size-8 text-muted-foreground" />
               </div>
-              <div className="space-y-2">
-                <h3 className="font-semibold leading-none tracking-tight">เพิ่มบอทเป็นเพื่อนและเชื่อมต่อบัญชี</h3>
-                <p className="text-sm text-muted-foreground max-w-sm">
-                  คลิกที่ปุ่มด้านล่างเพื่อเปิดแอปพลิเคชัน LINE และดำเนินการเชื่อมต่อบัญชีให้เสร็จสิ้น
-                </p>
-              </div>
+              
+              {!linkToken ? (
+                <div className="space-y-2">
+                  <h3 className="font-semibold leading-none tracking-tight">เพิ่มบอทเป็นเพื่อนและเชื่อมต่อบัญชี</h3>
+                  <p className="text-sm text-muted-foreground max-w-sm">
+                    คลิกที่ปุ่มด้านล่างเพื่อเปิดแอปพลิเคชัน LINE และดำเนินการเชื่อมต่อบัญชีให้เสร็จสิ้น
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4 w-full max-w-sm animate-in fade-in zoom-in duration-300">
+                  <h3 className="font-semibold leading-none tracking-tight text-green-600">สร้างรหัสเชื่อมต่อสำเร็จ!</h3>
+                  <p className="text-sm text-muted-foreground">
+                    ระบบกำลังเปิดแอป LINE อัตโนมัติ... หากแอปไม่เปิด กรุณาคัดลอกข้อความด้านล่างนี้ไปพิมพ์ส่งในแชทบอท LINE ด้วยตนเอง
+                  </p>
+                  <div className="bg-muted p-4 rounded-md flex items-center justify-between gap-2 border border-border/50">
+                    <code className="text-lg font-mono font-bold">/link {linkToken}</code>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={() => {
+                        navigator.clipboard.writeText(`/link ${linkToken}`)
+                        toast.success('คัดลอกข้อความแล้ว')
+                      }}
+                    >
+                      คัดลอก
+                    </Button>
+                  </div>
+                  {redirectUrl && (
+                    <Button variant="secondary" className="w-full" onClick={() => window.location.href = redirectUrl}>
+                      เปิดแอป LINE อีกครั้ง
+                    </Button>
+                  )}
+                </div>
+              )}
             </div>
           ) : (
             <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-6 space-y-6">
@@ -135,9 +174,13 @@ export default function LinePage() {
         </CardContent>
         <CardFooter className="flex justify-end gap-3 border-t bg-muted/20 px-6 py-4">
           {!isLinked ? (
-            <Button onClick={handleLink} disabled={isLinking} className="w-full sm:w-auto bg-[#06C755] hover:bg-[#05b34c] text-white">
+            <Button 
+              onClick={handleLink} 
+              disabled={isLinking || !!linkToken} 
+              className="w-full sm:w-auto bg-[#06C755] hover:bg-[#05b34c] text-white"
+            >
               {isLinking ? <Loader2 className="size-4 animate-spin mr-2" /> : <MessageCircle className="size-4 mr-2" />}
-              เชื่อมต่อกับ LINE
+              {linkToken ? 'กำลังเชื่อมต่อ...' : 'เชื่อมต่อกับ LINE'}
             </Button>
           ) : (
             <Button onClick={handleUnlink} disabled={isUnlinking} variant="destructive" className="w-full sm:w-auto">
