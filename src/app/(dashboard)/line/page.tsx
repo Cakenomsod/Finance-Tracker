@@ -27,12 +27,8 @@ export default function LinePage() {
       if (!res.ok) throw new Error('Failed to generate link token')
       const data = await res.json()
       
-      if (data.redirectUrl) {
-        // Extract token from redirectUrl (it's encoded like %2Flink%20<token>)
-        const match = data.redirectUrl.match(/%2Flink%20([a-zA-Z0-9]+)/i);
-        if (match) {
-          setLinkToken(match[1]);
-        }
+      if (data.redirectUrl && data.token) {
+        setLinkToken(data.token);
         setRedirectUrl(data.redirectUrl);
         // Try to open automatically
         setTimeout(() => {

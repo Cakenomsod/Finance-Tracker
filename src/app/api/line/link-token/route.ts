@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifySession } from '@/lib/api-auth';
 import { adminDb } from '@/lib/firebase-admin';
-import { FieldValue, Timestamp } from 'firebase-admin/firestore';
+import * as admin from 'firebase-admin';
 import { getLineConfig } from '@/lib/line/config';
 
 export async function POST(request: NextRequest) {
@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const config = getLineConfig();
-    const token = Math.random().toString(36).substring(2, 10) + Math.random().toString(36).substring(2, 10); // Simple random string
+    const token = Math.random().toString(36).substring(2, 10) + Math.random().toString(36).substring(2, 10);
     
     // Expires in 10 minutes
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
@@ -20,16 +20,14 @@ export async function POST(request: NextRequest) {
     await adminDb().collection('line_linking_tokens').add({
       userId: session.uid,
       token,
-      createdAt: FieldValue.serverTimestamp(),
-      expiresAt: Timestamp.fromDate(expiresAt),
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      expiresAt: admin.firestore.Timestamp.fromDate(expiresAt),
     });
 
-    // Create the LINE link. Format: /link <token>
-    // Note: line.me link converts spaces to %20
     const textMessage = `/link ${token}`;
     const redirectUrl = `https://line.me/R/oaMessage/${config.botId}/?${encodeURIComponent(textMessage)}`;
 
-    return NextResponse.json({ redirectUrl });
+    return NextResponse.json({ redirectUrl, token }); // Also send token explicitly!
   } catch (error) {
     console.error('Error generating link token:', error);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
