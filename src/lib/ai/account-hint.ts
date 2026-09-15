@@ -1,4 +1,6 @@
 import type { PaymentSource } from '@/lib/firestore-types'
+import type { ReceiptParseResult } from '@/lib/ai/receipt-schema'
+import { splitExpenseTextIntoSegments } from '@/lib/ai/expense-text-split'
 import { THAI_BANKS } from '@/lib/thai-banks'
 
 export interface ExtractedAccountHints {
@@ -119,6 +121,65 @@ function findTrailingAccount(text: string): string | undefined {
   return undefined
 }
 
+/** Bank/wallet token next to an amount, e.g. "Kplus 200" or "200 Kplus". */
+function findAccountNearAmount(text: string): string | undefined {
+  const tokens = text.trim().split(/\s+/).filter(Boolean)
+  for (let i = 0; i < tokens.length; i++) {
+    const label = matchAliasLabel(tokens[i])
+    if (!label) continue
+    const next = tokens[i + 1] ?? ''
+    const prev = tokens[i - 1] ?? ''
+    if (/^\d/.test(next) || /^\d/.test(prev)) return label
+  }
+  return undefined
+}
+
+function parseAmountFromLine(line: string): number | undefined {
+  const withoutTime = line
+    .replace(/\d{1,2}[.:]\d{2}/g, ' ')
+    .replace(/ตอน\s*/gi, ' ')
+  const m = withoutTime.match(
+    /(?:^|[^\d.])(\d{1,3}(?:,\d{3})*(?:\.\d+)?|\d+(?:\.\d+)?)(?:\s*(?:บาท|บ|฿|baht))?/i
+  )
+  if (!m) return undefined
+  const n = Number(m[1].replace(/,/g, ''))
+  return Number.isFinite(n) ? n : undefined
+}
+
+function findBestMatchingLineIndex(
+  draft: ReceiptParseResult,
+  lines: string[],
+  used: Set<number>
+): number {
+  const target = Math.abs(draft.totalAmount)
+  let bestIdx = -1
+  let bestScore = 0
+
+  for (let i = 0; i < lines.length; i++) {
+    if (used.has(i)) continue
+    const line = lines[i]
+    let score = 0
+
+    const lineAmount = parseAmountFromLine(line)
+    if (lineAmount !== undefined && Math.abs(lineAmount - target) < 0.01) score += 60
+
+    const desc = draft.description?.trim().toLowerCase()
+    if (desc && desc.length >= 2) {
+      const lineNorm = normalizeHint(line)
+      if (lineNorm.includes(desc) || desc.split(/\s+/).some((w) => w.length >= 2 && lineNorm.includes(w))) {
+        score += 25
+      }
+    }
+
+    if (score > bestScore) {
+      bestScore = score
+      bestIdx = i
+    }
+  }
+
+  return bestScore > 0 ? bestIdx : -1
+}
+
 /**
  * Deterministic account hint extraction from a single journal line.
  * Complements (and overrides empty) AI accountHint fields.
@@ -144,17 +205,26 @@ export function extractAccountHintsFromLine(line: string): ExtractedAccountHints
   }
 
   const from = findAccountTokenAfter(text, /จาก\s*/i)
-  const toViaKhao = findAccountTokenAfter(text, /เข้า\s*/i)
+  const toViaKhao =
+    findAccountTokenAfter(text, /โอนเข้า\s*/i) ||
+    findAccountTokenAfter(text, /เข้า\s*/i)
   const toViaPai = findAccountTokenAfter(text, /ไป\s*/i)
-  const outSource = findAccountTokenAfter(text, /โอนเงินออก\s*/i)
-  const incomeTo = findAccountTokenAfter(text, /เงินเข้า\s*/i)
+  const outSource =
+    findAccountTokenAfter(text, /โอน(?:เงิน)?ออก\s*/i) ||
+    findAccountTokenAfter(text, /โอนเงินออก\s*/i)
+  const incomeTo =
+    findAccountTokenAfter(text, /เงินเข้า\s*/i) ||
+    findAccountTokenAfter(text, /โอนเข้า\s*/i)
   const trailing = findTrailingAccount(text)
+  const nearAmount = findAccountNearAmount(text)
 
   const isTransferPhrase =
-    /โอนจาก|โอนเงินออก/.test(text) && !/โอนให้|ให้ลูกค้า|ให้เบล|จ่ายให้/i.test(text)
+    /โอนจาก|โอน(?:เงิน)?ออก/.test(text) &&
+    !/โอนให้|ให้ลูกค้า|ให้เบล|จ่ายให้/i.test(text)
 
   const isIncomePhrase =
-    /เงินเข้า|โอนเงินเข้า|ลูกค้าโอน|ได้รับ/.test(text) && !/โอนเงินออก|โอนจาก/.test(text)
+    /เงินเข้า|โอน(?:เงิน)?เข้า|ลูกค้าโอน|ได้รับ/.test(text) &&
+    !/โอน(?:เงิน)?ออก|โอนจาก/.test(text)
 
   let accountHint: string | undefined
   let transferToAccountHint: string | undefined
@@ -162,15 +232,16 @@ export function extractAccountHintsFromLine(line: string): ExtractedAccountHints
 
   if (isTransferPhrase) {
     suggestsTransfer = true
-    accountHint = outSource || from || trailing
+    accountHint = outSource || from || nearAmount || trailing
     transferToAccountHint = toViaPai || toViaKhao
   } else if (isIncomePhrase) {
-    accountHint = incomeTo || toViaKhao || trailing || from
+    accountHint = incomeTo || toViaKhao || nearAmount || trailing || from
   } else {
-    accountHint = from || outSource || trailing || undefined
+    accountHint = from || outSource || nearAmount || trailing || undefined
   }
 
   if (!accountHint && trailing) accountHint = trailing
+  if (!accountHint && nearAmount) accountHint = nearAmount
 
   return {
     ...(accountHint ? { accountHint } : {}),
@@ -242,4 +313,58 @@ export function mergeExtractedHints(
     ...(transferToAccountHint ? { transferToAccountHint } : {}),
     ...(txType ? { txType } : {}),
   }
+}
+
+/**
+ * Map account hints per draft from the matching source line.
+ * Prevents the first bank in a multi-line paste from being applied to every draft.
+ */
+export function applyAccountHintsToDrafts(
+  drafts: ReceiptParseResult[],
+  text: string,
+  timeZone = 'Asia/Bangkok'
+): ReceiptParseResult[] {
+  if (drafts.length === 0) return drafts
+
+  const segments = splitExpenseTextIntoSegments(text, timeZone)
+  const lines = segments.map((s) => s.text)
+
+  if (drafts.length === 1) {
+    const line = lines[0] ?? text.trim()
+    const extracted = extractAccountHintsFromLine(line)
+    return drafts.map((draft) => ({
+      ...draft,
+      ...mergeExtractedHints(draft, extracted),
+    }))
+  }
+
+  const stripAiAccounts = (draft: ReceiptParseResult) => ({
+    ...draft,
+    accountHint: undefined,
+    transferToAccountHint: undefined,
+  })
+
+  if (lines.length === drafts.length) {
+    return drafts.map((draft, i) => {
+      const extracted = extractAccountHintsFromLine(lines[i])
+      return {
+        ...draft,
+        ...mergeExtractedHints(stripAiAccounts(draft), extracted),
+        items: undefined,
+      }
+    })
+  }
+
+  const used = new Set<number>()
+  return drafts.map((draft) => {
+    const idx = findBestMatchingLineIndex(draft, lines, used)
+    const line = idx >= 0 ? lines[idx] : undefined
+    if (idx >= 0) used.add(idx)
+    const extracted = line ? extractAccountHintsFromLine(line) : {}
+    return {
+      ...draft,
+      ...mergeExtractedHints(stripAiAccounts(draft), extracted),
+      items: undefined,
+    }
+  })
 }

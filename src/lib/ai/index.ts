@@ -25,10 +25,7 @@ import {
   shouldForceLineSplit,
   splitExpenseTextIntoSegments,
 } from '@/lib/ai/expense-text-split';
-import {
-  extractAccountHintsFromLine,
-  mergeExtractedHints,
-} from '@/lib/ai/account-hint';
+import { applyAccountHintsToDrafts } from '@/lib/ai/account-hint';
 
 export interface AiProviderConfig {
   provider: AiTextProvider;
@@ -167,17 +164,12 @@ export async function parseExpenseTextWithProvider(
       segments.map(async (segment) => {
         const lineResults = await parseExpenseTextOnce(segment.text, config, enrichedContext);
         const lineTime = extractTimeFromLine(segment.text);
-        const extracted = extractAccountHintsFromLine(segment.text);
-        return lineResults.map((draft) => {
-          const merged = mergeExtractedHints(draft, extracted);
-          return {
-            ...draft,
-            ...merged,
-            items: undefined,
-            date: segment.dateHint || draft.date,
-            time: lineTime || draft.time,
-          };
-        });
+        return lineResults.map((draft) => ({
+          ...draft,
+          items: undefined,
+          date: segment.dateHint || draft.date,
+          time: lineTime || draft.time,
+        }));
       })
     );
     const perLine = settled.flat();
@@ -186,13 +178,9 @@ export async function parseExpenseTextWithProvider(
   } else {
     results = await parseExpenseTextOnce(text, config, enrichedContext);
     results = expandCollapsedReceiptIfNeeded(results, text);
-    // Single-line / short text: still merge deterministic account hints
-    const extracted = extractAccountHintsFromLine(text);
-    results = results.map((draft) => ({
-      ...draft,
-      ...mergeExtractedHints(draft, extracted),
-    }));
   }
+
+  results = applyAccountHintsToDrafts(results, text, timeZone);
 
   return finalizeDrafts(results, contacts, timeZone);
 }
