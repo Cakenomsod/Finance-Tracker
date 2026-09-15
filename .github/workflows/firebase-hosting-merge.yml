@@ -54,6 +54,9 @@ jobs:
           echo "LINE_CHANNEL_ACCESS_TOKEN=${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}" >> .env
           echo "NEXT_PUBLIC_LINE_BOT_ID=${{ secrets.NEXT_PUBLIC_LINE_BOT_ID }}" >> .env
 
+      - name: Build Next.js app
+        run: npm run build
+
       - name: Deploy to Firebase
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
