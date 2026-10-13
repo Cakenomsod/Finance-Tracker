@@ -56,6 +56,7 @@ import { DEFAULT_CATEGORY_COLORS } from '@/lib/default-categories';
 import { createPaymentSource } from '@/lib/firestore';
 import { useAuth } from '@/hooks/use-auth';
 import { cn } from '@/lib/utils';
+import { CurrencySelect, CURRENCY_SELECT_NONE } from '@/components/shared/currency-select';
 import { toast } from 'sonner';
 
 interface SourceFormState {
@@ -67,6 +68,8 @@ interface SourceFormState {
   linkedSourceId: string;
   openingBalance: string;
   isDefault: boolean;
+  /** '' = follow the preferred currency */
+  currency: string;
 }
 
 const emptyForm = (): SourceFormState => ({
@@ -78,6 +81,7 @@ const emptyForm = (): SourceFormState => ({
   linkedSourceId: '',
   openingBalance: '0',
   isDefault: false,
+  currency: '',
 });
 
 function sourceToForm(source: PaymentSource): SourceFormState {
@@ -90,6 +94,7 @@ function sourceToForm(source: PaymentSource): SourceFormState {
     linkedSourceId: source.linkedSourceId ?? '',
     openingBalance: String(source.openingBalance ?? 0),
     isDefault: source.isDefault ?? false,
+    currency: source.currency ?? '',
   };
 }
 
@@ -197,6 +202,7 @@ export function PaymentSourcesSettings() {
         linkedSourceId: form.type === 'debit_card' ? form.linkedSourceId : undefined,
         openingBalance: Number(form.openingBalance) || 0,
         isDefault: form.isDefault,
+        currency: form.currency || (editing?.id ? null : undefined),
         color: getBankByCode(form.bankCode)?.color ?? DEFAULT_CATEGORY_COLORS[0],
         icon: form.type === 'cash' ? '💵' : form.type === 'debit_card' ? '💳' : '🏦',
       };
@@ -282,7 +288,9 @@ export function PaymentSourcesSettings() {
               ) : (
                 <ul className="space-y-2 list-none p-0 m-0" aria-label={t('accounts.reorderHint')}>
                   {activeSources.map((source, index) => {
-                    const subtitle = getSourceDisplaySubtitle(source);
+                    const subtitle = [getSourceDisplaySubtitle(source), source.currency]
+                      .filter(Boolean)
+                      .join(' · ');
                     const bank = getBankByCode(source.bankCode);
                     const isDragging = dragIndex === index;
                     const isDropTarget =
@@ -535,6 +543,18 @@ export function PaymentSourcesSettings() {
                 value={form.openingBalance}
                 onChange={(e) => setForm((f) => ({ ...f, openingBalance: e.target.value }))}
               />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="source-currency">{t('accounts.sourceCurrency')}</Label>
+              <CurrencySelect
+                id="source-currency"
+                value={form.currency}
+                noneLabel={t('accounts.sourceCurrencyDefault')}
+                onChange={(v) =>
+                  setForm((f) => ({ ...f, currency: v === CURRENCY_SELECT_NONE ? '' : v }))
+                }
+              />
+              <p className="text-xs text-muted-foreground text-pretty">{t('accounts.sourceCurrencyHint')}</p>
             </div>
             <div className="flex items-center justify-between gap-4">
               <Label htmlFor="default-source" className="cursor-pointer">{t('accounts.setAsDefault')}</Label>

@@ -1,5 +1,6 @@
 import { ReceiptParseResult } from '@/lib/ai/receipt-schema';
 import { getLocalTimeInput, getLocalTodayIso } from '@/lib/datetime';
+import { extractCurrencyFromText, stripCurrencyTokens } from '@/lib/ai/currency-hint';
 
 const VALID_CATEGORIES = [
   'Food & Dining', 'Transport', 'Shopping', 'Entertainment',
@@ -42,11 +43,13 @@ function normalizeExpenseInput(text: string): string {
     .trim();
 }
 
-export function tryParseExpenseTextStrictFormat(
-  text: string,
-  defaultCurrency: 'THB' | 'JPY' = 'THB'
-): ReceiptParseResult | null {
-  const trimmed = normalizeExpenseInput(text);
+/**
+ * Currency is only set when the user wrote one ("ราเมน 1200 เยน", "$5 coffee");
+ * otherwise it stays empty so the account / preferred currency applies later.
+ */
+export function tryParseExpenseTextStrictFormat(text: string): ReceiptParseResult | null {
+  const currency = extractCurrencyFromText(text);
+  const trimmed = normalizeExpenseInput(stripCurrencyTokens(text));
   if (!trimmed || trimmed.length > 80) return null;
   if (/ครับ|ค่ะ|ช่วย|ฝาก|แล้ว|ที่ร้าน|หน่อย|เพื่อน|เมื่อ|พรุ่งนี้|เมื่อวาน/.test(trimmed)) {
     return null;
@@ -73,7 +76,7 @@ export function tryParseExpenseTextStrictFormat(
     date: todayIso(),
     time: getLocalTimeInput(),
     totalAmount: price,
-    currency: defaultCurrency,
+    ...(currency ? { currency } : {}),
   };
 }
 

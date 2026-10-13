@@ -168,9 +168,7 @@ export async function parseExpenseTextLocal(
     ? `\nContext: trip="${context.tripName || ''}", default currency=${context.currency || 'THB'}, country=${context.countryCode || 'TH'}`
     : '';
   const contactsHint = context?.contactsHint || '';
-
-  const fallbackCurrency: 'THB' | 'JPY' =
-    context?.currency === 'JPY' ? 'JPY' : 'THB';
+  const accountsHint = context?.accountsHint || '';
 
   try {
     const response = await fetch(`${baseUrl}/v1/chat/completions`, {
@@ -187,7 +185,7 @@ export async function parseExpenseTextLocal(
           },
           {
             role: 'user',
-            content: `${EXPENSE_TEXT_PARSE_PROMPT}${contextHint}${contactsHint}\n\nUser input:\n${text.trim()}`,
+            content: `${EXPENSE_TEXT_PARSE_PROMPT}${contextHint}${contactsHint}${accountsHint}\n\nUser input:\n${text.trim()}`,
           },
         ],
         temperature: 0.1,
@@ -214,14 +212,14 @@ export async function parseExpenseTextLocal(
     );
 
     if (!content) {
-      const fallback = tryParseExpenseTextStrictFormat(text, fallbackCurrency);
+      const fallback = tryParseExpenseTextStrictFormat(text);
       if (fallback) return [fallback];
       throw new Error('No response from local AI (ลองพิมพ์แบบ "ชื่อรายการ จำนวนเงิน" เช่น ไก่ทอด 20)');
     }
 
     return expenseTextMultiParseSchema.parse(parseJsonFromAiContent(content)).drafts;
   } catch (error) {
-    const fallback = tryParseExpenseTextStrictFormat(text, fallbackCurrency);
+    const fallback = tryParseExpenseTextStrictFormat(text);
     if (fallback) return [fallback];
     throw wrapLocalAiError(error, 'Failed to parse expense text with local AI');
   }

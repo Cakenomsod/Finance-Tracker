@@ -43,8 +43,11 @@ export interface UserProfile {
   accountsEnabled?: boolean;
   /** Enable money pool (envelope) tracking */
   moneyPoolsEnabled?: boolean;
-  /** Linked LINE User ID for Bot integration */
+  /** Linked LINE User ID for Bot integration (written server-side only) */
   lineUserId?: string | null;
+  lineDisplayName?: string | null;
+  linePictureUrl?: string | null;
+  lineLinkedAt?: Timestamp | null;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }
@@ -139,6 +142,12 @@ export interface PaymentSource {
   /** Debit card → linked bank account */
   linkedSourceId?: string;
   openingBalance: number;
+  /**
+   * ISO currency this account holds (e.g. JPY travel wallet). New transactions
+   * on this account default to it when the user does not state a currency.
+   * `null` clears it on update (follow the user's preferred currency).
+   */
+  currency?: string | null;
   isDefault?: boolean;
   /** User-defined display order (lower = first) */
   sortOrder?: number;

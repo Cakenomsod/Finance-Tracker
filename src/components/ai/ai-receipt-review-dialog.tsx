@@ -14,10 +14,24 @@ import { Badge } from '@/components/ui/badge'
 import { Check, FileText, Receipt, Users, Wallet } from 'lucide-react'
 import { ReceiptParseResult } from '@/lib/ai/receipt-schema'
 import { normalizeAiTime } from '@/lib/ai/receipt-mapper'
+import type { DraftCurrencySource } from '@/lib/ai/draft-resolve'
 
 const DOC_TYPE_LABELS: Record<ReceiptParseResult['documentType'], string> = {
   receipt: 'ใบเสร็จ',
   transfer_slip: 'สลิปโอนเงิน',
+}
+
+const CURRENCY_SOURCE_LABELS: Record<DraftCurrencySource, string> = {
+  parsed: 'ตามที่พิมพ์',
+  account: 'ตามสกุลเงินบัญชี',
+  default: 'สกุลเงินหลัก',
+}
+
+export interface AiReceiptReviewTarget {
+  currency: string
+  currencySource: DraftCurrencySource
+  accountName?: string
+  transferToName?: string
 }
 
 export interface AiReceiptReviewDialogProps {
@@ -25,6 +39,8 @@ export interface AiReceiptReviewDialogProps {
   onOpenChange: (open: boolean) => void
   result: ReceiptParseResult | null
   defaultCurrency?: string
+  /** Account + currency already resolved for this draft */
+  target?: AiReceiptReviewTarget
   onConfirm: () => void
 }
 
@@ -33,11 +49,17 @@ export function AiReceiptReviewDialog({
   onOpenChange,
   result,
   defaultCurrency = 'THB',
+  target,
   onConfirm,
 }: AiReceiptReviewDialogProps) {
   if (!result) return null
 
-  const currency = result.currency || defaultCurrency
+  const currency = target?.currency || result.currency || defaultCurrency
+  const accountLabel = target?.accountName
+    ? target.transferToName
+      ? `${target.accountName} → ${target.transferToName}`
+      : target.accountName
+    : null
   const hasItems = result.items && result.items.length > 0
   const hasSplit =
     (result.payers?.length ?? 0) > 0 ||
@@ -72,7 +94,14 @@ export function AiReceiptReviewDialog({
         <div className="space-y-4 py-2">
           <div className="flex flex-wrap gap-2">
             <Badge variant="secondary">{DOC_TYPE_LABELS[result.documentType]}</Badge>
-            <Badge variant="outline">{currency}</Badge>
+            <Badge variant="outline">
+              {currency}
+              {target && (
+                <span className="font-normal text-muted-foreground">
+                  · {CURRENCY_SOURCE_LABELS[target.currencySource]}
+                </span>
+              )}
+            </Badge>
             {result.taxMode && (
               <Badge variant="outline">
                 ภาษี {result.taxMode === 'exclusive' ? 'แยกนอก' : 'รวมใน'}
@@ -85,6 +114,9 @@ export function AiReceiptReviewDialog({
             <Row label="หมวดหมู่" value={result.category} />
             <Row label="วันที่" value={result.date} />
             <Row label="เวลา" value={normalizeAiTime(result.time)} />
+            {accountLabel && (
+              <Row label="บัญชี" value={accountLabel} icon={<Wallet className="size-3.5" />} />
+            )}
             <Row
               label="ยอดรวม"
               value={`${result.totalAmount.toLocaleString()} ${currency}`}

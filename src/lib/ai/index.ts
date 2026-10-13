@@ -25,7 +25,11 @@ import {
   shouldForceLineSplit,
   splitExpenseTextIntoSegments,
 } from '@/lib/ai/expense-text-split';
-import { applyAccountHintsToDrafts } from '@/lib/ai/account-hint';
+import {
+  applyAccountHintsToDrafts,
+  buildAccountsPromptHint,
+  type AiAccount,
+} from '@/lib/ai/account-hint';
 
 export interface AiProviderConfig {
   provider: AiTextProvider;
@@ -62,9 +66,7 @@ async function parseExpenseTextOnce(
   config: AiProviderConfig,
   context?: ExpenseTextAiContext
 ): Promise<ReceiptParseResult[]> {
-  const fallbackCurrency: 'THB' | 'JPY' = context?.currency === 'JPY' ? 'JPY' : 'THB';
-
-  const strictMatch = tryParseExpenseTextStrictFormat(text, fallbackCurrency);
+  const strictMatch = tryParseExpenseTextStrictFormat(text);
   if (strictMatch) return [strictMatch];
 
   try {
@@ -76,7 +78,7 @@ async function parseExpenseTextOnce(
     }
     return await parseExpenseText(text, context);
   } catch (aiError) {
-    const retry = tryParseExpenseTextStrictFormat(text, fallbackCurrency);
+    const retry = tryParseExpenseTextStrictFormat(text);
     if (retry) return [retry];
 
     if (config.provider === 'local' && getGoogleAiApiKey()) {
@@ -140,12 +142,16 @@ function expandCollapsedReceiptIfNeeded(
  * Parse natural-language expense text.
  * Multi-line journals with different times are split into separate drafts
  * before the model runs (so they cannot collapse into one receipt).
+ *
+ * `currency` on returned drafts is set only when the user wrote one; resolve
+ * the final currency with `resolveDraftTarget` (account → preferred fallback).
  */
 export async function parseExpenseTextWithProvider(
   text: string,
   config: AiProviderConfig,
   context?: ExpenseTextAiContext,
-  contacts?: AiContact[]
+  contacts?: AiContact[],
+  accounts?: AiAccount[]
 ): Promise<ReceiptParseResult[]> {
   const timeZone = aiTimeZoneFromContext(context);
   const defaultCurrency = isAppCurrency(context?.currency) ? context.currency : 'THB';
@@ -154,6 +160,7 @@ export async function parseExpenseTextWithProvider(
     ...context,
     currency: defaultCurrency,
     contactsHint: contacts?.length ? buildContactsPromptHint(contacts) : context?.contactsHint,
+    accountsHint: accounts?.length ? buildAccountsPromptHint(accounts) : context?.accountsHint,
   };
 
   let results: ReceiptParseResult[];
@@ -180,7 +187,7 @@ export async function parseExpenseTextWithProvider(
     results = expandCollapsedReceiptIfNeeded(results, text);
   }
 
-  results = applyAccountHintsToDrafts(results, text, timeZone);
+  results = applyAccountHintsToDrafts(results, text, timeZone, accounts);
 
   return finalizeDrafts(results, contacts, timeZone);
 }

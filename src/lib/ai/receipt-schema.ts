@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { extractCurrencyFromText } from '@/lib/ai/currency-hint';
 
 /** Parse messy AI number values ("1,250.00", "฿120", 120). */
 function toAiNumber(val: unknown): number | undefined {
@@ -97,7 +98,8 @@ const currencySchema = z.preprocess((val) => {
   if (lower.includes('nok') || lower.includes('norweg')) return 'NOK';
   if (lower.includes('sek') || lower.includes('swedish') || lower.includes('krona') || lower.includes('krone')) return 'SEK';
 
-  return undefined;
+  // Thai names the model sometimes echoes verbatim ("เยน", "วอน", "ยูโร")
+  return extractCurrencyFromText(s);
 }, z.enum(APP_CURRENCY_CODES).optional());
 
 const taxModeSchema = z.preprocess((val) => {
@@ -291,6 +293,8 @@ export interface ExpenseTextAiContext {
   countryCode?: string;
   /** Serialized contacts hint for the model */
   contactsHint?: string;
+  /** Serialized user account names (+ currency) for the model */
+  accountsHint?: string;
 }
 
 export const RECEIPT_PARSE_PROMPT = `You are a receipt and bank transfer slip OCR parser for a personal finance app.
@@ -426,6 +430,9 @@ Other multi-draft rules:
 - If no split mentioned, omit payers, shares, splitMode
 
 --- Currency rules ---
-- "บ" or "บาท" = THB; "$" = USD; "¥" = JPY; "€" = EUR; etc.
+- "บ" or "บาท" = THB; "เยน"/"¥"/"円" = JPY; "หยวน"/"RMB" = CNY; "วอน"/"₩" = KRW;
+  "ดอลลาร์"/"ดอล"/"$" = USD; "ยูโร"/"€" = EUR; "ปอนด์"/"£" = GBP; "ดอลสิงคโปร์"/"S$" = SGD
 - Use ISO 4217 codes (THB, USD, EUR, JPY, GBP, CNY, SGD, HKD, KRW, AUD, CAD, CHF, ...)
-- Omit currency if not explicitly stated (let context default apply)`;
+- Omit currency if not explicitly stated — the app then uses the account's currency
+  or the user's default. Do NOT copy the context default currency into drafts.
+- Currency words are never account names: "ราเมน 1200 เยน Wise" → currency "JPY", accountHint "Wise".`;

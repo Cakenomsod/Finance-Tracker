@@ -150,7 +150,7 @@ export async function parseExpenseText(
 
   return generateMultiJsonWithModels(
     geminiModelCandidates(getChatModel()),
-    [{ text: EXPENSE_TEXT_PARSE_PROMPT + buildAiDateContext(aiTimeZoneFromContext(context)) + contextHint + contactsHint + `\n\nUser input:\n${text.trim()}` }]
+    [{ text: EXPENSE_TEXT_PARSE_PROMPT + buildAiDateContext(aiTimeZoneFromContext(context)) + contextHint + contactsHint + (context?.accountsHint || '') + `\n\nUser input:\n${text.trim()}` }]
   );
 }
 

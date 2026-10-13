@@ -68,6 +68,8 @@ import { useMoneyPools } from '@/hooks/use-money-pools'
 import { PaymentSourceSelect } from '@/components/accounts/payment-source-select'
 import { MoneyPoolSelect } from '@/components/accounts/money-pool-select'
 import { useLocale } from '@/components/locale-provider'
+import { CurrencySelect } from '@/components/shared/currency-select'
+import { currencySymbol, isAppCurrency, type AppCurrency } from '@/lib/currency'
 
 const formSchema = z
   .object({
@@ -136,6 +138,23 @@ export function TransactionForm({
   const [moneyPoolId, setMoneyPoolId] = React.useState(initialData?.moneyPoolId ?? '')
   const [transferToAccountId, setTransferToAccountId] = React.useState(initialData?.transferToAccountId ?? '')
   const [transferToPoolId, setTransferToPoolId] = React.useState(initialData?.transferToPoolId ?? '')
+  // '' = follow the selected account's currency, then the preferred currency.
+  const [pickedCurrency, setPickedCurrency] = React.useState<string>(
+    isAppCurrency(initialData?.currency)
+      ? initialData.currency
+      : initialData?.id
+        ? saveCurrency
+        : ''
+  )
+  const accountCurrency = activeSources.find((s) => s.id === accountId)?.currency
+  const currency: AppCurrency = isAppCurrency(pickedCurrency)
+    ? pickedCurrency
+    : isAppCurrency(accountCurrency)
+      ? accountCurrency
+      : isAppCurrency(saveCurrency)
+        ? saveCurrency
+        : 'THB'
+  const sym = currencySymbol(currency)
 
   React.useEffect(() => {
     // Do not override an AI/manual account with the default (e.g. always Kplus).
@@ -433,7 +452,7 @@ export function TransactionForm({
           tripId: null,
           receiptUrl: null,
           source: initialData?.source || 'manual',
-          currency: initialData?.currency ?? saveCurrency,
+          currency,
           note: note.trim() || undefined,
           accountId: accountId || undefined,
           moneyPoolId: moneyPoolId || undefined,
@@ -532,7 +551,7 @@ export function TransactionForm({
         tripId: values.tripId && values.tripId !== 'none' ? values.tripId : null,
         receiptUrl: primaryAttachment ? `/api/immich/asset/${primaryAttachment}` : null,
         source: initialData?.source || 'manual',
-        currency: initialData?.currency ?? saveCurrency,
+        currency,
         note: note.trim() || undefined,
         debtTracking: !isIncome ? debtTracking : undefined,
         accountId:
@@ -804,6 +823,13 @@ export function TransactionForm({
           <div className="space-y-3 rounded-lg border bg-muted/20 p-3">
             <div className="flex items-center justify-between gap-2">
               <h4 className="text-xs font-medium text-muted-foreground">รายการสินค้า</h4>
+              <CurrencySelect
+                compact
+                value={currency}
+                onChange={setPickedCurrency}
+                aria-label="สกุลเงิน"
+                className="ml-auto h-7 text-xs"
+              />
               <Button
                 type="button"
                 variant="outline"
@@ -877,24 +903,21 @@ export function TransactionForm({
                       </SelectContent>
                     </Select>
 
-                    <div className="relative">
-                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
-                        ฿
-                      </span>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        placeholder="0.00"
-                        className="h-8 pl-5 pr-1 text-xs font-medium"
-                        value={item.price}
-                        onChange={e => {
-                          const next = [...receiptItems]
-                          next[idx] = { ...next[idx], price: e.target.value }
-                          setReceiptItems(next)
-                        }}
-                      />
-                    </div>
+                    <Input
+                      type="number"
+                      inputMode="decimal"
+                      step="0.01"
+                      min="0"
+                      placeholder="0.00"
+                      aria-label={`ราคา (${currency})`}
+                      className="h-8 px-2 text-xs font-medium tabular-nums"
+                      value={item.price}
+                      onChange={e => {
+                        const next = [...receiptItems]
+                        next[idx] = { ...next[idx], price: e.target.value }
+                        setReceiptItems(next)
+                      }}
+                    />
                   </div>
                 </div>
               ))}
@@ -919,26 +942,23 @@ export function TransactionForm({
               {!isIncome && (
                 <div className="flex items-center justify-between gap-2">
                   <Label className="text-xs font-medium sm:text-sm">ส่วนลด</Label>
-                  <div className="relative w-28">
-                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
-                      ฿
-                    </span>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      placeholder="0.00"
-                      className="h-8 pl-5 pr-1 text-xs font-medium"
-                      value={discount}
-                      onChange={(e) => setDiscount(e.target.value)}
-                    />
-                  </div>
+                  <Input
+                    type="number"
+                    inputMode="decimal"
+                    step="0.01"
+                    min="0"
+                    placeholder="0.00"
+                    aria-label={`ส่วนลด (${currency})`}
+                    className="h-8 w-28 px-2 text-xs font-medium tabular-nums"
+                    value={discount}
+                    onChange={(e) => setDiscount(e.target.value)}
+                  />
                 </div>
               )}
               <div className="flex items-center justify-between">
                 <Label className="text-xs font-medium sm:text-sm">ยอดรวมสุทธิ</Label>
                 <span className="text-base font-bold tabular-nums sm:text-lg">
-                  ฿{receiptNet.toLocaleString(undefined, {
+                  {sym}{receiptNet.toLocaleString(undefined, {
                     minimumFractionDigits: 2,
                     maximumFractionDigits: 2,
                   })}
@@ -946,7 +966,7 @@ export function TransactionForm({
               </div>
               {!isIncome && discountAmount > 0 && receiptTotal > 0 && (
                 <p className="text-[10px] text-muted-foreground text-right tabular-nums">
-                  รวมสินค้า ฿{receiptTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} − ส่วนลด ฿{discountAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  รวมสินค้า {sym}{receiptTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} − ส่วนลด {sym}{discountAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </p>
               )}
             </div>
@@ -961,13 +981,14 @@ export function TransactionForm({
             )}>
               {!isIncome && !isTransfer && (
                 <div className="space-y-1.5">
-                  <Label className="text-xs">ส่วนลด (฿)</Label>
+                  <Label className="text-xs">ส่วนลด ({sym})</Label>
                   <Input
                     type="number"
+                    inputMode="decimal"
                     step="0.01"
                     min="0"
                     placeholder="0.00"
-                    className="h-9 text-xs"
+                    className="h-9 text-xs tabular-nums"
                     value={discount}
                     onChange={(e) => setDiscount(e.target.value)}
                   />
@@ -979,22 +1000,27 @@ export function TransactionForm({
                 render={({ field }) => (
                   <FormItem className={cn(!isIncome && 'sm:col-span-1')}>
                     <FormLabel className="text-xs font-semibold text-primary sm:text-sm">
-                      {paymentMethod === 'paotang' && !isIncome ? 'ยอดสุทธิ (฿)' : 'จำนวนเงิน (฿)'}
+                      {paymentMethod === 'paotang' && !isIncome ? 'ยอดสุทธิ' : 'จำนวนเงิน'}
                     </FormLabel>
-                    <FormControl>
-                      <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
-                          ฿
-                        </span>
+                    <div className="flex gap-1.5">
+                      <CurrencySelect
+                        compact
+                        value={currency}
+                        onChange={setPickedCurrency}
+                        aria-label="สกุลเงิน"
+                        className="h-9 shrink-0 text-xs"
+                      />
+                      <FormControl>
                         <Input
                           type="number"
+                          inputMode="decimal"
                           step="0.01"
                           placeholder="0.00"
-                          className="h-9 pl-8 font-semibold border-primary/40 focus-visible:ring-primary"
+                          className="h-9 min-w-0 font-semibold tabular-nums border-primary/40 focus-visible:ring-primary"
                           {...field}
                         />
-                      </div>
-                    </FormControl>
+                      </FormControl>
+                    </div>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -1002,7 +1028,7 @@ export function TransactionForm({
             </div>
             {!isIncome && discountAmount > 0 && (parseFloat(watchedAmount) || 0) > 0 && (
               <p className="text-[10px] text-muted-foreground tabular-nums">
-                ยอดก่อนหักส่วนลด ฿{((parseFloat(watchedAmount) || 0) + discountAmount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} − ส่วนลด ฿{discountAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                ยอดก่อนหักส่วนลด {sym}{((parseFloat(watchedAmount) || 0) + discountAmount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} − ส่วนลด {sym}{discountAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </p>
             )}
           </div>

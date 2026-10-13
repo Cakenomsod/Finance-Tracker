@@ -2,6 +2,15 @@ import type { PaymentSource } from '@/lib/firestore-types'
 import type { ReceiptParseResult } from '@/lib/ai/receipt-schema'
 import { splitExpenseTextIntoSegments } from '@/lib/ai/expense-text-split'
 import { THAI_BANKS } from '@/lib/thai-banks'
+import {
+  extractCurrencyFromText,
+  mentionsAnyCurrency,
+  stripCurrencyTokens,
+} from '@/lib/ai/currency-hint'
+
+/** Minimal account shape shared by the browser (live sources) and server (admin reads). */
+export type AiAccount = Pick<PaymentSource, 'name' | 'type'> &
+  Partial<Pick<PaymentSource, 'id' | 'bankCode' | 'currency' | 'archived' | 'isDefault'>>
 
 export interface ExtractedAccountHints {
   accountHint?: string
@@ -73,7 +82,8 @@ function matchAliasLabel(token: string): string | undefined {
   const n = normalizeHint(token)
   if (!n) return undefined
   for (const rule of ACCOUNT_ALIAS_RULES) {
-    if (rule.keys.some((k) => n === k || n.includes(k) || k.includes(n))) {
+    // Short fragments ("b", "ไป") must not match inside longer alias keys.
+    if (rule.keys.some((k) => n === k || n.includes(k) || (n.length >= 3 && k.includes(n)))) {
       return rule.label
     }
   }
@@ -185,7 +195,7 @@ function findBestMatchingLineIndex(
  * Complements (and overrides empty) AI accountHint fields.
  */
 export function extractAccountHintsFromLine(line: string): ExtractedAccountHints {
-  const text = line.trim().replace(/ไป/g, ' ไป ').replace(/\s+/g, ' ')
+  const text = stripCurrencyTokens(line.trim()).replace(/ไป/g, ' ไป ').replace(/\s+/g, ' ')
   if (!text) return {}
 
   // Explicit transfer pairs first
@@ -250,7 +260,46 @@ export function extractAccountHintsFromLine(line: string): ExtractedAccountHints
   }
 }
 
-function scoreSource(source: PaymentSource, hint: string): number {
+/**
+ * Find one of the user's own account names written in the text
+ * ("กาแฟ 120 Wise", "ข้าว 50 บัญชีเที่ยว"). Longest name wins so
+ * "SCB ออม" beats "SCB". Returns the account's exact name for use as a hint.
+ */
+export function findUserAccountInText(
+  text: string,
+  sources: AiAccount[]
+): string | undefined {
+  const haystack = normalizeHint(stripCurrencyTokens(text))
+  if (!haystack) return undefined
+  let best: string | undefined
+  let bestLen = 0
+  for (const s of sources) {
+    if (s.archived) continue
+    const name = normalizeHint(s.name ?? '')
+    if (name.length < 2 || name.length <= bestLen) continue
+    const isLatin = /^[a-z0-9 .+&-]+$/.test(name)
+    const hit = isLatin
+      ? new RegExp(`(?<![a-z0-9])${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![a-z0-9])`).test(haystack)
+      : haystack.includes(name)
+    if (hit) {
+      best = s.name
+      bestLen = name.length
+    }
+  }
+  return best
+}
+
+/** Account names (+ currency) for the AI prompt so hints come back as exact names. */
+export function buildAccountsPromptHint(sources: AiAccount[]): string {
+  const active = sources.filter((s) => !s.archived && s.name?.trim())
+  if (active.length === 0) return ''
+  const list = active
+    .map((s) => (s.currency ? `"${s.name}" (${s.currency})` : `"${s.name}"`))
+    .join(', ')
+  return `\nUser's own accounts: ${list}. When the user names one of these, put that exact name in accountHint / transferToAccountHint. Account names are NOT currencies — never copy an account name into "currency".`
+}
+
+function scoreSource(source: AiAccount, hint: string): number {
   const n = normalizeHint(hint)
   const name = normalizeHint(source.name)
   let score = 0
@@ -278,11 +327,11 @@ function scoreSource(source: PaymentSource, hint: string): number {
 /** Resolve a spoken hint to a payment source id */
 export function resolveAccountHint(
   hint: string | undefined | null,
-  sources: PaymentSource[]
+  sources: AiAccount[]
 ): string | undefined {
   if (!hint?.trim() || sources.length === 0) return undefined
   const active = sources.filter((s) => !s.archived)
-  let best: PaymentSource | undefined
+  let best: AiAccount | undefined
   let bestScore = 0
   for (const s of active) {
     const score = scoreSource(s, hint)
@@ -316,54 +365,64 @@ export function mergeExtractedHints(
 }
 
 /**
- * Map account hints per draft from the matching source line.
- * Prevents the first bank in a multi-line paste from being applied to every draft.
+ * Deterministic hints for one draft from the text it came from:
+ * account (bank alias or the user's own account name) and currency.
+ * Currency is kept only when the user actually wrote one — the AI tends to
+ * echo the default currency, which would override the account's currency.
+ */
+function applyLineHints(
+  draft: ReceiptParseResult,
+  line: string | undefined,
+  wholeText: string,
+  accounts: AiAccount[] | undefined
+): ReceiptParseResult {
+  const extracted = line ? extractAccountHintsFromLine(line) : {}
+  const merged = mergeExtractedHints(draft, extracted)
+  if (line && merged.txType !== 'transfer' && accounts?.length) {
+    const own = findUserAccountInText(line, accounts)
+    if (own) merged.accountHint = own
+  }
+
+  const currencyText = line ?? wholeText
+  const currency =
+    extractCurrencyFromText(currencyText) ??
+    (mentionsAnyCurrency(currencyText) ? draft.currency : undefined)
+
+  return { ...draft, ...merged, currency }
+}
+
+/**
+ * Map account + currency hints per draft from the matching source line.
+ * Prevents the first bank (or "เยน") in a multi-line paste from being applied
+ * to every draft.
  */
 export function applyAccountHintsToDrafts(
   drafts: ReceiptParseResult[],
   text: string,
-  timeZone = 'Asia/Bangkok'
+  timeZone = 'Asia/Bangkok',
+  accounts?: AiAccount[]
 ): ReceiptParseResult[] {
   if (drafts.length === 0) return drafts
 
-  const segments = splitExpenseTextIntoSegments(text, timeZone)
-  const lines = segments.map((s) => s.text)
-
   if (drafts.length === 1) {
-    const line = lines[0] ?? text.trim()
-    const extracted = extractAccountHintsFromLine(line)
-    return drafts.map((draft) => ({
-      ...draft,
-      ...mergeExtractedHints(draft, extracted),
-    }))
+    return [applyLineHints(drafts[0], text.trim(), text, accounts)]
   }
 
-  const stripAiAccounts = (draft: ReceiptParseResult) => ({
-    ...draft,
-    accountHint: undefined,
-    transferToAccountHint: undefined,
-  })
+  const lines = splitExpenseTextIntoSegments(text, timeZone).map((s) => s.text)
 
   if (lines.length === drafts.length) {
-    return drafts.map((draft, i) => {
-      const extracted = extractAccountHintsFromLine(lines[i])
-      return {
-        ...draft,
-        ...mergeExtractedHints(stripAiAccounts(draft), extracted),
-        items: undefined,
-      }
-    })
+    return drafts.map((draft, i) => ({
+      ...applyLineHints(draft, lines[i], text, accounts),
+      items: undefined,
+    }))
   }
 
   const used = new Set<number>()
   return drafts.map((draft) => {
     const idx = findBestMatchingLineIndex(draft, lines, used)
-    const line = idx >= 0 ? lines[idx] : undefined
     if (idx >= 0) used.add(idx)
-    const extracted = line ? extractAccountHintsFromLine(line) : {}
     return {
-      ...draft,
-      ...mergeExtractedHints(stripAiAccounts(draft), extracted),
+      ...applyLineHints(draft, idx >= 0 ? lines[idx] : undefined, text, accounts),
       items: undefined,
     }
   })

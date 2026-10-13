@@ -12,7 +12,7 @@ import {
 import { useUserSettings } from '@/hooks/use-user-settings'
 import { usePaymentSources } from '@/hooks/use-payment-sources'
 import { isAppCurrency, type AppCurrency } from '@/lib/currency'
-import { resolveAccountHint } from '@/lib/ai/account-hint'
+import { resolveDraftTarget } from '@/lib/ai/draft-resolve'
 
 export interface TransactionAiPanelProps {
   currency?: AppCurrency | string
@@ -30,7 +30,7 @@ export const TransactionAiPanel = React.forwardRef<
   TransactionAiPanelHandle,
   TransactionAiPanelProps
 >(function TransactionAiPanel({ currency: currencyProp, onOpenDraftForm }, ref) {
-  const { currency: settingsCurrency } = useUserSettings()
+  const { currency: settingsCurrency, accountsEnabled } = useUserSettings()
   const { activeSources } = usePaymentSources()
   const currency: AppCurrency = isAppCurrency(currencyProp)
     ? currencyProp
@@ -65,18 +65,26 @@ export const TransactionAiPanel = React.forwardRef<
     setReviewOpen(true)
   }
 
+  const target = React.useMemo(
+    () =>
+      pendingResult
+        ? resolveDraftTarget(pendingResult, activeSources, currency, {
+            fallbackToDefaultAccount: accountsEnabled,
+          })
+        : null,
+    [pendingResult, activeSources, currency, accountsEnabled]
+  )
+
   const openDraftForm = (result: ReceiptParseResult) => {
     const draft: TransactionDraft = receiptParseToTransactionDraft(result, currency)
+    const { accountId, transferToAccountId, currency: resolvedCurrency, currencySource } =
+      target ?? resolveDraftTarget(result, activeSources, currency)
 
-    const accountId = resolveAccountHint(draft.accountHint, activeSources)
-    const transferToAccountId = resolveAccountHint(
-      draft.transferToAccountHint,
-      activeSources
-    )
-
-    const { accountHint: _a, transferToAccountHint: _b, ...rest } = draft
+    const { accountHint: _a, transferToAccountHint: _b, currency: _c, ...rest } = draft
     const resolved: Omit<Transaction, 'id' | 'createdAt' | 'userId'> = {
       ...rest,
+      // Only pin a currency the user wrote; otherwise the form follows the chosen account.
+      ...(currencySource === 'parsed' ? { currency: resolvedCurrency } : {}),
       ...(accountId ? { accountId } : {}),
       ...(transferToAccountId ? { transferToAccountId } : {}),
     }
@@ -104,6 +112,17 @@ export const TransactionAiPanel = React.forwardRef<
         onOpenChange={setReviewOpen}
         result={pendingResult}
         defaultCurrency={currency}
+        target={
+          target
+            ? {
+                currency: target.currency,
+                currencySource: target.currencySource,
+                accountName: activeSources.find((s) => s.id === target.accountId)?.name,
+                transferToName: activeSources.find((s) => s.id === target.transferToAccountId)
+                  ?.name,
+              }
+            : undefined
+        }
         onConfirm={() => {
           if (pendingResult) {
             openDraftForm(pendingResult)

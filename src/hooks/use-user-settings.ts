@@ -53,9 +53,11 @@ function resolveFlag(
 }
 
 export function useUserSettings() {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [profileLoading, setLoading] = useState(true);
+  // On refresh `user` is null until Firebase restores the session — not "logged out".
+  const loading = authLoading || profileLoading;
   const [optimisticFlags, setOptimisticFlags] = useState<Partial<Record<FeatureFlagKey, boolean>>>(
     {}
   );
@@ -69,6 +71,7 @@ export function useUserSettings() {
       return;
     }
 
+    setLoading(true);
     const unsub = onSnapshot(
       doc(db, 'users', user.uid),
       (snap) => {

@@ -5,6 +5,7 @@ import { parseExpenseTextWithProvider } from '@/lib/ai';
 import { getGoogleAiApiKey } from '@/lib/ai/env';
 import { AiTextProvider } from '@/lib/firestore-types';
 import { loadUserContactsForAi, mergeTripMembersIntoContacts } from '@/lib/ai/load-user-contacts';
+import { loadUserAccountsForAi } from '@/lib/ai/load-user-accounts';
 import type { ExpenseTextAiContext } from '@/lib/ai/receipt-schema';
 
 export async function POST(request: NextRequest) {
@@ -69,6 +70,11 @@ export async function POST(request: NextRequest) {
       context = { currency: userCurrency };
     }
 
+    // Trip expenses don't use personal accounts; skip the read there.
+    const accounts = tripId
+      ? undefined
+      : await loadUserAccountsForAi(session.uid).catch(() => undefined);
+
     const drafts = await parseExpenseTextWithProvider(
       text.trim(),
       {
@@ -76,7 +82,8 @@ export async function POST(request: NextRequest) {
         localAiConfig: provider === 'local' && sharedLocalAiUrl ? { baseUrl: sharedLocalAiUrl } : undefined,
       },
       context,
-      contacts
+      contacts,
+      accounts
     );
 
     // drafts[0] kept as `draft` for backward compatibility with older clients

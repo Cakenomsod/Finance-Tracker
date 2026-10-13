@@ -40,8 +40,11 @@ export interface LineReviewDraftView {
   date?: string;
   time?: string;
   txType?: LineTxType;
+  /** Resolved account name (falls back to the raw hint when no account matched) */
   accountHint?: string;
   transferToAccountHint?: string;
+  /** Why this currency: "ตามที่พิมพ์" / "ตามบัญชี Wise" / "สกุลหลัก" */
+  currencyNote?: string;
   /** 1-based index when showing multiple */
   index?: number;
   total?: number;
@@ -137,10 +140,13 @@ function buildReviewBubble(view: LineReviewDraftView): messagingApi.FlexBubble {
     infoRow('วันที่', formatThaiDate(view.date)),
   ];
   if (view.time) rows.push(infoRow('เวลา', view.time));
-  if (view.accountHint) rows.push(infoRow('บัญชี', view.accountHint));
+  if (view.accountHint) rows.push(infoRow(txType === 'transfer' ? 'จาก' : 'บัญชี', view.accountHint));
   if (txType === 'transfer' && view.transferToAccountHint) {
     rows.push(infoRow('ไปยัง', view.transferToAccountHint));
   }
+  rows.push(
+    infoRow('สกุลเงิน', view.currencyNote ? `${view.currency} · ${view.currencyNote}` : view.currency)
+  );
 
   return {
     type: 'bubble',
@@ -152,42 +158,11 @@ function buildReviewBubble(view: LineReviewDraftView): messagingApi.FlexBubble {
       backgroundColor: meta.soft,
       contents: [
         {
-          type: 'box',
-          layout: 'horizontal',
-          contents: [
-            {
-              type: 'box',
-              layout: 'vertical',
-              contents: [
-                {
-                  type: 'filler',
-                },
-                {
-                  type: 'box',
-                  layout: 'vertical',
-                  contents: [],
-                  width: '4px',
-                  height: '14px',
-                  backgroundColor: meta.color,
-                  cornerRadius: '2px',
-                },
-                {
-                  type: 'filler',
-                },
-              ],
-              width: '4px',
-              flex: 0,
-            },
-            {
-              type: 'text',
-              text: `${meta.label}${indexLabel}`,
-              weight: 'bold',
-              size: 'sm',
-              color: meta.color,
-              margin: 'md',
-              flex: 1,
-            },
-          ],
+          type: 'text',
+          text: `${meta.label}${indexLabel}`,
+          weight: 'bold',
+          size: 'sm',
+          color: meta.color,
         },
         {
           type: 'text',
@@ -265,23 +240,28 @@ function buildReviewBubble(view: LineReviewDraftView): messagingApi.FlexBubble {
   };
 }
 
+function formatTotals(totals: Map<string, number>, prefix: string): string {
+  return [...totals.entries()]
+    .filter(([, amt]) => amt > 0)
+    .map(([cur, amt]) => formatAmount(amt, cur, prefix))
+    .join(' · ');
+}
+
 function buildBatchSummaryBubble(opts: {
   batchId: string;
   count: number;
-  expenseTotal: number;
-  incomeTotal: number;
-  currency: string;
+  /** Totals per currency — never summed across currencies */
+  expenseTotals: Map<string, number>;
+  incomeTotals: Map<string, number>;
 }): messagingApi.FlexBubble {
-  const { batchId, count, expenseTotal, incomeTotal, currency } = opts;
+  const { batchId, count, expenseTotals, incomeTotals } = opts;
   const summaryRows: messagingApi.FlexComponent[] = [
     infoRow('จำนวน', `${count} รายการ`),
   ];
-  if (expenseTotal > 0) {
-    summaryRows.push(infoRow('รายจ่าย', formatAmount(expenseTotal, currency, '−')));
-  }
-  if (incomeTotal > 0) {
-    summaryRows.push(infoRow('รายรับ', formatAmount(incomeTotal, currency, '+')));
-  }
+  const expenseText = formatTotals(expenseTotals, '−');
+  const incomeText = formatTotals(incomeTotals, '+');
+  if (expenseText) summaryRows.push(infoRow('รายจ่าย', expenseText));
+  if (incomeText) summaryRows.push(infoRow('รายรับ', incomeText));
 
   return {
     type: 'bubble',
@@ -392,27 +372,27 @@ export function createReviewExpenseFlexMessage(
 /** Carousel of review cards; prepends batch summary when batchId is set. */
 export function createReviewCarouselFlexMessage(
   views: LineReviewDraftView[],
-  opts?: { batchId?: string; currency?: string }
+  opts?: { batchId?: string; currency?: string; allViews?: LineReviewDraftView[] }
 ): messagingApi.FlexContainer {
   const bubbles: messagingApi.FlexBubble[] = [];
-  const currency = opts?.currency || views[0]?.currency || 'THB';
+  const fallbackCurrency = opts?.currency || 'THB';
 
   if (opts?.batchId && views.length > 1) {
-    let expenseTotal = 0;
-    let incomeTotal = 0;
-    for (const v of views) {
+    const expenseTotals = new Map<string, number>();
+    const incomeTotals = new Map<string, number>();
+    for (const v of opts.allViews ?? views) {
       const t = v.txType ?? 'expense';
-      const amt = Math.abs(v.amount);
-      if (t === 'income') incomeTotal += amt;
-      else if (t !== 'transfer') expenseTotal += amt;
+      if (t === 'transfer') continue;
+      const totals = t === 'income' ? incomeTotals : expenseTotals;
+      const cur = v.currency || fallbackCurrency;
+      totals.set(cur, (totals.get(cur) ?? 0) + Math.abs(v.amount));
     }
     bubbles.push(
       buildBatchSummaryBubble({
         batchId: opts.batchId,
-        count: views.length,
-        expenseTotal,
-        incomeTotal,
-        currency,
+        count: (opts.allViews ?? views).length,
+        expenseTotals,
+        incomeTotals,
       })
     );
   }
@@ -460,7 +440,7 @@ export function buildReviewFlexMessages(
   messages.push({
     type: 'flex',
     altText: `ตรวจสอบ ${views.length} รายการ`,
-    contents: createReviewCarouselFlexMessage(firstChunk, opts),
+    contents: createReviewCarouselFlexMessage(firstChunk, { ...opts, allViews: views }),
   });
 
   // Remaining carousels (no summary), leave room under 5-message reply limit
@@ -524,7 +504,7 @@ export function createSuccessFlexMessage(message: string): messagingApi.FlexCont
   };
 }
 
-export function createLinkPromptFlexMessage(): messagingApi.FlexContainer {
+export function createLinkPromptFlexMessage(appUrl?: string): messagingApi.FlexContainer {
   return {
     type: 'bubble',
     size: 'kilo',
@@ -532,14 +512,14 @@ export function createLinkPromptFlexMessage(): messagingApi.FlexContainer {
       type: 'box',
       layout: 'vertical',
       paddingAll: '16px',
-      backgroundColor: COLORS.expenseSoft,
+      backgroundColor: COLORS.surface,
       contents: [
         {
           type: 'text',
-          text: 'ยังไม่ได้เชื่อมต่อ',
+          text: 'เชื่อมบัญชีก่อนเริ่มใช้',
           weight: 'bold',
           size: 'lg',
-          color: COLORS.expense,
+          color: COLORS.ink,
         },
       ],
     },
@@ -547,15 +527,55 @@ export function createLinkPromptFlexMessage(): messagingApi.FlexContainer {
       type: 'box',
       layout: 'vertical',
       paddingAll: '16px',
+      spacing: 'sm',
       contents: [
         {
           type: 'text',
-          text: 'เปิด Finance Tracker บนเว็บ → หน้า LINE Bot → สร้างรหัส แล้วพิมพ์ /link รหัส ในแชทนี้',
+          text: '1. เปิดหน้า LINE Bot บนเว็บ แล้วกด "สร้างรหัส"',
           wrap: true,
           color: COLORS.ink,
-          size: 'md',
+          size: 'sm',
+        },
+        {
+          type: 'text',
+          text: '2. ส่งรหัส 6 ตัวมาในแชทนี้ (พิมพ์แค่รหัส หรือ /link รหัส ก็ได้)',
+          wrap: true,
+          color: COLORS.ink,
+          size: 'sm',
         },
       ],
     },
+    ...(appUrl
+      ? {
+          footer: {
+            type: 'box' as const,
+            layout: 'vertical' as const,
+            paddingAll: '12px',
+            contents: [
+              {
+                type: 'button' as const,
+                style: 'primary' as const,
+                height: 'sm' as const,
+                color: COLORS.mint,
+                action: { type: 'uri' as const, label: 'เปิดหน้าเชื่อมต่อ', uri: `${appUrl}/line` },
+              },
+            ],
+          },
+        }
+      : {}),
   };
+}
+
+/** Plain-text usage tips (linked users, "help", follow). */
+export function lineUsageText(name?: string): string {
+  return [
+    name ? `สวัสดีครับคุณ ${name} 👋` : 'พร้อมบันทึกแล้วครับ 👋',
+    'พิมพ์รายการแบบนี้ได้เลย:',
+    '• ข้าวมันไก่ 60',
+    '• ราเมน 1200 เยน Wise  (สกุลเงิน + บัญชี)',
+    '• กาแฟ 80 kbank\n  ขนม 45 เงินสด  (หลายบรรทัด = หลายรายการ)',
+    '• โอน 500 จาก scb ไป kbank',
+    'หรือส่งรูปสลิป/ใบเสร็จมาได้เลย',
+    'ถ้าไม่พิมพ์สกุลเงิน จะใช้สกุลของบัญชีนั้นให้อัตโนมัติ',
+  ].join('\n');
 }

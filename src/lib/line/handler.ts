@@ -1,106 +1,181 @@
 import { webhook, messagingApi } from '@line/bot-sdk';
 import { getLineClient, downloadMessageContent } from './sdk';
+import { getLineConfig } from './config';
 import {
   buildReviewFlexMessages,
   createSuccessFlexMessage,
   createLinkPromptFlexMessage,
+  lineUsageText,
   type LineReviewDraftView,
   type LineTxType,
 } from './flex-messages';
 import { parseExpenseTextWithProvider, parseReceiptImageWithProvider } from '@/lib/ai';
 import { getUserAiSettings } from '@/lib/api-auth';
 import { adminDb } from '@/lib/firebase-admin';
-import { FieldValue, Timestamp } from 'firebase-admin/firestore';
+import { FieldValue, Timestamp, type DocumentSnapshot } from 'firebase-admin/firestore';
 import type { ReceiptParseResult } from '@/lib/ai/receipt-schema';
-import { isAppCurrency } from '@/lib/currency';
-import { currencySymbol } from '@/lib/currency';
+import { currencySymbol, isAppCurrency, type AppCurrency } from '@/lib/currency';
+import { aiTimeZoneFromContext } from '@/lib/ai/ai-datetime';
+import { parseTripLocalDateTime } from '@/lib/trip-currency';
+import { loadUserAccountsForAi } from '@/lib/ai/load-user-accounts';
+import type { AiAccount } from '@/lib/ai/account-hint';
+import { resolveDraftTarget, type DraftCurrencySource } from '@/lib/ai/draft-resolve';
+
+type Client = messagingApi.MessagingApiClient;
+
+/** Stored in line_drafts: parsed draft + what it resolved to at review time. */
+type StoredDraft = ReceiptParseResult & {
+  userId?: string;
+  batchId?: string;
+  accountId?: string;
+  transferToAccountId?: string;
+  currencySource?: DraftCurrencySource;
+  timeZone?: string;
+};
+
+const HELP_RE = /^(help|\?|วิธีใช้|ช่วยด้วย|เมนู|menu)$/i;
+
+/**
+ * Accept what people actually send: "/link AB12CD", "link ab12cd", "เชื่อม AB12CD",
+ * a bare 6-char code, full-width characters or zero-width spaces from copy/paste.
+ */
+export function extractLinkCode(raw: string): string | null {
+  const text = raw.normalize('NFKC').replace(/[\u200B-\u200D\uFEFF]/g, '').trim();
+  const prefixed = text.match(/^\/?\s*(?:link|เชื่อม(?:ต่อ)?)\s*[:：]?\s*([A-Za-z0-9-]{4,32})$/i);
+  if (prefixed) return prefixed[1];
+  if (/^(?=.*\d)(?=.*[A-Za-z])[A-Za-z0-9]{6}$/.test(text)) return text.toUpperCase();
+  return null;
+}
+
+async function reply(client: Client, replyToken: string, messages: messagingApi.Message[]) {
+  await client.replyMessage({ replyToken, messages });
+}
+
+const text = (t: string): messagingApi.TextMessage => ({ type: 'text', text: t });
+
+async function findUserByLineId(lineUserId: string): Promise<DocumentSnapshot | undefined> {
+  const snap = await adminDb()
+    .collection('users')
+    .where('lineUserId', '==', lineUserId)
+    .limit(1)
+    .get();
+  return snap.docs[0];
+}
+
+async function linkAccount(
+  client: Client,
+  replyToken: string,
+  lineUserId: string,
+  code: string
+): Promise<void> {
+  const db = adminDb();
+  const candidates = [...new Set([code, code.toUpperCase()])];
+  const tokenSnap = await db
+    .collection('line_linking_tokens')
+    .where('token', 'in', candidates)
+    .limit(1)
+    .get();
+  const tokenDoc = tokenSnap.docs[0];
+  const tokenData = tokenDoc?.data();
+
+  if (!tokenDoc || !tokenData || tokenData.expiresAt.toDate() <= new Date()) {
+    if (tokenDoc) await tokenDoc.ref.delete();
+    await reply(client, replyToken, [
+      text('รหัสไม่ถูกต้องหรือหมดอายุแล้วครับ กด "สร้างรหัสใหม่" ในหน้า LINE Bot บนเว็บ แล้วส่งรหัสใหม่มาอีกครั้ง'),
+    ]);
+    return;
+  }
+
+  let displayName: string | undefined;
+  let pictureUrl: string | undefined;
+  try {
+    const profile = await client.getProfile(lineUserId);
+    displayName = profile.displayName;
+    pictureUrl = profile.pictureUrl;
+  } catch (error) {
+    console.warn('[LINE] getProfile failed (linking continues):', error);
+  }
+
+  // One LINE account → one app user; drop any previous owner of this LINE ID.
+  const previous = await db.collection('users').where('lineUserId', '==', lineUserId).get();
+  const batch = db.batch();
+  for (const doc of previous.docs) {
+    if (doc.id === tokenData.userId) continue;
+    batch.update(doc.ref, {
+      lineUserId: FieldValue.delete(),
+      lineDisplayName: FieldValue.delete(),
+      linePictureUrl: FieldValue.delete(),
+      lineLinkedAt: FieldValue.delete(),
+    });
+  }
+  batch.update(db.collection('users').doc(tokenData.userId), {
+    lineUserId,
+    lineDisplayName: displayName ?? null,
+    linePictureUrl: pictureUrl ?? null,
+    lineLinkedAt: FieldValue.serverTimestamp(),
+  });
+  batch.delete(tokenDoc.ref);
+  await batch.commit();
+
+  await reply(client, replyToken, [
+    text('✅ เชื่อมต่อบัญชีสำเร็จ'),
+    text(lineUsageText(displayName)),
+  ]);
+}
 
 export async function handleLineEvent(event: webhook.Event) {
-  if (event.type !== 'message' && event.type !== 'postback') return;
-  if (!event.source || !event.source.userId) return;
-  const lineUserId = event.source.userId;
-
+  if (event.type !== 'message' && event.type !== 'postback' && event.type !== 'follow') return;
+  const lineUserId = event.source?.userId;
+  if (!lineUserId) return;
   if (!('replyToken' in event) || !event.replyToken) return;
   const replyToken = event.replyToken;
 
   const client = getLineClient();
+  const { appUrl } = getLineConfig();
 
   try {
-    const usersSnapshot = await adminDb()
-      .collection('users')
-      .where('lineUserId', '==', lineUserId)
-      .limit(1)
-      .get();
+    const incomingText =
+      event.type === 'message' && event.message.type === 'text' ? event.message.text.trim() : '';
 
-    const userDoc = usersSnapshot.docs[0];
+    // Linking works whether or not this LINE ID is already linked (re-link / switch account).
+    const code = incomingText ? extractLinkCode(incomingText) : null;
+    const userDoc = await findUserByLineId(lineUserId);
+
+    if (code && (!userDoc || /link|เชื่อม/i.test(incomingText))) {
+      await linkAccount(client, replyToken, lineUserId, code);
+      return;
+    }
 
     if (!userDoc) {
-      if (event.type === 'message' && event.message.type === 'text') {
-        const text = event.message.text.trim();
-        const match = text.match(/^\/link\s+([a-zA-Z0-9-]+)$/i);
-        if (match) {
-          const tokenStr = match[1];
-          const tokenDocs = await adminDb()
-            .collection('line_linking_tokens')
-            .where('token', '==', tokenStr)
-            .get();
-
-          if (!tokenDocs.empty) {
-            const tokenDoc = tokenDocs.docs[0];
-            const tokenData = tokenDoc.data();
-
-            if (tokenData.expiresAt.toDate() > new Date()) {
-              await adminDb().collection('users').doc(tokenData.userId).update({
-                lineUserId: lineUserId,
-              });
-
-              await tokenDoc.ref.delete();
-
-              await client.replyMessage({
-                replyToken,
-                messages: [
-                  {
-                    type: 'text',
-                    text: '✅ เชื่อมต่อบัญชีสำเร็จ! ตอนนี้คุณสามารถพิมพ์รายจ่ายหรือส่งสลิปมาได้เลยครับ',
-                  },
-                ],
-              });
-              return;
-            }
-          }
-          await client.replyMessage({
-            replyToken,
-            messages: [
-              {
-                type: 'text',
-                text: '❌ รหัสเชื่อมต่อไม่ถูกต้อง หรือหมดอายุแล้ว กรุณากดสร้างรหัสใหม่ในเว็บครับ',
-              },
-            ],
-          });
-          return;
-        }
-      }
-
-      await client.replyMessage({
-        replyToken,
-        messages: [
-          {
-            type: 'flex',
-            altText: 'เชื่อมต่อบัญชี',
-            contents: createLinkPromptFlexMessage(),
-          },
-        ],
-      });
+      await reply(client, replyToken, [
+        { type: 'flex', altText: 'เชื่อมบัญชีก่อนเริ่มใช้', contents: createLinkPromptFlexMessage(appUrl) },
+      ]);
       return;
     }
 
     const userId = userDoc.id;
-    const userData = userDoc.data();
-    const currency = isAppCurrency(userData.currency) ? userData.currency : 'THB';
+    const userData = userDoc.data() ?? {};
+    const currency: AppCurrency = isAppCurrency(userData.currency) ? userData.currency : 'THB';
+    const timeZone = aiTimeZoneFromContext({ currency });
+
+    if (event.type === 'follow' || (incomingText && HELP_RE.test(incomingText))) {
+      await reply(client, replyToken, [text(lineUsageText(userData.lineDisplayName ?? undefined))]);
+      return;
+    }
 
     if (event.type === 'message') {
       const message = event.message;
-      const aiSettings = await getUserAiSettings(userId);
+      if (message.type !== 'text' && message.type !== 'image') {
+        await reply(client, replyToken, [text('ส่งเป็นข้อความหรือรูปสลิป/ใบเสร็จได้เลยครับ')]);
+        return;
+      }
+
+      const [aiSettings, accounts] = await Promise.all([
+        getUserAiSettings(userId),
+        userData.accountsEnabled === true
+          ? loadUserAccountsForAi(userId).catch(() => [] as AiAccount[])
+          : Promise.resolve([] as AiAccount[]),
+      ]);
       const providerConfig = {
         provider: aiSettings.provider,
         localAiConfig:
@@ -109,74 +184,66 @@ export async function handleLineEvent(event: webhook.Event) {
             : undefined,
       };
 
-      if (message.type === 'text') {
-        const text = message.text.trim();
-        const drafts = await parseExpenseTextWithProvider(text, providerConfig, { currency });
+      const drafts =
+        message.type === 'text'
+          ? await parseExpenseTextWithProvider(
+              incomingText,
+              providerConfig,
+              { currency },
+              undefined,
+              accounts
+            )
+          : [
+              await parseReceiptImageWithProvider(
+                await downloadMessageContent(message.id),
+                'image/jpeg',
+                providerConfig,
+                { currency }
+              ),
+            ];
 
-        if (drafts.length > 0) {
-          await sendReviewMessages(client, replyToken, drafts, userId, currency);
-        } else {
-          await client.replyMessage({
-            replyToken,
-            messages: [
-              {
-                type: 'text',
-                text: 'ขออภัยครับ ไม่สามารถวิเคราะห์ข้อมูลรายจ่ายได้ ลองพิมพ์ใหม่อีกครั้งครับ',
-              },
-            ],
-          });
-        }
-      } else if (message.type === 'image') {
-        const buffer = await downloadMessageContent(message.id);
-        const draft = await parseReceiptImageWithProvider(buffer, 'image/jpeg', providerConfig, {
-          currency,
-        });
-        await sendReviewMessages(client, replyToken, [draft], userId, currency);
+      if (drafts.length === 0) {
+        await reply(client, replyToken, [
+          text('ยังอ่านรายการไม่ออกครับ ลองพิมพ์แบบ "ชื่อรายการ จำนวนเงิน" เช่น ข้าวมันไก่ 60 (พิมพ์ help ดูตัวอย่าง)'),
+        ]);
+        return;
       }
-    } else if (event.type === 'postback') {
+
+      await sendReviewMessages(client, replyToken, drafts, {
+        userId,
+        currency,
+        timeZone,
+        accounts,
+        accountsEnabled: userData.accountsEnabled === true,
+      });
+      return;
+    }
+
+    if (event.type === 'postback') {
       const data = new URLSearchParams(event.postback.data);
       const action = data.get('action');
       const draftId = data.get('id');
       const batchId = data.get('batch');
 
       if (action === 'save' && draftId) {
-        const result = await saveDraftTransaction(draftId, userId, currency);
-        if (result.ok) {
-          await client.replyMessage({
-            replyToken,
-            messages: [
-              {
-                type: 'flex',
-                altText: 'บันทึกสำเร็จ',
-                contents: createSuccessFlexMessage(result.message),
-              },
-            ],
-          });
-        } else {
-          await client.replyMessage({
-            replyToken,
-            messages: [{ type: 'text', text: result.message }],
-          });
-        }
+        const result = await saveDraftTransaction(draftId, userId, currency, timeZone);
+        await reply(client, replyToken, [
+          result.ok
+            ? { type: 'flex', altText: 'บันทึกสำเร็จ', contents: createSuccessFlexMessage(result.message) }
+            : text(result.message),
+        ]);
       } else if (action === 'cancel' && draftId) {
         const draftRef = adminDb().collection('line_drafts').doc(draftId);
-        await draftRef.delete();
-        await client.replyMessage({
-          replyToken,
-          messages: [{ type: 'text', text: 'ยกเลิกรายการเรียบร้อยแล้วครับ' }],
-        });
+        const snap = await draftRef.get();
+        if (snap.exists && snap.data()?.userId === userId) await draftRef.delete();
+        await reply(client, replyToken, [text('ยกเลิกรายการเรียบร้อยแล้วครับ')]);
       } else if (action === 'save_all' && batchId) {
-        const result = await saveBatchTransactions(batchId, userId, currency);
-        await client.replyMessage({
-          replyToken,
-          messages: [
-            {
-              type: 'flex',
-              altText: 'บันทึกสำเร็จ',
-              contents: createSuccessFlexMessage(result.message),
-            },
-          ],
-        });
+        const result = await saveBatchTransactions(batchId, userId, currency, timeZone);
+        await reply(client, replyToken, [
+          result.ok
+            ? { type: 'flex', altText: 'บันทึกสำเร็จ', contents: createSuccessFlexMessage(result.message) }
+            : text(result.message),
+        ]);
       } else if (action === 'cancel_all' && batchId) {
         const snap = await adminDb()
           .collection('line_drafts')
@@ -186,31 +253,19 @@ export async function handleLineEvent(event: webhook.Event) {
         const batch = adminDb().batch();
         snap.docs.forEach((doc) => batch.delete(doc.ref));
         await batch.commit();
-        await client.replyMessage({
-          replyToken,
-          messages: [
-            {
-              type: 'text',
-              text: `ยกเลิก ${snap.size} รายการเรียบร้อยแล้วครับ`,
-            },
-          ],
-        });
+        await reply(client, replyToken, [text(`ยกเลิก ${snap.size} รายการเรียบร้อยแล้วครับ`)]);
       }
     }
   } catch (error) {
-    console.error('Error handling LINE event:', error);
+    console.error('[LINE] handle event failed:', {
+      type: event.type,
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+    });
     try {
-      await client.replyMessage({
-        replyToken,
-        messages: [
-          {
-            type: 'text',
-            text: 'เกิดข้อผิดพลาดในการประมวลผล กรุณาลองใหม่อีกครั้งครับ',
-          },
-        ],
-      });
+      await reply(client, replyToken, [text('เกิดข้อผิดพลาดในการประมวลผล กรุณาลองใหม่อีกครั้งครับ')]);
     } catch {
-      // Ignore
+      // reply token may already be used
     }
   }
 }
@@ -220,165 +275,175 @@ function toTxType(raw: unknown): LineTxType {
   return 'expense';
 }
 
-function draftToView(
-  draft: ReceiptParseResult,
-  draftId: string,
-  fallbackCurrency: string,
-  index?: number,
-  total?: number
-): LineReviewDraftView {
-  return {
-    draftId,
-    description: draft.description || 'รายการจาก LINE',
-    category: draft.category || 'Others',
-    amount: Math.abs(draft.totalAmount),
-    currency: draft.currency || fallbackCurrency,
-    date: draft.date || undefined,
-    time: draft.time || undefined,
-    txType: toTxType(draft.txType),
-    accountHint: draft.accountHint,
-    transferToAccountHint: draft.transferToAccountHint,
-    index,
-    total,
-  };
+/** Firestore rejects `undefined`; drafts from the AI pipeline carry plenty of them. */
+function stripUndefined<T extends object>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
 }
 
-function buildTransactionPayload(
-  draftData: ReceiptParseResult,
-  userId: string,
-  fallbackCurrency: string
-) {
-  const txType = toTxType(draftData.txType);
-  const rawAmount = Math.abs(draftData.totalAmount);
-  const amount = txType === 'income' ? rawAmount : -rawAmount;
-  const type = txType === 'income' ? 'income' : txType === 'transfer' ? 'transfer' : 'expense';
-  const currency = draftData.currency || fallbackCurrency;
+function currencyNote(source: DraftCurrencySource | undefined, accountName?: string): string {
+  if (source === 'parsed') return 'ตามที่พิมพ์';
+  if (source === 'account') return accountName ? `ตามบัญชี ${accountName}` : 'ตามบัญชี';
+  return 'สกุลหลัก';
+}
 
-  let date: Timestamp | ReturnType<typeof FieldValue.serverTimestamp> =
-    FieldValue.serverTimestamp();
-  if (draftData.date) {
-    const timePart =
-      draftData.time && /^\d{1,2}:\d{2}$/.test(draftData.time) ? draftData.time : '12:00';
-    const parsed = new Date(`${draftData.date}T${timePart}:00`);
-    if (!Number.isNaN(parsed.getTime())) {
-      date = Timestamp.fromDate(parsed);
-    }
+function resolveDate(draft: StoredDraft, fallbackTz: string): Timestamp | FieldValue {
+  if (draft.date) {
+    const time = draft.time && /^\d{1,2}:\d{2}$/.test(draft.time) ? draft.time : '12:00';
+    const parsed = parseTripLocalDateTime(draft.date, time, draft.timeZone || fallbackTz);
+    if (!Number.isNaN(parsed.getTime())) return Timestamp.fromDate(parsed);
   }
+  return FieldValue.serverTimestamp();
+}
 
-  return {
+/** Transaction doc in the same shape the web form writes. */
+function buildTransaction(draft: StoredDraft, userId: string, fallbackCurrency: string, fallbackTz: string) {
+  const txType = toTxType(draft.txType);
+  const rawAmount = Math.abs(draft.totalAmount);
+  // Same sign conventions as the web form: expense negative, income/transfer positive.
+  const amount = txType === 'expense' ? -rawAmount : rawAmount;
+  const currency = isAppCurrency(draft.currency) ? draft.currency : fallbackCurrency;
+
+  const items = (draft.items ?? [])
+    .filter((i) => i?.name?.trim() && Number.isFinite(i.price) && i.price > 0)
+    .map((i) => ({ name: i.name.trim(), category: i.category || draft.category || 'Others', price: i.price }));
+
+  const fields = stripUndefined({
     userId,
     amount,
-    type,
-    category: draftData.category || 'Others',
-    description: draftData.description || 'รายการจาก LINE',
-    date,
-    paidBy: userId,
+    type: txType,
+    category: txType === 'transfer' ? 'Transfer' : draft.category || 'Others',
+    description: draft.description || 'รายการจาก LINE',
+    paidBy: txType === 'income' ? '' : 'Me',
     splitWith: null,
     tripId: null,
     receiptUrl: null,
     source: 'line' as const,
-    createdAt: FieldValue.serverTimestamp(),
     currency,
-    ...(draftData.accountHint ? { accountHint: draftData.accountHint } : {}),
-    ...(draftData.transferToAccountHint
-      ? { transferToAccountHint: draftData.transferToAccountHint }
-      : {}),
+    accountId: draft.accountId,
+    transferToAccountId: txType === 'transfer' ? draft.transferToAccountId : undefined,
+    items: items.length > 1 ? items : undefined,
+    discount: draft.discount && draft.discount > 0 ? draft.discount : undefined,
+    baseAmount: draft.baseAmount,
+    taxAmount: draft.taxAmount,
+  });
+  // Sentinels/Timestamps are added after stripUndefined (JSON would mangle them).
+  return {
+    ...fields,
+    date: resolveDate(draft, fallbackTz),
+    createdAt: FieldValue.serverTimestamp(),
   };
 }
 
 async function saveDraftTransaction(
   draftId: string,
   userId: string,
-  fallbackCurrency: string
+  fallbackCurrency: string,
+  timeZone: string
 ): Promise<{ ok: boolean; message: string }> {
   const draftRef = adminDb().collection('line_drafts').doc(draftId);
   const draftSnap = await draftRef.get();
-
   if (!draftSnap.exists) {
-    return {
-      ok: false,
-      message: '❌ ไม่พบรายการนี้ หรือรายการนี้ถูกบันทึก/ยกเลิกไปแล้วครับ',
-    };
+    return { ok: false, message: 'รายการนี้ถูกบันทึกหรือยกเลิกไปแล้วครับ' };
   }
 
-  const draftData = draftSnap.data() as ReceiptParseResult & { userId?: string };
-  if (draftData.userId && draftData.userId !== userId) {
-    return { ok: false, message: '❌ ไม่มีสิทธิ์บันทึกรายการนี้ครับ' };
+  const draft = draftSnap.data() as StoredDraft;
+  if (draft.userId && draft.userId !== userId) {
+    return { ok: false, message: 'ไม่มีสิทธิ์บันทึกรายการนี้ครับ' };
   }
 
-  await adminDb()
-    .collection('transactions')
-    .add(buildTransactionPayload(draftData, userId, fallbackCurrency));
+  await adminDb().collection('transactions').add(buildTransaction(draft, userId, fallbackCurrency, timeZone));
   await draftRef.delete();
 
-  const txType = toTxType(draftData.txType);
-  const rawCur = draftData.currency || fallbackCurrency;
-  const symbol = currencySymbol(isAppCurrency(rawCur) ? rawCur : 'THB');
-  const label =
-    txType === 'income' ? 'รายรับ' : txType === 'transfer' ? 'โอน' : 'รายจ่าย';
-
+  const txType = toTxType(draft.txType);
+  const cur = isAppCurrency(draft.currency) ? draft.currency : (fallbackCurrency as AppCurrency);
+  const label = txType === 'income' ? 'รายรับ' : txType === 'transfer' ? 'โอน' : 'รายจ่าย';
   return {
     ok: true,
-    message: `บันทึก${label}「${draftData.description || 'รายการ'}」 ${symbol}${Math.abs(draftData.totalAmount)} เรียบร้อยแล้ว`,
+    message: `บันทึก${label}「${draft.description || 'รายการ'}」 ${currencySymbol(cur)}${Math.abs(draft.totalAmount).toLocaleString('th-TH')} เรียบร้อยแล้ว`,
   };
 }
 
 async function saveBatchTransactions(
   batchId: string,
   userId: string,
-  fallbackCurrency: string
+  fallbackCurrency: string,
+  timeZone: string
 ): Promise<{ ok: boolean; message: string }> {
   const snap = await adminDb()
     .collection('line_drafts')
     .where('batchId', '==', batchId)
     .where('userId', '==', userId)
     .get();
-
   if (snap.empty) {
-    return {
-      ok: false,
-      message: '❌ ไม่พบรายการชุดนี้ หรือบันทึกไปแล้วครับ',
-    };
+    return { ok: false, message: 'รายการชุดนี้ถูกบันทึกหรือยกเลิกไปแล้วครับ' };
   }
 
   const writeBatch = adminDb().batch();
   for (const doc of snap.docs) {
-    const draftData = doc.data() as ReceiptParseResult;
-    const txRef = adminDb().collection('transactions').doc();
-    writeBatch.set(txRef, buildTransactionPayload(draftData, userId, fallbackCurrency));
+    const draft = doc.data() as StoredDraft;
+    writeBatch.set(
+      adminDb().collection('transactions').doc(),
+      buildTransaction(draft, userId, fallbackCurrency, timeZone)
+    );
     writeBatch.delete(doc.ref);
   }
   await writeBatch.commit();
-
-  return {
-    ok: true,
-    message: `บันทึก ${snap.size} รายการเรียบร้อยแล้ว`,
-  };
+  return { ok: true, message: `บันทึก ${snap.size} รายการเรียบร้อยแล้ว` };
 }
 
 async function sendReviewMessages(
-  client: messagingApi.MessagingApiClient,
+  client: Client,
   replyToken: string,
   drafts: ReceiptParseResult[],
-  userId: string,
-  currency: string
-) {
-  const batchId = drafts.length > 1 ? adminDb().collection('line_drafts').doc().id : undefined;
-
-  const views: LineReviewDraftView[] = [];
-  for (let i = 0; i < drafts.length; i++) {
-    const draft = drafts[i];
-    const draftRef = await adminDb().collection('line_drafts').add({
-      ...draft,
-      userId,
-      ...(batchId ? { batchId } : {}),
-      createdAt: FieldValue.serverTimestamp(),
-    });
-    views.push(
-      draftToView(draft, draftRef.id, currency, drafts.length > 1 ? i + 1 : undefined, drafts.length)
-    );
+  ctx: {
+    userId: string;
+    currency: AppCurrency;
+    timeZone: string;
+    accounts: AiAccount[];
+    accountsEnabled: boolean;
   }
+) {
+  const db = adminDb();
+  const batchId = drafts.length > 1 ? db.collection('line_drafts').doc().id : undefined;
+  const nameOf = (id?: string) => (id ? ctx.accounts.find((a) => a.id === id)?.name : undefined);
 
-  const messages = buildReviewFlexMessages(views, { batchId, currency });
-  await client.replyMessage({ replyToken, messages });
+  const writes = db.batch();
+  const views: LineReviewDraftView[] = drafts.map((draft, i) => {
+    const target = resolveDraftTarget(draft, ctx.accounts, ctx.currency, {
+      fallbackToDefaultAccount: ctx.accountsEnabled,
+    });
+    const ref = db.collection('line_drafts').doc();
+    const stored: StoredDraft = {
+      ...draft,
+      currency: target.currency,
+      accountId: target.accountId,
+      transferToAccountId: target.transferToAccountId,
+      currencySource: target.currencySource,
+      timeZone: ctx.timeZone,
+      userId: ctx.userId,
+      batchId,
+    };
+    writes.set(ref, { ...stripUndefined(stored), createdAt: FieldValue.serverTimestamp() });
+
+    const accountName = nameOf(target.accountId);
+    const txType = toTxType(draft.txType);
+    return {
+      draftId: ref.id,
+      description: draft.description || 'รายการจาก LINE',
+      category: draft.category || 'Others',
+      amount: Math.abs(draft.totalAmount),
+      currency: target.currency,
+      date: draft.date || undefined,
+      time: draft.time || undefined,
+      txType,
+      accountHint: accountName ?? draft.accountHint,
+      transferToAccountHint: nameOf(target.transferToAccountId) ?? draft.transferToAccountHint,
+      currencyNote: currencyNote(target.currencySource, accountName),
+      index: drafts.length > 1 ? i + 1 : undefined,
+      total: drafts.length,
+    };
+  });
+  await writes.commit();
+
+  await reply(client, replyToken, buildReviewFlexMessages(views, { batchId, currency: ctx.currency }));
 }
