@@ -21,11 +21,16 @@ import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import { AI_INPUT_ID } from '@/components/quick-add-context'
 import { useLocale } from '@/components/locale-provider'
+import type { AppLocale } from '@/lib/locale'
+import type { LocalizedText } from '@/lib/i18n'
 
 /** Server/model errors are not actionable for users; keep only messages we wrote ourselves. */
-function friendlyAiError(err: unknown, fallback: string): string {
+function friendlyAiError(err: unknown, fallback: string, locale: AppLocale): string {
   const message = err instanceof Error ? err.message : ''
-  if (!message || /[a-z]{3,}/i.test(message) && !/[\u0E00-\u0E7F]/.test(message)) return fallback
+  const isThai = /[\u0E00-\u0E7F]/.test(message)
+  if (!message || /[a-z]{3,}/i.test(message) && !isThai) return fallback
+  // Server routes answer in Thai; don't leak that into other UI languages.
+  if (isThai && locale !== 'th') return fallback
   return message
 }
 
@@ -41,10 +46,10 @@ export interface AiExpenseQuickInputProps {
   onConsumePendingImmichIds?: (ids: string[]) => void
 }
 
-function statusLabel(job: AiParseJob) {
-  if (job.status === 'processing') return 'กำลังแยกรายการ...'
-  if (job.status === 'done') return 'แยกเสร็จแล้ว'
-  return job.error || 'แยกไม่สำเร็จ'
+function statusLabel(job: AiParseJob, p: (text: LocalizedText) => string) {
+  if (job.status === 'processing') return p({ th: 'กำลังแยกรายการ...', en: 'Reading...', zh: '正在识别...' })
+  if (job.status === 'done') return p({ th: 'แยกเสร็จแล้ว', en: 'Done', zh: '已完成' })
+  return job.error || p({ th: 'แยกไม่สำเร็จ', en: "Couldn't read it", zh: '识别失败' })
 }
 
 export interface AiExpenseQuickInputHandle {
@@ -65,7 +70,7 @@ export const AiExpenseQuickInput = React.forwardRef<
   },
   ref
 ) {
-  const { p } = useLocale()
+  const { p, locale } = useLocale()
   const [input, setInput] = React.useState('')
   const [jobs, setJobs] = React.useState<AiParseJob[]>(() => loadAiParseJobs(storageScope))
   const skipSaveRef = React.useRef(true)
@@ -168,7 +173,9 @@ export const AiExpenseQuickInput = React.forwardRef<
               createAiParseJob({
                 provider: job.provider,
                 kind: 'text',
-                inputLabel: d.description || `รายการ ${i + 1}`,
+                inputLabel:
+                  d.description ||
+                  p({ th: `รายการ ${i + 1}`, en: `Entry ${i + 1}`, zh: `记录 ${i + 1}` }),
                 // Only first draft inherits the note immich ids
                 immichIds: i === 0 ? job.immichIds : [],
               }),
@@ -181,13 +188,29 @@ export const AiExpenseQuickInput = React.forwardRef<
 
       toast.success(
         drafts.length > 1
-          ? `แยกได้ ${drafts.length} รายการ — กดตรวจสอบทีละรายการเพื่อบันทึก`
-          : 'แยกรายการเสร็จแล้ว — กดตรวจสอบเพื่อบันทึก'
+          ? p({
+              th: `แยกได้ ${drafts.length} รายการ — กดตรวจสอบทีละรายการเพื่อบันทึก`,
+              en: `Found ${drafts.length} entries — review each one to save`,
+              zh: `识别出 ${drafts.length} 笔记录 — 请逐笔检查后保存`,
+            })
+          : p({
+              th: 'แยกรายการเสร็จแล้ว — กดตรวจสอบเพื่อบันทึก',
+              en: 'Done — tap Review to save',
+              zh: '识别完成 — 点击检查后保存',
+            })
       )
     } catch (err) {
       updateJob(job.id, {
         status: 'error',
-        error: friendlyAiError(err, 'อ่านข้อความไม่ออก ลองพิมพ์แบบ "ข้าว 45" หรือจดเองด้วยปุ่ม +'),
+        error: friendlyAiError(
+          err,
+          p({
+            th: 'อ่านข้อความไม่ออก ลองพิมพ์แบบ "ข้าว 45" หรือจดเองด้วยปุ่ม +',
+            en: `Couldn't read that. Try something like "lunch 45", or add it manually with +`,
+            zh: '无法识别，请尝试输入"午饭 45"，或用 + 手动添加',
+          }),
+          locale
+        ),
       })
     }
   }
@@ -232,13 +255,29 @@ export const AiExpenseQuickInput = React.forwardRef<
       })
       toast.success(
         uploadResult?.assetId
-          ? 'อ่านใบเสร็จเสร็จแล้ว (แนบรูปไว้ให้) — กดตรวจสอบเพื่อบันทึก'
-          : 'อ่านใบเสร็จเสร็จแล้ว — กดตรวจสอบเพื่อบันทึก'
+          ? p({
+              th: 'อ่านใบเสร็จเสร็จแล้ว (แนบรูปไว้ให้) — กดตรวจสอบเพื่อบันทึก',
+              en: 'Receipt read (photo attached) — tap Review to save',
+              zh: '收据已识别（已附上图片）— 点击检查后保存',
+            })
+          : p({
+              th: 'อ่านใบเสร็จเสร็จแล้ว — กดตรวจสอบเพื่อบันทึก',
+              en: 'Receipt read — tap Review to save',
+              zh: '收据已识别 — 点击检查后保存',
+            })
       )
     } catch (err) {
       updateJob(job.id, {
         status: 'error',
-        error: friendlyAiError(err, 'อ่านใบเสร็จไม่ออก ลองถ่ายให้ชัดขึ้น หรือจดเองด้วยปุ่ม +'),
+        error: friendlyAiError(
+          err,
+          p({
+            th: 'อ่านใบเสร็จไม่ออก ลองถ่ายให้ชัดขึ้น หรือจดเองด้วยปุ่ม +',
+            en: `Couldn't read the receipt. Try a clearer photo, or add it manually with +`,
+            zh: '无法识别收据，请拍得更清晰些，或用 + 手动添加',
+          }),
+          locale
+        ),
       })
     }
   }
@@ -266,7 +305,7 @@ export const AiExpenseQuickInput = React.forwardRef<
     const job = createAiParseJob({
       provider: 'gemma',
       kind: 'receipt',
-      inputLabel: file.name || 'รูปใบเสร็จ',
+      inputLabel: file.name || p({ th: 'รูปใบเสร็จ', en: 'Receipt photo', zh: '收据照片' }),
       immichIds: snapshotIds,
     })
     setJobs((prev) => [job, ...prev])
@@ -281,7 +320,9 @@ export const AiExpenseQuickInput = React.forwardRef<
   const handlePrimarySend = () => {
     if (receiptMode) {
       if (!pendingReceiptFile) {
-        toast.error('กรุณาเลือกรูปใบเสร็จก่อน')
+        toast.error(
+          p({ th: 'กรุณาเลือกรูปใบเสร็จก่อน', en: 'Choose a receipt photo first', zh: '请先选择收据照片' })
+        )
         return
       }
       enqueueReceiptParse(pendingReceiptFile, receiptExtraInstructions)
@@ -294,18 +335,27 @@ export const AiExpenseQuickInput = React.forwardRef<
 
   const handleNoteImage = (file: File) => {
     if (!file.type.startsWith('image/')) {
-      toast.error('กรุณาเลือกไฟล์รูปภาพ')
+      toast.error(imageOnlyMessage)
       return
     }
 
     enqueueNoteUpload(file, {
       tripId,
-      label: file.name || 'รูปโน้ต',
-      successToast: 'เก็บรูปโน้ตแล้ว — จะแนบเมื่อบันทึก',
+      label: file.name || p({ th: 'รูปโน้ต', en: 'Note photo', zh: '备注图片' }),
+      successToast: p({
+        th: 'เก็บรูปโน้ตแล้ว — จะแนบเมื่อบันทึก',
+        en: 'Photo saved — it will be attached when you save',
+        zh: '图片已保存 — 保存记录时会自动附上',
+      }),
     })
   }
 
   const primaryDisabled = receiptMode ? !pendingReceiptFile : !input.trim()
+  const imageOnlyMessage = p({
+    th: 'กรุณาเลือกไฟล์รูปภาพ',
+    en: 'Please choose an image file',
+    zh: '请选择图片文件',
+  })
 
   return (
     <div className="rounded-xl border bg-card p-4 shadow-sm space-y-3">
@@ -330,16 +380,28 @@ export const AiExpenseQuickInput = React.forwardRef<
       <div className="flex gap-2 items-start">
         {receiptMode ? (
           <Textarea
-            placeholder="คำสั่งเพิ่มเติม (ไม่บังคับ) เช่น แปลชื่อสินค้าเป็นภาษาไทย..."
+            placeholder={p({
+              th: 'คำสั่งเพิ่มเติม (ไม่บังคับ) เช่น แปลชื่อสินค้าเป็นภาษาไทย...',
+              en: 'Extra instructions (optional), e.g. translate item names to English...',
+              zh: '附加说明（可选），例如：把商品名翻译成中文...',
+            })}
             value={receiptExtraInstructions}
             onChange={(e) => setReceiptExtraInstructions(e.target.value)}
             className="min-h-[72px] text-sm resize-y flex-1"
-            aria-label="คำสั่งเพิ่มเติมสำหรับวิเคราะห์ใบเสร็จ"
+            aria-label={p({
+              th: 'คำสั่งเพิ่มเติมสำหรับวิเคราะห์ใบเสร็จ',
+              en: 'Extra instructions for reading the receipt',
+              zh: '收据识别的附加说明',
+            })}
           />
         ) : (
           <Textarea
             id={storageScope === 'transactions' ? AI_INPUT_ID : undefined}
-            placeholder={'เช่น "ไก่ทอด 20" หรือวางหลายบรรทัด:\nนั่งวิน 10\nข้าว 45\nทั้งหมดนี้วันที่ 25 สิงหา 69\n(Ctrl+Enter เพื่อส่ง)'}
+            placeholder={p({
+              th: 'เช่น "ไก่ทอด 20" หรือวางหลายบรรทัด:\nนั่งวิน 10\nข้าว 45\nทั้งหมดนี้วันที่ 25 สิงหา 69\n(Ctrl+Enter เพื่อส่ง)',
+              en: 'e.g. "fried chicken 20" or paste several lines:\ntaxi 10\nlunch 45\nall on Aug 25, 2026\n(Ctrl+Enter to send)',
+              zh: '例如"炸鸡 20"，或粘贴多行：\n摩的 10\n午饭 45\n以上都是 2026年8月25日\n（Ctrl+Enter 发送）',
+            })}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
@@ -349,7 +411,7 @@ export const AiExpenseQuickInput = React.forwardRef<
               }
             }}
             className="min-h-[80px] text-sm resize-y flex-1"
-            aria-label="พิมพ์รายการค่าใช้จ่าย"
+            aria-label={p({ th: 'พิมพ์รายการค่าใช้จ่าย', en: 'Type your expenses', zh: '输入支出' })}
           />
         )}
         <Button
@@ -358,7 +420,11 @@ export const AiExpenseQuickInput = React.forwardRef<
           className="shrink-0 size-9 mt-0.5"
           disabled={primaryDisabled}
           onClick={handlePrimarySend}
-          aria-label={receiptMode ? 'ส่งวิเคราะห์รูปใบเสร็จ' : 'แยกข้อมูลจากข้อความ'}
+          aria-label={
+            receiptMode
+              ? p({ th: 'ส่งวิเคราะห์รูปใบเสร็จ', en: 'Read receipt photo', zh: '识别收据照片' })
+              : p({ th: 'แยกข้อมูลจากข้อความ', en: 'Read from text', zh: '从文字识别' })
+          }
         >
           <Send className="size-4" />
         </Button>
@@ -381,12 +447,12 @@ export const AiExpenseQuickInput = React.forwardRef<
             type="file"
             accept="image/*"
             className="hidden"
-            aria-label="เลือกรูปใบเสร็จ"
+            aria-label={p({ th: 'เลือกรูปใบเสร็จ', en: 'Choose receipt photo', zh: '选择收据照片' })}
             onChange={(e) => {
               const f = e.target.files?.[0]
               if (f) {
                 if (!f.type.startsWith('image/')) {
-                  toast.error('กรุณาเลือกไฟล์รูปภาพ')
+                  toast.error(imageOnlyMessage)
                 } else {
                   setPendingReceiptFile(f)
                 }
@@ -423,7 +489,7 @@ export const AiExpenseQuickInput = React.forwardRef<
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={receiptPreviewUrl}
-            alt="ตัวอย่างใบเสร็จ"
+            alt={p({ th: 'ตัวอย่างใบเสร็จ', en: 'Receipt preview', zh: '收据预览' })}
             className="max-h-32 rounded-md border object-contain"
           />
         )}
@@ -436,7 +502,7 @@ export const AiExpenseQuickInput = React.forwardRef<
           accept="image/*"
           multiple
           className="hidden"
-          aria-label="แนบรูปประกอบ"
+          aria-label={p({ th: 'แนบรูปประกอบ', en: 'Attach a photo', zh: '附加照片' })}
           onChange={(e) => {
             const files = e.target.files
             if (files?.length) {
@@ -523,7 +589,7 @@ export const AiExpenseQuickInput = React.forwardRef<
                       {job.kind === 'receipt'
                         ? p({ th: 'ใบเสร็จ', en: 'Receipt', zh: '收据' })
                         : p({ th: 'ข้อความ', en: 'Text', zh: '文字' })}{' '}
-                      · {statusLabel(job)}
+                      · {statusLabel(job, p)}
                     </p>
                   </div>
                   <button

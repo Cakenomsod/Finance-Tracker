@@ -2,6 +2,7 @@
 
 import * as React from 'react'
 import { toast } from 'sonner'
+import { pickClient } from '@/lib/i18n'
 
 const UNDO_WINDOW_MS = 5000
 
@@ -39,7 +40,10 @@ export function useUndoableDelete() {
         try {
           await run()
         } catch {
-          toast.error(options.errorMessage ?? 'ลบไม่สำเร็จ ลองใหม่อีกครั้ง')
+          toast.error(
+            options.errorMessage ??
+              pickClient({ th: 'ลบไม่สำเร็จ ลองใหม่อีกครั้ง', en: 'Could not delete — try again', zh: '删除失败，请重试' })
+          )
         } finally {
           release(id)
         }

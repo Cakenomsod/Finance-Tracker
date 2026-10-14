@@ -1,12 +1,16 @@
+'use client'
+
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useLocale } from '@/components/locale-provider'
 
 export function DashboardSkeleton() {
+  const { p } = useLocale()
   return (
     <div
       className="flex min-w-0 max-w-full flex-col gap-4 overflow-x-hidden p-4 sm:gap-6 sm:p-6"
       aria-busy="true"
-      aria-label="Loading dashboard"
+      aria-label={p({ th: 'กำลังโหลดแดชบอร์ด', en: 'Loading dashboard', zh: '正在加载仪表盘' })}
     >
       <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 space-y-2">

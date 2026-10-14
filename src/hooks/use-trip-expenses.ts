@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { collection, query, where, onSnapshot, orderBy } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { pickClient } from '@/lib/i18n';
 import { Trip, TripExpense } from '@/lib/firestore-types';
 import { convertToHomeCurrency } from '@/lib/trip-currency';
 import { createTripExpense, updateTripExpense, deleteTripExpense } from '@/lib/firestore';
@@ -12,6 +13,10 @@ export interface MemberBalance {
   totalPaid: number;    // how much they actually paid
   totalShare: number;   // how much they owe
   netBalance: number;   // positive = owed money back, negative = owes money
+}
+
+function notLoggedInMessage(): string {
+  return pickClient({ th: 'ยังไม่ได้เข้าสู่ระบบ', en: 'Not logged in', zh: '尚未登录' });
 }
 
 export function useTripExpenses(tripId: string, trip?: Trip | null) {
@@ -97,7 +102,7 @@ export function useTripExpenses(tripId: string, trip?: Trip | null) {
   };
 
   const addExpense = async (data: Omit<TripExpense, 'id' | 'createdAt'>) => {
-    if (!user) throw new Error('Not logged in');
+    if (!user) throw new Error(notLoggedInMessage());
     return createTripExpense({ ...data, userId: user.uid });
   };
 

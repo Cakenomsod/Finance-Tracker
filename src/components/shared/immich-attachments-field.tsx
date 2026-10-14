@@ -11,7 +11,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { requestDeleteImmichAssets } from '@/lib/immich/delete-from-browser'
-import { IMMICH_ENABLED, IMMICH_MAINTENANCE_MESSAGE } from '@/lib/immich/feature'
+import { IMMICH_ENABLED, IMMICH_MAINTENANCE_TEXT } from '@/lib/immich/feature'
+import { useLocale } from '@/components/locale-provider'
 import { isStorageAttachment } from '@/lib/attachments/ids'
 import { useImmichUploadDelivery } from '@/providers/immich-upload-context'
 import { useAuthenticatedImmichSrc } from '@/hooks/use-authenticated-immich-src'
@@ -44,6 +45,7 @@ function ImmichThumb({
   onOpen: () => void
   onRemove: () => void
 }) {
+  const { p } = useLocale()
   const { src, loading } = useAuthenticatedImmichSrc(assetId, 'thumbnail')
   const legacyPaused = !IMMICH_ENABLED && !isStorageAttachment(assetId)
 
@@ -51,10 +53,12 @@ function ImmichThumb({
     return (
       <div
         className="flex w-20 h-20 shrink-0 flex-col items-center justify-center gap-1 rounded-md border border-dashed bg-muted/40 p-1 text-center"
-        title={IMMICH_MAINTENANCE_MESSAGE}
+        title={p(IMMICH_MAINTENANCE_TEXT)}
       >
         <Wrench className="size-4 text-muted-foreground" aria-hidden />
-        <span className="text-xs leading-tight text-muted-foreground">รูปเก่า · ปรับปรุง</span>
+        <span className="text-xs leading-tight text-muted-foreground">
+          {p({ th: 'รูปเก่า · ปรับปรุง', en: 'Old photo · maintenance', zh: '旧图片 · 维护中' })}
+        </span>
       </div>
     )
   }
@@ -82,7 +86,7 @@ function ImmichThumb({
           e.stopPropagation()
           onRemove()
         }}
-        aria-label="ลบรูป"
+        aria-label={p({ th: 'ลบรูป', en: 'Remove photo', zh: '删除图片' })}
       >
         <X className="size-3.5" />
       </button>
@@ -90,7 +94,7 @@ function ImmichThumb({
         type="button"
         className="absolute bottom-0.5 right-0.5 size-6 rounded-full bg-background/90 border flex items-center justify-center opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
         onClick={onOpen}
-        aria-label="ขยาย"
+        aria-label={p({ th: 'ขยาย', en: 'Enlarge', zh: '放大' })}
       >
         <Maximize2 className="size-3" />
       </button>
@@ -103,9 +107,17 @@ export function ImmichAttachmentsField({
   onChange,
   tripId,
   deliveryKey: deliveryKeyProp,
-  emptyHint = 'ไม่มีรูป — กด เพิ่มรูป หรือใช้ AI แนบโน้ต',
+  emptyHint: emptyHintProp,
   className,
 }: ImmichAttachmentsFieldProps) {
+  const { p } = useLocale()
+  const emptyHint =
+    emptyHintProp ??
+    p({
+      th: 'ไม่มีรูป — กด เพิ่มรูป หรือใช้ AI แนบโน้ต',
+      en: 'No photos — tap Add photo, or attach one via AI',
+      zh: '暂无图片 — 点击“添加图片”，或通过 AI 附加',
+    })
   const reactId = React.useId()
   const deliveryKey = deliveryKeyProp ?? `attachments:${reactId}`
   const valueRef = React.useRef(value)
@@ -166,7 +178,7 @@ export function ImmichAttachmentsField({
   const handleAddFiles = (files: FileList | File[]) => {
     const list = Array.from(files).filter((f) => f.type.startsWith('image/'))
     if (list.length === 0) {
-      toast.error('กรุณาเลือกไฟล์รูปภาพ')
+      toast.error(p({ th: 'กรุณาเลือกไฟล์รูปภาพ', en: 'Please choose an image file', zh: '请选择图片文件' }))
       return
     }
 
@@ -175,7 +187,7 @@ export function ImmichAttachmentsField({
       const jobId = enqueue(file, {
         tripId,
         label: file.name,
-        successToast: 'เพิ่มรูปโน้ตแล้ว',
+        successToast: p({ th: 'เพิ่มรูปโน้ตแล้ว', en: 'Photo added', zh: '图片已添加' }),
       })
       if (jobId) {
         setLocalPreviews((prev) => [...prev, { jobId, url, name: file.name }])
@@ -206,8 +218,14 @@ export function ImmichAttachmentsField({
       <div className={cn('rounded-lg border bg-muted/40 p-3 space-y-3', className)}>
         <div className="flex items-center justify-between gap-2">
           <p className="text-xs font-medium text-muted-foreground">
-            รูปแนบ
-            {uploadingCount > 0 ? ` · กำลังอัปโหลด ${uploadingCount}` : ''}
+            {p({ th: 'รูปแนบ', en: 'Photos', zh: '附件图片' })}
+            {uploadingCount > 0
+              ? p({
+                  th: ` · กำลังอัปโหลด ${uploadingCount}`,
+                  en: ` · uploading ${uploadingCount}`,
+                  zh: ` · 正在上传 ${uploadingCount}`,
+                })
+              : ''}
           </p>
           <input
             ref={attachInputRef}
@@ -227,22 +245,22 @@ export function ImmichAttachmentsField({
             className="h-7 gap-1 text-xs"
             onClick={() => attachInputRef.current?.click()}
           >
-            <ImagePlus className="size-3.5" /> เพิ่มรูป
+            <ImagePlus className="size-3.5" /> {p({ th: 'เพิ่มรูป', en: 'Add photo', zh: '添加图片' })}
           </Button>
         </div>
         {showEmpty ? (
           <p className="text-xs text-muted-foreground">{emptyHint}</p>
         ) : (
           <div className="flex flex-wrap gap-2">
-            {localPreviews.map((p) => (
+            {localPreviews.map((preview) => (
               <div
-                key={p.jobId}
+                key={preview.jobId}
                 className="relative w-20 h-20 rounded-md border bg-muted overflow-hidden shrink-0"
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={p.url}
-                  alt={p.name}
+                  src={preview.url}
+                  alt={preview.name}
                   className="w-full h-full object-cover opacity-70"
                 />
                 <div className="absolute inset-0 flex items-center justify-center bg-background/40">
@@ -278,7 +296,7 @@ export function ImmichAttachmentsField({
           disableOutsideClose
         >
           <DialogHeader className="sr-only">
-            <DialogTitle>ดูรูปโน้ต</DialogTitle>
+            <DialogTitle>{p({ th: 'ดูรูปโน้ต', en: 'View photo', zh: '查看图片' })}</DialogTitle>
           </DialogHeader>
           {lightboxAssetId && (
             <div className="relative min-h-[12rem] rounded-md bg-muted">
@@ -292,7 +310,7 @@ export function ImmichAttachmentsField({
                 <img
                   key={`${lightboxAssetId}-${lightboxQuality}`}
                   src={lightboxSrc}
-                  alt="รูปโน้ตขนาดใหญ่"
+                  alt={p({ th: 'รูปโน้ตขนาดใหญ่', en: 'Enlarged photo', zh: '放大图片' })}
                   decoding="async"
                   className="w-full max-h-[80vh] object-contain rounded-md"
                 />
@@ -311,10 +329,12 @@ export function ImmichAttachmentsField({
                   setLightboxQuality('original')
                 }}
               >
-                ดูต้นฉบับ
+                {p({ th: 'ดูต้นฉบับ', en: 'View original', zh: '查看原图' })}
               </Button>
             ) : (
-              <p className="text-xs text-muted-foreground self-center">กำลังแสดงต้นฉบับ</p>
+              <p className="text-xs text-muted-foreground self-center">
+                {p({ th: 'กำลังแสดงต้นฉบับ', en: 'Showing original', zh: '正在显示原图' })}
+              </p>
             )}
             <Button
               type="button"
@@ -322,7 +342,7 @@ export function ImmichAttachmentsField({
               size="sm"
               onClick={() => setLightboxAssetId(null)}
             >
-              ปิด
+              {p({ th: 'ปิด', en: 'Close', zh: '关闭' })}
             </Button>
           </DialogFooter>
         </DialogContent>

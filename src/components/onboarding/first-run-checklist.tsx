@@ -72,7 +72,7 @@ export function FirstRunChecklist({ hasEntries }: { hasEntries: boolean }) {
       ? {
           id: 'trip',
           done: trips.length > 0,
-          label: p({ th: 'สร้างทริปแรก', en: 'Create your first trip', zh: '创建第一个旅行' }),
+          label: p({ th: 'สร้างทริปแรก', en: 'Create your first trip', zh: '创建第一个行程' }),
           hint: p({
             th: 'ชวนเพื่อนเข้าทริป แล้วจดบิลรวมกันได้',
             en: 'Invite friends and log shared bills together',

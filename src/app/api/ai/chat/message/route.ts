@@ -4,7 +4,7 @@ import { sendChatWithProvider } from '@/lib/ai';
 import { getGoogleAiApiKey } from '@/lib/ai/env';
 import { AiTextProvider } from '@/lib/firestore-types';
 import { photoDb } from '@/lib/photo-firebase-admin'; // 👈 1. อิมพอร์ตตัวต่อสายข้ามค่ายเข้ามาเพิ่ม
-import { formatAiParseError } from '@/lib/ai/format-error';
+import { formatAiParseError, requestLocale } from '@/lib/ai/format-error';
 
 const MAX_HISTORY = 20;
 
@@ -98,6 +98,6 @@ export async function POST(request: NextRequest) {
       message: error instanceof Error ? error.message : String(error),
       stack: error instanceof Error ? error.stack : undefined,
     });
-    return NextResponse.json({ error: formatAiParseError(error) }, { status: 500 });
+    return NextResponse.json({ error: formatAiParseError(error, requestLocale(request)) }, { status: 500 });
   }
 }

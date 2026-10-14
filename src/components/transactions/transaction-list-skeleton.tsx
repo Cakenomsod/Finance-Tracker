@@ -1,5 +1,8 @@
+'use client'
+
 import { Skeleton } from '@/components/ui/skeleton'
 import { TableCell, TableRow } from '@/components/ui/table'
+import { useLocale } from '@/components/locale-provider'
 
 const TABLE_SKELETON_ROWS = 8
 const MOBILE_SKELETON_GROUPS = 2
@@ -41,11 +44,12 @@ export function TransactionTableSkeleton() {
 }
 
 export function TransactionMobileListSkeleton() {
+  const { p } = useLocale()
   return (
     <div
       className="space-y-3 animate-in fade-in-0 duration-200 fill-mode-both motion-reduce:animate-none md:hidden"
       aria-busy="true"
-      aria-label="กำลังโหลดธุรกรรม"
+      aria-label={p({ th: 'กำลังโหลดธุรกรรม', en: 'Loading transactions', zh: '正在加载交易' })}
     >
       {Array.from({ length: MOBILE_SKELETON_GROUPS }).map((_, groupIndex) => (
         <div

@@ -3,7 +3,7 @@ import { verifySession, assertTripMember, getUserAiSettings, resolveLocalAiBaseU
 import { adminDb } from '@/lib/firebase-admin';
 import { parseReceiptImageWithProvider } from '@/lib/ai';
 import { getGoogleAiApiKey } from '@/lib/ai/env';
-import { formatAiParseError } from '@/lib/ai/format-error';
+import { formatAiParseError, requestLocale } from '@/lib/ai/format-error';
 import { AiTextProvider } from '@/lib/firestore-types';
 
 /** Receipt vision can take several minutes with Local AI. */
@@ -97,6 +97,6 @@ export async function POST(request: NextRequest) {
       message: error instanceof Error ? error.message : String(error),
       stack: error instanceof Error ? error.stack : undefined,
     });
-    return NextResponse.json({ error: formatAiParseError(error) }, { status: 500 });
+    return NextResponse.json({ error: formatAiParseError(error, requestLocale(request)) }, { status: 500 });
   }
 }

@@ -27,6 +27,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { MoneyInput } from '@/components/shared/money-input'
 import { Label } from '@/components/ui/label'
 import { PaymentSourceSelect } from '@/components/accounts/payment-source-select'
 import { MoneyPoolSelect } from '@/components/accounts/money-pool-select'
@@ -87,6 +88,11 @@ import {
   groupItemsByDate,
   toDateFromFirestore,
 } from '@/lib/datetime'
+import { intlLocale, pick } from '@/lib/i18n'
+import type { AppLocale } from '@/lib/locale'
+
+/** Debts carry no currency field; settlements are recorded in THB. */
+const DEBT_CURRENCY_SYMBOL = '฿'
 
 interface UIGlobalDebt extends Omit<Debt, 'createdAt'> {
   fromDisplayName?: string
@@ -97,13 +103,25 @@ interface UIGlobalDebt extends Omit<Debt, 'createdAt'> {
   createdAt?: any
 }
 
-function debtSourceLabel(debt: UIGlobalDebt): string {
-  if (debt.isTripDebt) return 'ทริป'
-  if (debt.isTransactionDebt) return 'ธุรกรรม'
-  return 'บันทึกเอง'
+type DebtSource = 'trip' | 'transaction' | 'manual'
+
+function debtSourceKind(debt: UIGlobalDebt): DebtSource {
+  if (debt.isTripDebt) return 'trip'
+  if (debt.isTransactionDebt) return 'transaction'
+  return 'manual'
 }
 
-function resolveDebtDescription(debt: UIGlobalDebt, txById: Map<string, Transaction>): string {
+function debtSourceText(source: DebtSource, locale: AppLocale): string {
+  if (source === 'trip') return pick(locale, { th: 'ทริป', en: 'Trip', zh: '行程' })
+  if (source === 'transaction') return pick(locale, { th: 'ธุรกรรม', en: 'Transaction', zh: '交易' })
+  return pick(locale, { th: 'บันทึกเอง', en: 'Manual', zh: '手动' })
+}
+
+function resolveDebtDescription(
+  debt: UIGlobalDebt,
+  txById: Map<string, Transaction>,
+  locale: AppLocale
+): string {
   if (debt.description) return debt.description
   for (const txId of debt.relatedTxIds || []) {
     const tx = txById.get(txId)
@@ -111,10 +129,22 @@ function resolveDebtDescription(debt: UIGlobalDebt, txById: Map<string, Transact
   }
   if (debt.isTripDebt) {
     const tripCount = debt.tripIds?.length || 1
-    return tripCount > 1 ? `ค่าใช้จ่ายรวมจาก ${tripCount} ทริป` : 'ค่าใช้จ่ายจากทริป'
+    return tripCount > 1
+      ? pick(locale, {
+          th: `ค่าใช้จ่ายรวมจาก ${tripCount} ทริป`,
+          en: `Combined expenses from ${tripCount} trips`,
+          zh: `来自 ${tripCount} 个行程的合计费用`,
+        })
+      : pick(locale, { th: 'ค่าใช้จ่ายจากทริป', en: 'Trip expenses', zh: '行程费用' })
   }
-  if (debt.relatedTxIds?.length) return 'แบ่งค่าใช้จ่ายจากธุรกรรม'
-  return 'หนี้ที่บันทึกเอง'
+  if (debt.relatedTxIds?.length) {
+    return pick(locale, {
+      th: 'แบ่งค่าใช้จ่ายจากธุรกรรม',
+      en: 'Split from a transaction',
+      zh: '交易分账',
+    })
+  }
+  return pick(locale, { th: 'หนี้ที่บันทึกเอง', en: 'Manually recorded debt', zh: '手动记录的债务' })
 }
 
 function resolveDebtDate(debt: UIGlobalDebt, txById: Map<string, Transaction>): Date | null {
@@ -144,27 +174,31 @@ interface PaymentHistoryItem {
   isReceived: boolean
   amount: number
   date: Date | null
-  source: 'ทริป' | 'ธุรกรรม' | 'บันทึกเอง'
+  source: DebtSource
 }
 
-function resolveSettlementSource(settlement: TripSettlement): PaymentHistoryItem['source'] {
-  if (settlement.tripId) return 'ทริป'
-  if (settlement.note?.startsWith('debt:')) return 'บันทึกเอง'
-  return 'บันทึกเอง'
+function resolveSettlementSource(settlement: TripSettlement): DebtSource {
+  if (settlement.tripId) return 'trip'
+  return 'manual'
 }
 
 function formatDebtAmount(amount: number, options?: { sign?: 'plus' | 'minus' | 'none' }) {
   const sign = options?.sign ?? 'none'
   const prefix = sign === 'plus' ? '+' : sign === 'minus' ? '-' : ''
-  return `${prefix}฿${amount.toLocaleString(undefined, {
+  return `${prefix}${DEBT_CURRENCY_SYMBOL}${amount.toLocaleString(undefined, {
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   })}`
 }
 
 function DebtsSkeleton() {
+  const { p } = useLocale()
   return (
-    <div className="flex flex-col gap-6 p-4 sm:p-6" aria-busy="true" aria-label="กำลังโหลดหนี้">
+    <div
+      className="flex flex-col gap-6 p-4 sm:p-6"
+      aria-busy="true"
+      aria-label={p({ th: 'กำลังโหลดหนี้', en: 'Loading debts', zh: '正在加载债务' })}
+    >
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-2">
           <Skeleton className="h-7 w-48" />
@@ -202,22 +236,35 @@ function DebtEmptyState({
   type: 'owe' | 'owed' | 'history'
   onAdd?: () => void
 }) {
+  const { p } = useLocale()
   const copy =
     type === 'owe'
       ? {
-          title: 'คุณยังไม่ติดใคร',
-          body: 'เมื่อมีค่าใช้จ่ายร่วมกัน หนี้จะโผล่ที่นี่ — หรือบันทึกหนี้เองได้เลย',
+          title: p({ th: 'คุณยังไม่ติดใคร', en: "You don't owe anyone", zh: '你没有欠任何人' }),
+          body: p({
+            th: 'เมื่อมีค่าใช้จ่ายร่วมกัน หนี้จะโผล่ที่นี่ — หรือบันทึกหนี้เองได้เลย',
+            en: 'Shared expenses will show up here — or record a debt yourself.',
+            zh: '共同支出产生的债务会显示在这里——也可以手动记录债务。',
+          }),
           icon: Send,
         }
       : type === 'owed'
         ? {
-            title: 'ยังไม่มีใครติดเงินคุณ',
-            body: 'ยอดที่เพื่อนหรือทริปค้างชำระจะแสดงที่นี่เมื่อมีรายการ',
+            title: p({ th: 'ยังไม่มีใครติดเงินคุณ', en: 'No one owes you', zh: '还没有人欠你钱' }),
+            body: p({
+              th: 'ยอดที่เพื่อนหรือทริปค้างชำระจะแสดงที่นี่เมื่อมีรายการ',
+              en: 'Amounts friends or trips owe you will appear here.',
+              zh: '好友或行程欠你的款项会显示在这里。',
+            }),
             icon: Wallet,
           }
         : {
-            title: 'ยังไม่มีประวัติการจ่ายคืน',
-            body: 'เมื่อจ่ายหรือรับเงินคืน รายการจะถูกบันทึกที่นี่',
+            title: p({ th: 'ยังไม่มีประวัติการจ่ายคืน', en: 'No payback history yet', zh: '暂无还款记录' }),
+            body: p({
+              th: 'เมื่อจ่ายหรือรับเงินคืน รายการจะถูกบันทึกที่นี่',
+              en: 'Payments you make or receive will be recorded here.',
+              zh: '还款或收款后，记录会保存在这里。',
+            }),
             icon: History,
           }
   const Icon = copy.icon
@@ -232,7 +279,7 @@ function DebtEmptyState({
       {onAdd && (
         <Button size="sm" className="mt-4 gap-2" onClick={onAdd}>
           <Plus className="size-4" />
-          บันทึกหนี้
+          {p({ th: 'บันทึกหนี้', en: 'Record a debt', zh: '记录债务' })}
         </Button>
       )}
     </div>
@@ -254,11 +301,36 @@ function DebtTable({
   onDelete: (id: string) => void
   onViewTransaction: (txId: string) => void
 }) {
+  const { p, locale, t } = useLocale()
   const groupedDebts = React.useMemo(
-    () => groupItemsByDate(debts, (debt) => resolveDebtDate(debt, txById)),
-    [debts, txById]
+    () => groupItemsByDate(debts, (debt) => resolveDebtDate(debt, txById), intlLocale(locale)),
+    [debts, txById, locale]
   )
-  const personRole = type === 'owe' ? 'ต้องคืนให้' : 'รอเก็บจาก'
+  const personRole =
+    type === 'owe'
+      ? p({ th: 'ต้องคืนให้', en: 'Pay back to', zh: '还给' })
+      : p({ th: 'รอเก็บจาก', en: 'Collect from', zh: '待收款自' })
+  const payBackLabel = p({ th: 'จ่ายคืน', en: 'Pay back', zh: '还款' })
+  const receiveLabel = p({ th: 'รับเงิน', en: 'Receive', zh: '收款' })
+  const viewTxLabel = p({ th: 'ดูรายละเอียดธุรกรรม', en: 'View transaction', zh: '查看交易详情' })
+  const autoFromTripLabel = p({ th: 'สร้างอัตโนมัติจากทริป', en: 'Auto-created from a trip', zh: '由行程自动生成' })
+  const autoFromTxLabel = p({
+    th: 'สร้างอัตโนมัติจากธุรกรรม',
+    en: 'Auto-created from a transaction',
+    zh: '由交易自动生成',
+  })
+  const moreOptionsLabel = (itemLabel: string) =>
+    p({
+      th: `ตัวเลือกเพิ่มเติมสำหรับ ${itemLabel}`,
+      en: `More options for ${itemLabel}`,
+      zh: `${itemLabel} 的更多选项`,
+    })
+  const paidSoFarLabel = (amount: number) =>
+    p({
+      th: `จ่ายแล้ว ${formatDebtAmount(amount)}`,
+      en: `Paid ${formatDebtAmount(amount)}`,
+      zh: `已付 ${formatDebtAmount(amount)}`,
+    })
   const amountTone = type === 'owe' ? 'text-foreground' : 'text-success'
   const avatarTone =
     type === 'owe' ? 'bg-warning/15 text-foreground' : 'bg-success/15 text-success'
@@ -278,7 +350,7 @@ function DebtTable({
                   type === 'owe'
                     ? debt.toDisplayName || debt.toUserId
                     : debt.fromDisplayName || debt.fromUserId
-                const itemLabel = resolveDebtDescription(debt, txById)
+                const itemLabel = resolveDebtDescription(debt, txById, locale)
                 const initials = person.substring(0, 2).toUpperCase()
                 const relatedTxId = debt.relatedTxIds?.[0]
                 const canViewTx = !!relatedTxId && txById.has(relatedTxId)
@@ -324,11 +396,11 @@ function DebtTable({
                           </span>
                         </div>
                         <Badge variant="outline" className="mt-2 text-xs font-normal">
-                          {debtSourceLabel(debt)}
+                          {debtSourceText(debtSourceKind(debt), locale)}
                         </Badge>
                         {debt.paidAmount != null && debt.paidAmount > 0 && (
                           <p className="mt-1.5 text-xs text-muted-foreground tabular-nums">
-                            จ่ายแล้ว {formatDebtAmount(debt.paidAmount)}
+                            {paidSoFarLabel(debt.paidAmount)}
                           </p>
                         )}
                       </div>
@@ -352,12 +424,12 @@ function DebtTable({
                           {type === 'owe' ? (
                             <>
                               <Send className="mr-1.5 size-3.5" aria-hidden />
-                              จ่ายคืน
+                              {payBackLabel}
                             </>
                           ) : (
                             <>
                               <Check className="mr-1.5 size-3.5" aria-hidden />
-                              รับเงิน
+                              {receiveLabel}
                             </>
                           )}
                         </Button>
@@ -367,7 +439,7 @@ function DebtTable({
                               size="icon"
                               variant="ghost"
                               className="size-10 shrink-0"
-                              aria-label={`ตัวเลือกเพิ่มเติมสำหรับ ${itemLabel}`}
+                              aria-label={moreOptionsLabel(itemLabel)}
                               onClick={(e) => e.stopPropagation()}
                             >
                               <MoreHorizontal className="size-4" />
@@ -378,14 +450,12 @@ function DebtTable({
                               <DropdownMenuItem
                                 onClick={() => onViewTransaction(relatedTxId!)}
                               >
-                                ดูรายละเอียดธุรกรรม
+                                {viewTxLabel}
                               </DropdownMenuItem>
                             )}
                             {debt.isTripDebt || debt.isTransactionDebt ? (
                               <DropdownMenuItem disabled>
-                                {debt.isTripDebt
-                                  ? 'สร้างอัตโนมัติจากทริป'
-                                  : 'สร้างอัตโนมัติจากธุรกรรม'}
+                                {debt.isTripDebt ? autoFromTripLabel : autoFromTxLabel}
                               </DropdownMenuItem>
                             ) : (
                               <DropdownMenuItem
@@ -393,7 +463,7 @@ function DebtTable({
                                 onClick={() => onDelete(debt.id!)}
                               >
                                 <Trash2 className="mr-2 size-4" />
-                                ลบ
+                                {t('common.delete')}
                               </DropdownMenuItem>
                             )}
                           </DropdownMenuContent>
@@ -413,11 +483,13 @@ function DebtTable({
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead>รายการ</TableHead>
+                <TableHead>{p({ th: 'รายการ', en: 'Item', zh: '项目' })}</TableHead>
                 <TableHead className="w-[140px]">{personRole}</TableHead>
-                <TableHead className="w-[90px]">แหล่ง</TableHead>
-                <TableHead className="w-[120px] text-right">จำนวนเงิน</TableHead>
-                <TableHead className="w-[140px] text-right">การดำเนินการ</TableHead>
+                <TableHead className="w-[90px]">{p({ th: 'แหล่ง', en: 'Source', zh: '来源' })}</TableHead>
+                <TableHead className="w-[120px] text-right">{t('tx.amount')}</TableHead>
+                <TableHead className="w-[140px] text-right">
+                  {p({ th: 'การดำเนินการ', en: 'Actions', zh: '操作' })}
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -429,7 +501,7 @@ function DebtTable({
                       type === 'owe'
                         ? debt.toDisplayName || debt.toUserId
                         : debt.fromDisplayName || debt.fromUserId
-                    const itemLabel = resolveDebtDescription(debt, txById)
+                    const itemLabel = resolveDebtDescription(debt, txById, locale)
                     const initials = person.substring(0, 2).toUpperCase()
                     const relatedTxId = debt.relatedTxIds?.[0]
                     const canViewTx = !!relatedTxId && txById.has(relatedTxId)
@@ -460,7 +532,7 @@ function DebtTable({
                           )}
                           {debt.paidAmount != null && debt.paidAmount > 0 && (
                             <p className="text-xs text-muted-foreground tabular-nums">
-                              จ่ายแล้ว {formatDebtAmount(debt.paidAmount)}
+                              {paidSoFarLabel(debt.paidAmount)}
                             </p>
                           )}
                         </TableCell>
@@ -478,7 +550,7 @@ function DebtTable({
                         </TableCell>
                         <TableCell>
                           <Badge variant="outline" className="text-xs font-normal">
-                            {debtSourceLabel(debt)}
+                            {debtSourceText(debtSourceKind(debt), locale)}
                           </Badge>
                         </TableCell>
                         <TableCell
@@ -503,12 +575,12 @@ function DebtTable({
                                 {type === 'owe' ? (
                                   <>
                                     <Send className="mr-1.5 size-3.5" aria-hidden />
-                                    จ่ายคืน
+                                    {payBackLabel}
                                   </>
                                 ) : (
                                   <>
                                     <Check className="mr-1.5 size-3.5" aria-hidden />
-                                    รับเงิน
+                                    {receiveLabel}
                                   </>
                                 )}
                               </Button>
@@ -519,7 +591,7 @@ function DebtTable({
                                   size="icon"
                                   variant="ghost"
                                   className="size-9"
-                                  aria-label={`ตัวเลือกเพิ่มเติมสำหรับ ${itemLabel}`}
+                                  aria-label={moreOptionsLabel(itemLabel)}
                                   onClick={(e) => e.stopPropagation()}
                                 >
                                   <MoreHorizontal className="size-4" />
@@ -530,14 +602,12 @@ function DebtTable({
                                   <DropdownMenuItem
                                     onClick={() => onViewTransaction(relatedTxId!)}
                                   >
-                                    ดูรายละเอียดธุรกรรม
+                                    {viewTxLabel}
                                   </DropdownMenuItem>
                                 )}
                                 {debt.isTripDebt || debt.isTransactionDebt ? (
                                   <DropdownMenuItem disabled>
-                                    {debt.isTripDebt
-                                      ? 'สร้างอัตโนมัติจากทริป'
-                                      : 'สร้างอัตโนมัติจากธุรกรรม'}
+                                    {debt.isTripDebt ? autoFromTripLabel : autoFromTxLabel}
                                   </DropdownMenuItem>
                                 ) : (
                                   <DropdownMenuItem
@@ -545,7 +615,7 @@ function DebtTable({
                                     onClick={() => onDelete(debt.id!)}
                                   >
                                     <Trash2 className="mr-2 size-4" />
-                                    ลบ
+                                    {t('common.delete')}
                                   </DropdownMenuItem>
                                 )}
                               </DropdownMenuContent>
@@ -574,7 +644,7 @@ export default function DebtsPage() {
   const { accountsEnabled, moneyPoolsEnabled } = useUserSettings()
   const { activeSources, defaultSource } = usePaymentSources()
   const { activePools } = useMoneyPools()
-  const { t, p } = useLocale()
+  const { t, p, locale } = useLocale()
   const { confirm, dialog: confirmDialog } = useConfirm()
 
   const txById = React.useMemo(() => {
@@ -616,14 +686,18 @@ export default function DebtsPage() {
         ? settlement.fromDisplayName || settlement.fromUserId
         : settlement.toDisplayName || settlement.toUserId
 
-      let label = 'การชำระหนี้'
+      let label = pick(locale, { th: 'การชำระหนี้', en: 'Debt payment', zh: '债务还款' })
       if (settlement.tripId) {
-        label = 'ค่าใช้จ่ายจากทริป'
+        label = pick(locale, { th: 'ค่าใช้จ่ายจากทริป', en: 'Trip expenses', zh: '行程费用' })
       } else if (settlement.note?.startsWith('debt:')) {
         const debt = debtById.get(settlement.note.slice(5))
         label = debt
-          ? resolveDebtDescription({ ...debt, isTransactionDebt: (debt.relatedTxIds?.length ?? 0) > 0 }, txById)
-          : 'ชำระหนี้'
+          ? resolveDebtDescription(
+              { ...debt, isTransactionDebt: (debt.relatedTxIds?.length ?? 0) > 0 },
+              txById,
+              locale
+            )
+          : pick(locale, { th: 'ชำระหนี้', en: 'Debt payment', zh: '债务还款' })
       }
 
       return {
@@ -654,23 +728,23 @@ export default function DebtsPage() {
       items.push({
         id: `debt-${debt.id}`,
         debtId: debt.id,
-        label: resolveDebtDescription(debt as UIGlobalDebt, txById),
+        label: resolveDebtDescription(debt as UIGlobalDebt, txById, locale),
         person: isReceived
           ? debt.fromDisplayName || debt.fromUserId
           : debt.toDisplayName || debt.toUserId,
         isReceived,
         amount: debt.paidAmount || debt.amount,
         date: resolveSettledDebtDate(debt, txById),
-        source: (debt.relatedTxIds?.length ?? 0) > 0 ? 'ธุรกรรม' : 'บันทึกเอง',
+        source: (debt.relatedTxIds?.length ?? 0) > 0 ? 'transaction' : 'manual',
       })
     })
 
     return items.sort((a, b) => (b.date?.getTime() || 0) - (a.date?.getTime() || 0))
-  }, [paymentSettlements, debts, debtById, user?.uid, txById])
+  }, [paymentSettlements, debts, debtById, user?.uid, txById, locale])
 
   const groupedPaymentHistory = React.useMemo(
-    () => groupItemsByDate(paymentHistory, (item) => item.date),
-    [paymentHistory]
+    () => groupItemsByDate(paymentHistory, (item) => item.date, intlLocale(locale)),
+    [paymentHistory, locale]
   )
 
   const settleCashOptions = React.useMemo(
@@ -770,11 +844,13 @@ export default function DebtsPage() {
 
     const payAmount = parseFloat(settleAmount)
     if (!payAmount || payAmount <= 0) {
-      toast.error('กรุณาระบุจำนวนเงินที่ถูกต้อง')
+      toast.error(p({ th: 'กรุณาระบุจำนวนเงินที่ถูกต้อง', en: 'Enter a valid amount', zh: '请输入有效金额' }))
       return
     }
     if (payAmount > settleDebtData.amount) {
-      toast.error('จำนวนเงินเกินยอดคงเหลือ')
+      toast.error(
+        p({ th: 'จำนวนเงินเกินยอดคงเหลือ', en: 'Amount exceeds the remaining balance', zh: '金额超过剩余欠款' })
+      )
       return
     }
 
@@ -835,11 +911,19 @@ export default function DebtsPage() {
       }
 
       const isPartial = payAmount < settleDebtData.amount - 0.001
-      toast.success(isPartial ? 'บันทึกการจ่ายบางส่วนแล้ว' : 'ชำระครบแล้ว')
+      toast.success(
+        isPartial
+          ? p({ th: 'บันทึกการจ่ายบางส่วนแล้ว', en: 'Partial payment recorded', zh: '已记录部分还款' })
+          : p({ th: 'ชำระครบแล้ว', en: 'Fully settled', zh: '已全部结清' })
+      )
       setIsSettleOpen(false)
       setSettleDebtData(null)
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'บันทึกการชำระไม่สำเร็จ')
+      toast.error(
+        err instanceof Error
+          ? err.message
+          : p({ th: 'บันทึกการชำระไม่สำเร็จ', en: "Couldn't record the payment", zh: '还款记录失败' })
+      )
     } finally {
       setIsSettling(false)
     }
@@ -859,39 +943,50 @@ export default function DebtsPage() {
         ? debt.toDisplayName || debt.toUserId
         : debt.fromDisplayName || debt.fromUserId
       : ''
+    const amountText = debt ? formatDebtAmount(debt.amount) : ''
     const ok = await confirm({
-      title: 'ลบหนี้รายการนี้?',
+      title: p({ th: 'ลบหนี้รายการนี้?', en: 'Delete this debt?', zh: '删除这笔债务？' }),
       description: debt
-        ? `ยอด ฿${debt.amount.toLocaleString()} กับ ${person} จะหายจากยอดรวม ถ้าแค่ได้เงินคืนแล้ว ให้กด "บันทึกการจ่าย" แทน`
+        ? p({
+            th: `ยอด ${amountText} กับ ${person} จะหายจากยอดรวม ถ้าแค่ได้เงินคืนแล้ว ให้กด "บันทึกการจ่าย" แทน`,
+            en: `${amountText} with ${person} will be removed from your totals. If it was simply paid back, record the payment instead.`,
+            zh: `与 ${person} 的 ${amountText} 将从总额中移除。如果只是已还款，请改为记录还款。`,
+          })
         : undefined,
       destructive: true,
     })
     if (!ok) return
     try {
       await removeDebt(id)
-      toast.success('ลบหนี้แล้ว')
+      toast.success(p({ th: 'ลบหนี้แล้ว', en: 'Debt deleted', zh: '债务已删除' }))
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'ลบไม่สำเร็จ')
+      toast.error(err instanceof Error ? err.message : p({ th: 'ลบไม่สำเร็จ', en: "Couldn't delete", zh: '删除失败' }))
     }
   }
 
   const handleDeletePayment = async (payment: PaymentHistoryItem) => {
     if (deletingPaymentId) return
 
+    const amountText = formatDebtAmount(payment.amount)
     const ok = await confirm({
-      title: 'ยกเลิกการจ่ายคืนนี้?',
-      description: `฿${payment.amount.toLocaleString()} กับ ${payment.person} จะกลับไปเป็นยอดค้างอีกครั้ง`,
-      confirmLabel: 'ยกเลิกการจ่าย',
+      title: p({ th: 'ยกเลิกการจ่ายคืนนี้?', en: 'Undo this payback?', zh: '撤销这笔还款？' }),
+      description: p({
+        th: `${amountText} กับ ${payment.person} จะกลับไปเป็นยอดค้างอีกครั้ง`,
+        en: `${amountText} with ${payment.person} will become outstanding again.`,
+        zh: `与 ${payment.person} 的 ${amountText} 将重新变为未结清。`,
+      }),
+      confirmLabel: p({ th: 'ยกเลิกการจ่าย', en: 'Undo payment', zh: '撤销还款' }),
       destructive: true,
     })
     if (!ok) return
 
+    const paymentDeletedMsg = p({ th: 'ลบการจ่ายคืนแล้ว', en: 'Payback removed', zh: '还款已删除' })
     setDeletingPaymentId(payment.id)
     try {
       if (payment.settlementId) {
         const settlement = paymentSettlements.find((s) => s.id === payment.settlementId)
         if (!settlement) {
-          toast.error('ไม่พบรายการชำระ')
+          toast.error(p({ th: 'ไม่พบรายการชำระ', en: 'Payment not found', zh: '未找到还款记录' }))
           return
         }
 
@@ -901,18 +996,18 @@ export default function DebtsPage() {
 
         if (linkedTx?.id) {
           await removeTransaction(linkedTx.id)
-          toast.success('ลบการจ่ายคืนแล้ว')
+          toast.success(paymentDeletedMsg)
           return
         }
 
         if (settlement.note?.startsWith('debt:')) {
           await reverseDebtPaymentFromSettlement(settlement)
-          toast.success('ลบการจ่ายคืนแล้ว')
+          toast.success(paymentDeletedMsg)
           return
         }
 
         await removeSettlement(settlement.id!)
-        toast.success('ลบรายการชำระแล้ว')
+        toast.success(p({ th: 'ลบรายการชำระแล้ว', en: 'Payment deleted', zh: '还款记录已删除' }))
         return
       }
 
@@ -928,10 +1023,12 @@ export default function DebtsPage() {
         } else {
           await reverseManualDebtPayment(payment.debtId, payment.amount)
         }
-        toast.success('ลบการจ่ายคืนแล้ว')
+        toast.success(paymentDeletedMsg)
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'ลบรายการไม่สำเร็จ')
+      toast.error(
+        err instanceof Error ? err.message : p({ th: 'ลบรายการไม่สำเร็จ', en: "Couldn't delete", zh: '删除失败' })
+      )
     } finally {
       setDeletingPaymentId(null)
     }
@@ -948,16 +1045,22 @@ export default function DebtsPage() {
         amount: parseFloat(newDebtAmount),
         relatedTxIds: [],
       })
-      toast.success('จดหนี้แล้ว')
+      toast.success(p({ th: 'จดหนี้แล้ว', en: 'Debt recorded', zh: '债务已记录' }))
       setIsAddOpen(false)
       setNewDebtPerson('')
       setNewDebtAmount('')
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'บันทึกไม่สำเร็จ')
+      toast.error(err instanceof Error ? err.message : p({ th: 'บันทึกไม่สำเร็จ', en: "Couldn't save", zh: '保存失败' }))
     } finally {
       setIsAddingDebt(false)
     }
   }
+
+  const paymentDirectionLabel = (isReceived: boolean) =>
+    isReceived
+      ? p({ th: 'รับจาก', en: 'From', zh: '收自' })
+      : p({ th: 'จ่ายให้', en: 'Paid to', zh: '付给' })
+  const deletingLabel = p({ th: 'กำลังลบ...', en: 'Deleting…', zh: '删除中…' })
 
   const settleIsPayer = settleDebtData?.fromUserId === user?.uid
   const settlePerson = settleDebtData
@@ -1193,9 +1296,13 @@ export default function DebtsPage() {
         >
           <Card className="shadow-sm">
             <CardHeader>
-              <CardTitle>Settlement history</CardTitle>
+              <CardTitle>{p({ th: 'ประวัติการจ่ายคืน', en: 'Settlement history', zh: '结清记录' })}</CardTitle>
               <CardDescription>
-                การจ่ายคืนทั้งหมด รวมทริป ธุรกรรม และหนี้ที่บันทึกเอง
+                {p({
+                  th: 'การจ่ายคืนทั้งหมด รวมทริป ธุรกรรม และหนี้ที่บันทึกเอง',
+                  en: 'All paybacks, including trips, transactions, and manual debts',
+                  zh: '所有还款记录，包括行程、交易和手动记录的债务',
+                })}
               </CardDescription>
             </CardHeader>
             <CardContent className="p-0 pb-4">
@@ -1210,19 +1317,19 @@ export default function DebtsPage() {
                         {group.items.map((payment) => (
                           <div key={payment.id} className="px-4 py-4">
                             <div className="flex items-start justify-between gap-3">
-                              <div className="min-w-0">
-                                <p className="font-medium text-balance">{payment.label}</p>
+                              <div className="min-w-0 flex-1">
+                                <p className="font-medium text-balance break-words">{payment.label}</p>
                                 {payment.date && (
                                   <p className="mt-0.5 text-xs text-muted-foreground tabular-nums">
                                     {formatTransactionDisplayTime(payment.date)}
                                   </p>
                                 )}
-                                <p className="mt-2 text-sm text-muted-foreground">
-                                  {payment.isReceived ? 'รับจาก' : 'จ่ายให้'}{' '}
+                                <p className="mt-2 truncate text-sm text-muted-foreground">
+                                  {paymentDirectionLabel(payment.isReceived)}{' '}
                                   <span className="text-foreground">{payment.person}</span>
                                 </p>
                                 <Badge variant="outline" className="mt-2 text-xs font-normal">
-                                  {payment.source}
+                                  {debtSourceText(payment.source, locale)}
                                 </Badge>
                               </div>
                               <p
@@ -1246,8 +1353,8 @@ export default function DebtsPage() {
                             >
                               <Trash2 className="mr-1.5 size-3.5" aria-hidden />
                               {deletingPaymentId === payment.id
-                                ? 'กำลังลบ...'
-                                : 'ลบการจ่ายคืน'}
+                                ? deletingLabel
+                                : p({ th: 'ลบการจ่ายคืน', en: 'Delete payback', zh: '删除还款' })}
                             </Button>
                           </div>
                         ))}
@@ -1257,11 +1364,13 @@ export default function DebtsPage() {
                   <Table className="hidden md:table">
                     <TableHeader>
                       <TableRow className="hover:bg-transparent">
-                        <TableHead className="pl-6">รายการ</TableHead>
-                        <TableHead>คู่รายการ</TableHead>
-                        <TableHead className="w-[90px]">แหล่ง</TableHead>
-                        <TableHead className="pr-6 text-right">จำนวนเงิน</TableHead>
-                        <TableHead className="w-[100px] text-right">การดำเนินการ</TableHead>
+                        <TableHead className="pl-6">{p({ th: 'รายการ', en: 'Item', zh: '项目' })}</TableHead>
+                        <TableHead>{p({ th: 'คู่รายการ', en: 'Counterparty', zh: '对方' })}</TableHead>
+                        <TableHead className="w-[90px]">{p({ th: 'แหล่ง', en: 'Source', zh: '来源' })}</TableHead>
+                        <TableHead className="pr-6 text-right">{t('tx.amount')}</TableHead>
+                        <TableHead className="w-[100px] text-right">
+                          {p({ th: 'การดำเนินการ', en: 'Actions', zh: '操作' })}
+                        </TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -1301,15 +1410,15 @@ export default function DebtsPage() {
                                       <ArrowRight className="size-3.5" />
                                     )}
                                   </div>
-                                  <span>
-                                    {payment.isReceived ? 'รับจาก' : 'จ่ายให้'}{' '}
+                                  <span className="min-w-0 truncate">
+                                    {paymentDirectionLabel(payment.isReceived)}{' '}
                                     {payment.person}
                                   </span>
                                 </div>
                               </TableCell>
                               <TableCell>
                                 <Badge variant="outline" className="text-xs font-normal">
-                                  {payment.source}
+                                  {debtSourceText(payment.source, locale)}
                                 </Badge>
                               </TableCell>
                               <TableCell
@@ -1334,7 +1443,7 @@ export default function DebtsPage() {
                                   onClick={() => handleDeletePayment(payment)}
                                 >
                                   <Trash2 className="mr-1.5 size-3.5" aria-hidden />
-                                  {deletingPaymentId === payment.id ? 'กำลังลบ...' : 'ลบ'}
+                                  {deletingPaymentId === payment.id ? deletingLabel : t('common.delete')}
                                 </Button>
                               </TableCell>
                             </TableRow>
@@ -1397,7 +1506,13 @@ export default function DebtsPage() {
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="debt-amount">{p({ th: 'จำนวนเงิน (฿)', en: 'Amount (฿)', zh: '金额（฿）' })}</Label>
+              <Label htmlFor="debt-amount">
+                {p({
+                  th: `จำนวนเงิน (${DEBT_CURRENCY_SYMBOL})`,
+                  en: `Amount (${DEBT_CURRENCY_SYMBOL})`,
+                  zh: `金额（${DEBT_CURRENCY_SYMBOL}）`,
+                })}
+              </Label>
               <Input
                 id="debt-amount"
                 type="number"
@@ -1433,9 +1548,15 @@ export default function DebtsPage() {
           className="max-h-[min(90vh,90dvh)] w-[calc(100vw-1rem)] overflow-y-auto overflow-x-hidden p-4 max-sm:top-[4vh] max-sm:translate-y-0 sm:max-w-[680px] sm:p-6"
         >
           <DialogHeader>
-            <DialogTitle>รายละเอียดธุรกรรม</DialogTitle>
+            <DialogTitle>
+              {p({ th: 'รายละเอียดธุรกรรม', en: 'Transaction details', zh: '交易详情' })}
+            </DialogTitle>
             <DialogDescription>
-              แก้ไขธุรกรรมนี้จะอัปเดตหนี้ที่เกี่ยวข้องโดยอัตโนมัติ
+              {p({
+                th: 'แก้ไขธุรกรรมนี้จะอัปเดตหนี้ที่เกี่ยวข้องโดยอัตโนมัติ',
+                en: 'Editing this transaction automatically updates related debts.',
+                zh: '编辑此交易会自动更新相关债务。',
+              })}
             </DialogDescription>
           </DialogHeader>
           {editingTransaction && (
@@ -1469,14 +1590,18 @@ export default function DebtsPage() {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{settleIsPayer ? 'จ่ายคืน' : 'รับเงินคืน'}</DialogTitle>
+            <DialogTitle>
+              {settleIsPayer
+                ? p({ th: 'จ่ายคืน', en: 'Pay back', zh: '还款' })
+                : p({ th: 'รับเงินคืน', en: 'Receive payment', zh: '收款' })}
+            </DialogTitle>
             <DialogDescription>
               {settleDebtData && (
                 <>
-                  {settleIsPayer ? 'จ่ายให้' : 'รับจาก'}{' '}
+                  {paymentDirectionLabel(!settleIsPayer)}{' '}
                   <span className="font-medium text-foreground">{settlePerson}</span>
                   {' — '}
-                  {resolveDebtDescription(settleDebtData, txById)}
+                  {resolveDebtDescription(settleDebtData, txById, locale)}
                 </>
               )}
             </DialogDescription>
@@ -1491,10 +1616,12 @@ export default function DebtsPage() {
                     : 'border-success/20 bg-success/5'
                 )}
               >
-                <p className="text-xs text-muted-foreground">ยอดคงเหลือ</p>
+                <p className="text-xs text-muted-foreground">
+                  {p({ th: 'ยอดคงเหลือ', en: 'Remaining balance', zh: '剩余欠款' })}
+                </p>
                 <p
                   className={cn(
-                    'mt-1 text-xl font-semibold tabular-nums',
+                    'mt-1 break-all text-xl font-semibold tabular-nums',
                     settleIsPayer ? 'text-foreground' : 'text-success'
                   )}
                 >
@@ -1502,32 +1629,33 @@ export default function DebtsPage() {
                 </p>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="settle-amount">จำนวนที่จ่าย (฿)</Label>
-                <div className="relative">
-                  <span
-                    className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
-                    aria-hidden
-                  >
-                    ฿
-                  </span>
-                  <Input
-                    id="settle-amount"
-                    type="number"
-                    inputMode="decimal"
-                    step="0.01"
-                    min="0"
-                    max={settleDebtData.amount}
-                    className="pl-8 text-lg font-semibold tabular-nums"
-                    value={settleAmount}
-                    onChange={(e) => setSettleAmount(e.target.value)}
-                    autoFocus
-                  />
-                </div>
+                <Label htmlFor="settle-amount">
+                  {p({
+                    th: `จำนวนที่จ่าย (${DEBT_CURRENCY_SYMBOL})`,
+                    en: `Amount paid (${DEBT_CURRENCY_SYMBOL})`,
+                    zh: `支付金额（${DEBT_CURRENCY_SYMBOL}）`,
+                  })}
+                </Label>
+                <MoneyInput
+                  id="settle-amount"
+                  currencySymbol={DEBT_CURRENCY_SYMBOL}
+                  step="0.01"
+                  min="0"
+                  max={settleDebtData.amount}
+                  className="h-12 text-lg font-semibold"
+                  value={settleAmount}
+                  onChange={(e) => setSettleAmount(e.target.value)}
+                  autoFocus
+                />
                 <p className="text-xs text-muted-foreground text-pretty">
-                  สามารถจ่ายบางส่วนได้
+                  {p({ th: 'สามารถจ่ายบางส่วนได้', en: 'Partial payments are allowed.', zh: '可以部分还款。' })}
                   {settleIsPayer && (
                     <span className="mt-1 block">
-                      จะสร้างธุรกรรม &quot;จ่ายหนี้ให้...&quot; ในรายการของคุณโดยอัตโนมัติ
+                      {p({
+                        th: 'จะสร้างธุรกรรม "จ่ายหนี้ให้..." ในรายการของคุณโดยอัตโนมัติ',
+                        en: 'A "Debt payment to…" transaction will be added to your list automatically.',
+                        zh: '系统会自动在你的记录中添加一笔"还款给…"交易。',
+                      })}
                     </span>
                   )}
                 </p>
@@ -1571,7 +1699,7 @@ export default function DebtsPage() {
                   className="transition-colors duration-200"
                   onClick={() => setSettleAmount(settleDebtData.amount.toString())}
                 >
-                  จ่ายเต็มจำนวน
+                  {p({ th: 'จ่ายเต็มจำนวน', en: 'Full amount', zh: '全额' })}
                 </Button>
                 <Button
                   type="button"
@@ -1582,7 +1710,7 @@ export default function DebtsPage() {
                     setSettleAmount((settleDebtData.amount / 2).toFixed(2))
                   }
                 >
-                  จ่ายครึ่งหนึ่ง
+                  {p({ th: 'จ่ายครึ่งหนึ่ง', en: 'Half', zh: '一半' })}
                 </Button>
               </div>
               <DialogFooter>
@@ -1591,10 +1719,10 @@ export default function DebtsPage() {
                   onClick={() => setIsSettleOpen(false)}
                   disabled={isSettling}
                 >
-                  ยกเลิก
+                  {t('common.cancel')}
                 </Button>
                 <Button onClick={handleConfirmSettle} disabled={isSettling}>
-                  {isSettling ? 'กำลังบันทึก...' : 'ยืนยัน'}
+                  {isSettling ? t('common.saving') : p({ th: 'ยืนยัน', en: 'Confirm', zh: '确认' })}
                 </Button>
               </DialogFooter>
             </div>

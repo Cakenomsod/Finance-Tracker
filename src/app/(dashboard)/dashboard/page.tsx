@@ -32,7 +32,7 @@ import { useTransactions } from '@/hooks/use-transactions'
 import { useUserSettings } from '@/hooks/use-user-settings'
 import { usePaymentSources } from '@/hooks/use-payment-sources'
 import { useExchangeRates } from '@/hooks/use-exchange-rates'
-import { isAppCurrency, STATIC_FALLBACK_RATES } from '@/lib/currency'
+import { currencySymbol, isAppCurrency, STATIC_FALLBACK_RATES } from '@/lib/currency'
 import { useQuickAdd } from '@/components/quick-add-context'
 import { IncomeExpensesScrollChart } from '@/components/analytics/income-expenses-scroll-chart'
 import { InsightsPanel } from '@/components/analytics/insights-panel'
@@ -78,14 +78,21 @@ import { PaymentSource } from '@/lib/firestore-types'
 import { useLocale } from '@/components/locale-provider'
 import { categoryLabel } from '@/lib/default-categories'
 import type { AppLocale } from '@/lib/locale'
+import { intlLocale, type LocalizedText } from '@/lib/i18n'
 
-const chartConfig = {
-  income: { label: 'Income', color: 'var(--chart-1)' },
-  expenses: { label: 'Expenses', color: 'var(--chart-3)' },
-  savings: { label: 'Savings', color: 'var(--chart-2)' },
-  amount: { label: 'Amount', color: 'var(--chart-1)' },
-  thisWeek: { label: 'This Week', color: 'var(--chart-1)' },
-  average: { label: 'Average', color: 'var(--chart-4)' },
+function buildChartConfig(p: (text: LocalizedText) => string) {
+  return {
+    income: { label: p({ th: 'รายรับ', en: 'Income', zh: '收入' }), color: 'var(--chart-1)' },
+    expenses: { label: p({ th: 'รายจ่าย', en: 'Expenses', zh: '支出' }), color: 'var(--chart-3)' },
+    savings: { label: p({ th: 'เงินออม', en: 'Savings', zh: '储蓄' }), color: 'var(--chart-2)' },
+    amount: { label: p({ th: 'จำนวนเงิน', en: 'Amount', zh: '金额' }), color: 'var(--chart-1)' },
+    thisWeek: { label: p({ th: 'สัปดาห์นี้', en: 'This week', zh: '本周' }), color: 'var(--chart-1)' },
+    average: { label: p({ th: 'ค่าเฉลี่ย', en: 'Average', zh: '平均' }), color: 'var(--chart-4)' },
+  }
+}
+
+function compactMoneyTick(value: number, symbol: string) {
+  return value >= 1000 ? `${symbol}${Math.round(value / 1000)}k` : `${symbol}${value}`
 }
 
 const categoryColors = [
@@ -129,8 +136,7 @@ function buildDailySpending(transactions: CombinedTransaction[], month: MonthSel
 
 /** 4 Jan 2026 is a Sunday, so index 0..6 maps to Date#getDay(). */
 function weekdayName(dayIndex: number, locale: AppLocale, width: 'short' | 'long') {
-  const tag = locale === 'th' ? 'th-TH' : locale === 'zh' ? 'zh-CN' : 'en-US'
-  return new Date(2026, 0, 4 + dayIndex).toLocaleDateString(tag, { weekday: width })
+  return new Date(2026, 0, 4 + dayIndex).toLocaleDateString(intlLocale(locale), { weekday: width })
 }
 
 function buildWeekdayPattern(
@@ -368,7 +374,9 @@ export default function DashboardPage() {
     }
   }, [monthsWithData, selectedMonth])
 
-  const monthLabel = formatMonthLabel(selectedMonth)
+  const monthLabel = formatMonthLabel(selectedMonth, intlLocale(locale))
+  const chartConfig = React.useMemo(() => buildChartConfig(p), [p])
+  const moneySymbol = currencySymbol(currency)
 
   const monthlyOverview = React.useMemo(
     () => buildMonthlyOverview(historicalCombined),
@@ -377,6 +385,10 @@ export default function DashboardPage() {
   const categoryBreakdown = React.useMemo(
     () => buildCategoryBreakdown(combined),
     [combined]
+  )
+  const categoryChartData = React.useMemo(
+    () => categoryBreakdown.map((c) => ({ ...c, name: categoryLabel(c.name, locale) })),
+    [categoryBreakdown, locale]
   )
   const dailySpending = React.useMemo(
     () => buildDailySpending(combined, selectedMonth),
@@ -412,8 +424,8 @@ export default function DashboardPage() {
     return computePercentChange(thisMonthExpenses, prevMonthExpenses)
   }, [historicalCombined, combined, selectedMonth])
   const insights = React.useMemo(
-    () => buildDashboardInsights(combined, getLibFinancialHabits(combined)),
-    [combined]
+    () => buildDashboardInsights(combined, getLibFinancialHabits(combined), locale),
+    [combined, locale]
   )
   const habits = React.useMemo(
     () => getFinancialHabits(combined, selectedMonth, locale),
@@ -576,7 +588,7 @@ export default function DashboardPage() {
                   <PieChart>
                     <ChartTooltip content={<ChartTooltipContent />} />
                     <Pie
-                      data={categoryBreakdown}
+                      data={categoryChartData}
                       dataKey="value"
                       nameKey="name"
                       cx="50%"
@@ -726,9 +738,7 @@ export default function DashboardPage() {
                         axisLine={false}
                         tickMargin={4}
                         width={48}
-                        tickFormatter={(value) =>
-                          value >= 1000 ? `฿${Math.round(value / 1000)}k` : `฿${value}`
-                        }
+                        tickFormatter={(value) => compactMoneyTick(value, moneySymbol)}
                         className="text-xs fill-muted-foreground"
                       />
                       <ChartTooltip content={<ChartTooltipContent />} />
@@ -771,9 +781,7 @@ export default function DashboardPage() {
                         axisLine={false}
                         tickMargin={4}
                         width={48}
-                        tickFormatter={(value) =>
-                          value >= 1000 ? `฿${Math.round(value / 1000)}k` : `฿${value}`
-                        }
+                        tickFormatter={(value) => compactMoneyTick(value, moneySymbol)}
                         className="text-xs fill-muted-foreground"
                       />
                       <ChartTooltip content={<ChartTooltipContent />} />
@@ -839,9 +847,7 @@ export default function DashboardPage() {
                       axisLine={false}
                       tickMargin={4}
                       width={48}
-                      tickFormatter={(value) =>
-                        value >= 1000 ? `฿${Math.round(value / 1000)}k` : `฿${value}`
-                      }
+                      tickFormatter={(value) => compactMoneyTick(value, moneySymbol)}
                       className="text-xs fill-muted-foreground"
                     />
                     <ChartTooltip content={<ChartTooltipContent />} />

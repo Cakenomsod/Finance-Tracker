@@ -1,5 +1,6 @@
 'use client'
 
+import * as React from 'react'
 import {
   Select,
   SelectContent,
@@ -8,6 +9,8 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { SUPPORTED_CURRENCIES } from '@/lib/currency'
+import { useLocale } from '@/components/locale-provider'
+import { intlLocale } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 
 /** Sentinel for "no explicit currency" — Radix Select cannot use an empty value. */
@@ -33,6 +36,17 @@ export function CurrencySelect({
   compact,
   'aria-label': ariaLabel,
 }: CurrencySelectProps) {
+  const { locale } = useLocale()
+  const currencyName = React.useMemo(() => {
+    let names: Intl.DisplayNames | null = null
+    try {
+      names = new Intl.DisplayNames([intlLocale(locale)], { type: 'currency' })
+    } catch {
+      names = null
+    }
+    return (code: string, fallback: string) => names?.of(code) ?? fallback
+  }, [locale])
+
   return (
     <Select value={value || (noneLabel ? CURRENCY_SELECT_NONE : undefined)} onValueChange={onChange}>
       <SelectTrigger id={id} aria-label={ariaLabel} className={cn(compact && 'w-[5.5rem]', className)}>
@@ -42,7 +56,9 @@ export function CurrencySelect({
         {noneLabel && <SelectItem value={CURRENCY_SELECT_NONE}>{noneLabel}</SelectItem>}
         {SUPPORTED_CURRENCIES.map((c) => (
           <SelectItem key={c.code} value={c.code}>
-            {compact ? `${c.code} ${c.symbol}` : `${c.code} · ${c.label} (${c.symbol})`}
+            {compact
+              ? `${c.code} ${c.symbol}`
+              : `${c.code} · ${currencyName(c.code, c.label)} (${c.symbol})`}
           </SelectItem>
         ))}
       </SelectContent>

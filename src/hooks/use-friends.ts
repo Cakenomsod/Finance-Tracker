@@ -15,7 +15,12 @@ import {
   updateFriendAliases,
 } from '@/lib/firestore';
 import { contactKeyForCustom, mergeContactOrder, sortByContactOrder } from '@/lib/contact-order';
+import { pickClient } from '@/lib/i18n';
 import { useAuth } from './use-auth';
+
+function notLoggedInError(): Error {
+  return new Error(pickClient({ th: 'ยังไม่ได้เข้าสู่ระบบ', en: 'Not logged in', zh: '尚未登录' }));
+}
 
 export interface Friend {
   uid: string;
@@ -239,10 +244,16 @@ export function useFriends() {
   }, [user, allContactKeys]);
 
   const addFriend = async (email: string) => {
-    if (!user) throw new Error('Not logged in');
+    if (!user) throw notLoggedInError();
     const found = await searchUserByEmail(email);
-    if (!found) throw new Error('ไม่พบผู้ใช้นี้');
-    if (found.uid === user.uid) throw new Error('ไม่สามารถเพิ่มตัวเองได้');
+    if (!found) {
+      throw new Error(pickClient({ th: 'ไม่พบผู้ใช้นี้', en: 'User not found', zh: '未找到该用户' }));
+    }
+    if (found.uid === user.uid) {
+      throw new Error(
+        pickClient({ th: 'ไม่สามารถเพิ่มตัวเองได้', en: "You can't add yourself", zh: '不能添加自己' })
+      );
+    }
     await sendFriendRequest(
       user.uid, found.uid,
       user.displayName || user.email || 'User',
@@ -254,15 +265,25 @@ export function useFriends() {
   };
 
   const addCustomFriend = async (name: string) => {
-    if (!user) throw new Error('Not logged in');
+    if (!user) throw notLoggedInError();
     const trimmed = name.trim();
-    if (!trimmed) throw new Error('กรุณากรอกชื่อ');
+    if (!trimmed) {
+      throw new Error(pickClient({ th: 'กรุณากรอกชื่อ', en: 'Please enter a name', zh: '请输入名字' }));
+    }
     const lower = trimmed.toLowerCase();
     if (customFriends.some(cf => cf.name.toLowerCase() === lower)) {
-      throw new Error('มีชื่อนี้อยู่แล้ว');
+      throw new Error(
+        pickClient({ th: 'มีชื่อนี้อยู่แล้ว', en: 'This name already exists', zh: '该名字已存在' })
+      );
     }
     if (friends.some(f => f.displayName.toLowerCase() === lower)) {
-      throw new Error('มีชื่อนี้ในรายชื่อเพื่อนแล้ว');
+      throw new Error(
+        pickClient({
+          th: 'มีชื่อนี้ในรายชื่อเพื่อนแล้ว',
+          en: 'This name is already in your friends list',
+          zh: '好友列表中已有该名字',
+        })
+      );
     }
     const id = await createCustomFriend(user.uid, trimmed);
     const key = contactKeyForCustom(id);
@@ -292,7 +313,7 @@ export function useFriends() {
   const remove = (requestId: string) => deleteFriendRequest(requestId);
 
   const saveContactAliases = async (item: FriendListItem, aliases: string[]) => {
-    if (!user) throw new Error('Not logged in');
+    if (!user) throw notLoggedInError();
     if (item.type === 'custom' && item.customId) {
       await updateCustomFriendAliases(item.customId, aliases);
     } else if (item.type === 'friend') {

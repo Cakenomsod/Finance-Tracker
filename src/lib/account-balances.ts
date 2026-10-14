@@ -1,6 +1,7 @@
 import { MoneyPool, PaymentSource, Transaction } from '@/lib/firestore-types';
 import { toDateFromFirestore } from '@/lib/datetime';
 import { getBankByCode } from '@/lib/thai-banks';
+import { clientLocale } from '@/lib/i18n';
 import { getTransactionLedgerCashAmount } from '@/lib/transaction-payment';
 import {
   AppCurrency,
@@ -37,7 +38,7 @@ export function getSourceDisplaySubtitle(source: PaymentSource): string | null {
   if (source.type === 'cash') return null;
   const bank = getBankByCode(source.bankCode);
   const parts: string[] = [];
-  if (bank) parts.push(bank.nameTh);
+  if (bank) parts.push(clientLocale() === 'th' ? bank.nameTh : bank.nameEn);
   if (source.branchName?.trim()) parts.push(source.branchName.trim());
   if (source.accountNumber?.trim()) {
     const digits = source.accountNumber.replace(/\D/g, '');

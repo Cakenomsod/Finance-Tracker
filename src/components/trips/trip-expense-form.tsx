@@ -36,6 +36,15 @@ import {
 import { toDateFromFirestore } from '@/lib/datetime'
 import { categoryLabel } from '@/lib/default-categories'
 import { useLocale } from '@/components/locale-provider'
+import { MoneyInput } from '@/components/shared/money-input'
+import type { LocalizedText } from '@/lib/i18n'
+
+const TAX_RULE_LABELS: Record<string, Omit<LocalizedText, 'th'>> = {
+  standard: { en: 'Standard (VAT 7%)', zh: '标准（增值税 7%）' },
+  exempt: { en: 'Tax-exempt', zh: '免税' },
+  food: { en: 'Food & drink (8%)', zh: '食品/饮料（8%）' },
+  goods: { en: 'General goods (10%)', zh: '一般商品（10%）' },
+}
 
 export interface TripFormDefaults {
   countryCode?: string | null
@@ -116,7 +125,7 @@ export function TripExpenseFormV2({
   onSubmit,
   onCancel,
 }: TripExpenseFormV2Props) {
-  const { locale } = useLocale()
+  const { locale, p, t: tr } = useLocale()
   const countryCode = tripDefaults?.countryCode ?? null
   const countryConfig = getCountryConfig(countryCode)
   const hasAutoTax = !!countryConfig
@@ -212,7 +221,9 @@ export function TripExpenseFormV2({
   }, [pendingImmichAssetIds])
   const [currency, setCurrency] = React.useState<TripCurrency>(defaultCurrency)
   const tripTimeZone = getTripTimeZone(countryCode, currency)
-  const tripTimeZoneLabel = tripTimeZone ? tripTimeZone.split('/').pop()?.replace('_', ' ') : 'Local'
+  const tripTimeZoneLabel = tripTimeZone
+    ? tripTimeZone.split('/').pop()?.replace('_', ' ')
+    : p({ th: 'เวลาท้องถิ่น', en: 'Local', zh: '本地时间' })
   const [receiptTaxMode, setReceiptTaxMode] = React.useState<TaxMode>(
     (initialData?.taxMode as TaxMode) || defaultTaxMode
   )
@@ -370,16 +381,28 @@ export function TripExpenseFormV2({
   } | null => {
     const errs: string[] = []
 
-    if (!description.trim()) errs.push('กรุณากรอกรายละเอียด')
-    if (!total || total <= 0) errs.push('กรุณากรอกจำนวนเงิน')
-    if (!category) errs.push('กรุณาเลือกหมวดหมู่')
+    if (!description.trim()) {
+      errs.push(p({ th: 'กรุณากรอกรายละเอียด', en: 'Enter a description', zh: '请输入描述' }))
+    }
+    if (!total || total <= 0) {
+      errs.push(p({ th: 'กรุณากรอกจำนวนเงิน', en: 'Enter an amount', zh: '请输入金额' }))
+    }
+    if (!category) {
+      errs.push(p({ th: 'กรุณาเลือกหมวดหมู่', en: 'Pick a category', zh: '请选择类别' }))
+    }
     const grossForDiscount = isReceiptActive ? receiptGross : (
       (parseFloat(subtotal) || 0) > 0 || (parseFloat(tax) || 0) > 0
         ? (parseFloat(subtotal) || 0) + (parseFloat(tax) || 0)
         : total + discountAmount
     )
     if (discountAmount > 0 && grossForDiscount > 0 && discountAmount > grossForDiscount) {
-      errs.push('ส่วนลดต้องไม่เกินยอดรวม')
+      errs.push(
+        p({
+          th: 'ส่วนลดต้องไม่เกินยอดรวม',
+          en: "Discount can't exceed the total",
+          zh: '折扣不能超过总额',
+        })
+      )
     }
 
     let finalPayers: TripExpensePayer[]
@@ -397,10 +420,16 @@ export function TripExpenseFormV2({
       finalSplitMode = 'solo'
     } else if (useItemSplit && inputMode === 'receipt') {
       if (!splitData?.payers?.length) {
-        errs.push('กรุณาระบุผู้จ่าย')
+        errs.push(p({ th: 'กรุณาระบุผู้จ่าย', en: 'Pick who paid', zh: '请选择付款人' }))
       }
       if (!isReceiptActive) {
-        errs.push('กรุณากรอกรายการสินค้าเพื่อใช้โหมดแบ่งจ่ายรายชิ้น')
+        errs.push(
+          p({
+            th: 'กรุณากรอกรายการสินค้าเพื่อใช้โหมดแบ่งจ่ายรายชิ้น',
+            en: 'Add receipt items to split by item',
+            zh: '请填写商品明细以按商品分摊',
+          })
+        )
       }
       finalPayers = splitData?.payers || []
       finalShares = tripMembers.map((m) => ({
@@ -416,7 +445,7 @@ export function TripExpenseFormV2({
       finalShares = splitData.shares
       finalSplitMode = splitData.splitMode
     } else {
-      errs.push('กรุณาตั้งค่าการแบ่งจ่าย')
+      errs.push(p({ th: 'กรุณาตั้งค่าการแบ่งจ่าย', en: 'Set up the split', zh: '请设置分摊方式' }))
       finalPayers = []
       finalShares = []
     }
@@ -501,7 +530,11 @@ export function TripExpenseFormV2({
         }
       />
       {/* Input Mode Selector */}
-      <div className="flex gap-1 rounded-lg bg-muted p-1" role="tablist" aria-label="รูปแบบการกรอก">
+      <div
+        className="flex gap-1 rounded-lg bg-muted p-1"
+        role="tablist"
+        aria-label={p({ th: 'รูปแบบการกรอก', en: 'Entry mode', zh: '录入方式' })}
+      >
         <button
           type="button"
           role="tab"
@@ -515,7 +548,7 @@ export function TripExpenseFormV2({
             inputMode === 'standard' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
           )}
         >
-          ยอดเดียว
+          {p({ th: 'ยอดเดียว', en: 'Single amount', zh: '单一金额' })}
         </button>
         <button
           type="button"
@@ -530,16 +563,19 @@ export function TripExpenseFormV2({
             inputMode === 'receipt' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
           )}
         >
-          แยกตามใบเสร็จ
+          {p({ th: 'แยกตามใบเสร็จ', en: 'Itemized receipt', zh: '收据明细' })}
         </button>
       </div>
 
       {/* Currency Selector */}
       <div className="space-y-1.5">
-        <p className="text-sm font-medium" id="trip-expense-currency-label">สกุลเงิน</p>
+        <p className="text-sm font-medium" id="trip-expense-currency-label">
+          {p({ th: 'สกุลเงิน', en: 'Currency', zh: '货币' })}
+        </p>
         {tripDefaults?.tripCurrency && (
           <p className="text-xs text-muted-foreground">
-            ค่าเริ่มต้นจากทริป: {formatCurrencySymbol(tripDefaults.tripCurrency)} ({tripDefaults.tripCurrency})
+            {p({ th: 'ค่าเริ่มต้นจากทริป:', en: 'Trip default:', zh: '行程默认：' })}{' '}
+            {formatCurrencySymbol(tripDefaults.tripCurrency)} ({tripDefaults.tripCurrency})
           </p>
         )}
         <div className="flex gap-2" role="group" aria-labelledby="trip-expense-currency-label">
@@ -550,7 +586,7 @@ export function TripExpenseFormV2({
             className="flex-1 text-xs gap-1 h-9 font-medium"
             onClick={() => setCurrency('THB')}
           >
-            ฿ บาท (THB)
+            ฿ {p({ th: 'บาท', en: 'Baht', zh: '泰铢' })} (THB)
           </Button>
           <Button
             type="button"
@@ -559,15 +595,24 @@ export function TripExpenseFormV2({
             className="flex-1 text-xs gap-1 h-9 font-medium"
             onClick={() => setCurrency('JPY')}
           >
-            ¥ เยน (JPY)
+            ¥ {p({ th: 'เยน', en: 'Yen', zh: '日元' })} (JPY)
           </Button>
         </div>
       </div>
 
       {/* Description */}
       <div className="space-y-1.5">
-        <Label htmlFor="trip-expense-description">รายละเอียด</Label>
-        <Textarea id="trip-expense-description" placeholder="เช่น อาหารมื้อเย็น, ค่าแท็กซี่..." className="resize-none"
+        <Label htmlFor="trip-expense-description">
+          {p({ th: 'รายละเอียด', en: 'Description', zh: '描述' })}
+        </Label>
+        <Textarea
+          id="trip-expense-description"
+          placeholder={p({
+            th: 'เช่น อาหารมื้อเย็น, ค่าแท็กซี่...',
+            en: 'e.g. Dinner, taxi…',
+            zh: '例如：晚餐、打车…',
+          })}
+          className="resize-none"
           value={description} onChange={e => setDescription(e.target.value)} />
       </div>
 
@@ -576,7 +621,9 @@ export function TripExpenseFormV2({
         <div className="space-y-2">
           <div className="grid grid-cols-2 gap-3 border p-3 rounded-lg bg-muted/20 sm:grid-cols-4">
             <div className="space-y-1.5">
-              <Label htmlFor="trip-expense-subtotal" className="text-xs">ราคาสินค้า ({curSymbol})</Label>
+              <Label htmlFor="trip-expense-subtotal" className="text-xs">
+                {p({ th: 'ราคาสินค้า', en: 'Subtotal', zh: '商品价格' })} ({curSymbol})
+              </Label>
               <Input
                 id="trip-expense-subtotal"
                 inputMode="decimal"
@@ -593,7 +640,9 @@ export function TripExpenseFormV2({
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="trip-expense-tax" className="text-xs">ภาษี ({curSymbol})</Label>
+              <Label htmlFor="trip-expense-tax" className="text-xs">
+                {p({ th: 'ภาษี', en: 'Tax', zh: '税费' })} ({curSymbol})
+              </Label>
               <Input
                 id="trip-expense-tax"
                 inputMode="decimal"
@@ -610,7 +659,9 @@ export function TripExpenseFormV2({
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="trip-expense-discount" className="text-xs">ส่วนลด ({curSymbol})</Label>
+              <Label htmlFor="trip-expense-discount" className="text-xs">
+                {p({ th: 'ส่วนลด', en: 'Discount', zh: '折扣' })} ({curSymbol})
+              </Label>
               <Input
                 id="trip-expense-discount"
                 inputMode="decimal"
@@ -628,7 +679,9 @@ export function TripExpenseFormV2({
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="trip-expense-total" className="text-xs font-semibold text-primary">ยอดรวม ({curSymbol})</Label>
+              <Label htmlFor="trip-expense-total" className="text-xs font-semibold text-primary">
+                {p({ th: 'ยอดรวม', en: 'Total', zh: '总额' })} ({curSymbol})
+              </Label>
               <Input
                 id="trip-expense-total"
                 inputMode="decimal"
@@ -647,13 +700,13 @@ export function TripExpenseFormV2({
           </div>
           {discountAmount > 0 && manualGross > 0 && (
             <p className="text-xs text-muted-foreground tabular-nums px-1">
-              ยอดก่อนหักส่วนลด {curSymbol}
+              {p({ th: 'ยอดก่อนหักส่วนลด', en: 'Before discount', zh: '折扣前' })} {curSymbol}
               {(
                 (parseFloat(subtotal) || 0) > 0 || (parseFloat(tax) || 0) > 0
                   ? (parseFloat(subtotal) || 0) + (parseFloat(tax) || 0)
                   : manualGross + discountAmount
               ).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              {' '}− ส่วนลด {curSymbol}
+              {' '}− {p({ th: 'ส่วนลด', en: 'discount', zh: '折扣' })} {curSymbol}
               {discountAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </p>
           )}
@@ -663,16 +716,22 @@ export function TripExpenseFormV2({
       <div className="grid grid-cols-2 gap-3">
         {inputMode === 'receipt' && (
           <div className="space-y-1.5">
-            <Label htmlFor="trip-expense-receipt-total">ยอดรวม ({curSymbol})</Label>
+            <Label htmlFor="trip-expense-receipt-total">
+              {p({ th: 'ยอดรวม', en: 'Total', zh: '总额' })} ({curSymbol})
+            </Label>
             <Input id="trip-expense-receipt-total" type="number" step="0.01" placeholder="0.00"
               disabled={true}
               value={receiptNet.toFixed(2)} />
           </div>
         )}
         <div className={cn("space-y-1.5", inputMode === 'standard' && "col-span-2")}>
-          <Label htmlFor="trip-expense-category">หมวดหมู่</Label>
+          <Label htmlFor="trip-expense-category">
+            {p({ th: 'หมวดหมู่', en: 'Category', zh: '类别' })}
+          </Label>
           <Select value={category || undefined} onValueChange={setCategory}>
-            <SelectTrigger id="trip-expense-category" className="w-full"><SelectValue placeholder="เลือก..." /></SelectTrigger>
+            <SelectTrigger id="trip-expense-category" className="w-full">
+              <SelectValue placeholder={p({ th: 'เลือก...', en: 'Select…', zh: '请选择…' })} />
+            </SelectTrigger>
             <SelectContent>
               {categoryOptions.map(c => <SelectItem key={c} value={c}>{categoryLabel(c, locale)}</SelectItem>)}
             </SelectContent>
@@ -681,12 +740,12 @@ export function TripExpenseFormV2({
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">
-          <Label htmlFor="trip-expense-date">วันที่</Label>
+          <Label htmlFor="trip-expense-date">{p({ th: 'วันที่', en: 'Date', zh: '日期' })}</Label>
           <Input id="trip-expense-date" type="date" value={date} onChange={e => setDate(e.target.value)} />
         </div>
         <div className="space-y-1.5">
           <div className="flex items-center justify-between">
-            <Label htmlFor="trip-expense-time">เวลา</Label>
+            <Label htmlFor="trip-expense-time">{p({ th: 'เวลา', en: 'Time', zh: '时间' })}</Label>
             {tripTimeZone && (
               <span className="text-xs text-muted-foreground">{tripTimeZoneLabel}</span>
             )}
@@ -700,7 +759,9 @@ export function TripExpenseFormV2({
         <div className="space-y-4 border rounded-lg p-3 bg-muted/20 overflow-hidden">
           <div className="flex flex-col gap-2 pb-1 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-              <h4 className="text-xs font-semibold text-muted-foreground">รายการในใบเสร็จ</h4>
+              <h4 className="text-xs font-semibold text-muted-foreground">
+                {p({ th: 'รายการในใบเสร็จ', en: 'Receipt items', zh: '收据明细' })}
+              </h4>
               <div className="inline-flex w-full rounded-lg border p-0.5 bg-muted/60 text-xs select-none sm:w-auto">
                 <button
                   type="button"
@@ -712,7 +773,7 @@ export function TripExpenseFormV2({
                       : "text-muted-foreground hover:text-foreground"
                   )}
                 >
-                  ไม่รวมภาษี
+                  {p({ th: 'ไม่รวมภาษี', en: 'Excl. tax', zh: '不含税' })}
                 </button>
                 <button
                   type="button"
@@ -724,7 +785,7 @@ export function TripExpenseFormV2({
                       : "text-muted-foreground hover:text-foreground"
                   )}
                 >
-                  รวมภาษีแล้ว
+                  {p({ th: 'รวมภาษีแล้ว', en: 'Incl. tax', zh: '已含税' })}
                 </button>
               </div>
             </div>
@@ -736,7 +797,7 @@ export function TripExpenseFormV2({
               onClick={() => setReceiptItems([...receiptItems, emptyReceiptItem(tripMembers, countryCode)])}
               className="h-7 text-xs gap-1"
             >
-              <Plus className="size-3" /> Add Product
+              <Plus className="size-3" /> {p({ th: 'เพิ่มสินค้า', en: 'Add item', zh: '添加商品' })}
             </Button>
           </div>
 
@@ -749,7 +810,7 @@ export function TripExpenseFormV2({
                 <div key={idx} className="border-b pb-3 last:border-b-0 last:pb-0 pt-2 space-y-2">
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto_auto] sm:items-center">
                     <Input
-                      placeholder="Product Name"
+                      placeholder={p({ th: 'ชื่อสินค้า', en: 'Item name', zh: '商品名称' })}
                       className="h-9 text-xs"
                       value={item.name}
                       onChange={e => {
@@ -777,26 +838,31 @@ export function TripExpenseFormV2({
                         {(item.category && !categories.includes(item.category)
                           ? [...categories, item.category]
                           : categories
-                        ).map(c => <SelectItem key={c} value={c} className="text-xs">{c}</SelectItem>)}
+                        ).map(c => (
+                          <SelectItem key={c} value={c} className="text-xs">
+                            {categoryLabel(c, locale)}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
 
-                    <div className="relative">
-                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">
-                        {curSymbol}
-                      </span>
-                      <Input
-                        type="number"
-                        placeholder={receiptTaxMode === 'exclusive' ? "Excl. Tax" : "Incl. Tax"}
-                        className="h-9 pl-6 pr-1 text-xs font-medium"
-                        value={item.price}
-                        onChange={e => {
-                          const next = [...receiptItems]
-                          next[idx].price = e.target.value
-                          setReceiptItems(next)
-                        }}
-                      />
-                    </div>
+                    <MoneyInput
+                      currencySymbol={curSymbol}
+                      wrapperClassName="sm:w-32"
+                      placeholder={
+                        receiptTaxMode === 'exclusive'
+                          ? p({ th: 'ไม่รวมภาษี', en: 'Excl. tax', zh: '不含税' })
+                          : p({ th: 'รวมภาษี', en: 'Incl. tax', zh: '含税' })
+                      }
+                      aria-label={p({ th: 'ราคา', en: 'Price', zh: '价格' })}
+                      className="h-9 pr-1 text-base sm:text-xs font-medium"
+                      value={item.price}
+                      onChange={e => {
+                        const next = [...receiptItems]
+                        next[idx].price = e.target.value
+                        setReceiptItems(next)
+                      }}
+                    />
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
@@ -819,7 +885,11 @@ export function TripExpenseFormV2({
                         <SelectContent>
                           {taxRules.map(rule => (
                             <SelectItem key={rule.id} value={rule.id} className="text-xs">
-                              {rule.labelTh}
+                              {locale === 'th'
+                                ? rule.labelTh
+                                : TAX_RULE_LABELS[rule.id]
+                                  ? p({ th: rule.labelTh, ...TAX_RULE_LABELS[rule.id] })
+                                  : rule.label}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -830,13 +900,15 @@ export function TripExpenseFormV2({
                       ={curSymbol}{itemTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       {hasAutoTax && t > 0 && (
                         <span className="ml-1 text-xs font-normal text-muted-foreground/80">
-                          (ภาษี {curSymbol}{t.toFixed(0)})
+                          ({p({ th: 'ภาษี', en: 'tax', zh: '税' })} {curSymbol}{t.toFixed(0)})
                         </span>
                       )}
                     </span>
 
                     <div className="flex flex-1 flex-wrap items-center gap-1 sm:justify-end">
-                      <span className="text-xs text-muted-foreground">หาร:</span>
+                      <span className="text-xs text-muted-foreground">
+                        {p({ th: 'หาร:', en: 'Split:', zh: '分摊：' })}
+                      </span>
                       {tripMembers.map(m => {
                         const included = (item.splitWith || []).includes(m.key)
                         const initials = m.displayName.split(' ').map((w) => w[0]).join('').toUpperCase().substring(0, 2)
@@ -845,6 +917,8 @@ export function TripExpenseFormV2({
                             key={m.key}
                             type="button"
                             title={m.displayName}
+                            aria-label={m.displayName}
+                            aria-pressed={included}
                             onClick={() => {
                               const next = [...receiptItems]
                               const currentSplit = next[idx].splitWith || []
@@ -875,6 +949,7 @@ export function TripExpenseFormV2({
                         size="icon"
                         className="size-8 shrink-0 hover:bg-destructive/10 hover:text-destructive"
                         onClick={() => setReceiptItems(receiptItems.filter((_, i) => i !== idx))}
+                        aria-label={p({ th: 'ลบรายการ', en: 'Remove item', zh: '删除商品' })}
                       >
                         <Minus className="size-4" />
                       </Button>
@@ -892,78 +967,70 @@ export function TripExpenseFormV2({
             onClick={() => setReceiptItems([...receiptItems, emptyReceiptItem(tripMembers, countryCode)])}
             className="h-8 w-full gap-1 border-dashed text-xs"
           >
-            <Plus className="size-3" /> เพิ่มรายการ
+            <Plus className="size-3" /> {p({ th: 'เพิ่มรายการ', en: 'Add item', zh: '添加商品' })}
           </Button>
 
           {/* Receipt Level Summary & Tax Breakdown */}
           <div className="grid grid-cols-1 gap-3 border-t pt-4 mt-2 sm:grid-cols-2 lg:grid-cols-4">
             <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">ราคาสินค้ารวม</Label>
-              <div className="relative">
-                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">
-                  {curSymbol}
-                </span>
-                <Input
-                  type="number"
-                  disabled
-                  className="pl-6 h-9 text-xs bg-muted/50 font-medium tabular-nums"
-                  value={totalBaseAmount.toFixed(2)}
-                />
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground font-semibold text-primary">
-                {hasAutoTax ? 'ภาษีรวม (คำนวณอัตโนมัติ)' : 'ภาษีรวมทั้งใบเสร็จ (Tax)'}
+              <Label htmlFor="trip-receipt-subtotal" className="text-xs text-muted-foreground">
+                {p({ th: 'ราคาสินค้ารวม', en: 'Items subtotal', zh: '商品合计' })}
               </Label>
-              <div className="relative">
-                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">
-                  {curSymbol}
-                </span>
-                <Input
-                  type="number"
-                  step="0.01"
-                  placeholder="0.00"
-                  disabled={hasAutoTax}
-                  className="pl-6 h-9 text-xs font-semibold border-primary/40 focus-visible:ring-primary disabled:opacity-80"
-                  value={hasAutoTax ? totalTaxAmount.toFixed(2) : receiptTax}
-                  onChange={e => !hasAutoTax && setReceiptTax(e.target.value)}
-                />
-              </div>
+              <MoneyInput
+                id="trip-receipt-subtotal"
+                currencySymbol={curSymbol}
+                disabled
+                className="h-9 text-xs bg-muted/50 font-medium"
+                value={totalBaseAmount.toFixed(2)}
+              />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">ส่วนลด</Label>
-              <div className="relative">
-                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">
-                  {curSymbol}
-                </span>
-                <Input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  placeholder="0.00"
-                  className="pl-6 h-9 text-xs font-medium tabular-nums"
-                  value={discount}
-                  onChange={e => setDiscount(e.target.value)}
-                />
-              </div>
+              <Label htmlFor="trip-receipt-tax" className="text-xs text-muted-foreground font-semibold text-primary">
+                {hasAutoTax
+                  ? p({ th: 'ภาษีรวม (คำนวณอัตโนมัติ)', en: 'Total tax (auto)', zh: '税费合计（自动计算）' })
+                  : p({ th: 'ภาษีรวมทั้งใบเสร็จ', en: 'Receipt tax', zh: '整张收据税费' })}
+              </Label>
+              <MoneyInput
+                id="trip-receipt-tax"
+                currencySymbol={curSymbol}
+                step="0.01"
+                placeholder="0.00"
+                disabled={hasAutoTax}
+                className="h-9 text-base sm:text-xs font-semibold border-primary/40 focus-visible:ring-primary disabled:opacity-80"
+                value={hasAutoTax ? totalTaxAmount.toFixed(2) : receiptTax}
+                onChange={e => !hasAutoTax && setReceiptTax(e.target.value)}
+              />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground font-bold text-foreground">ยอดรวมสุทธิ</Label>
-              <div className="relative">
-                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">
-                  {curSymbol}
-                </span>
-                <Input
-                  type="number"
-                  disabled
-                  className="pl-6 h-9 text-xs bg-muted/30 font-bold tabular-nums text-foreground border-muted-foreground/30"
-                  value={receiptNet.toFixed(2)}
-                />
-              </div>
+              <Label htmlFor="trip-receipt-discount" className="text-xs text-muted-foreground">
+                {p({ th: 'ส่วนลด', en: 'Discount', zh: '折扣' })}
+              </Label>
+              <MoneyInput
+                id="trip-receipt-discount"
+                currencySymbol={curSymbol}
+                step="0.01"
+                min="0"
+                placeholder="0.00"
+                className="h-9 text-base sm:text-xs font-medium"
+                value={discount}
+                onChange={e => setDiscount(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="trip-receipt-net" className="text-xs text-muted-foreground font-bold text-foreground">
+                {p({ th: 'ยอดรวมสุทธิ', en: 'Net total', zh: '实付总额' })}
+              </Label>
+              <MoneyInput
+                id="trip-receipt-net"
+                currencySymbol={curSymbol}
+                disabled
+                className="h-9 text-xs bg-muted/30 font-bold text-foreground border-muted-foreground/30"
+                value={receiptNet.toFixed(2)}
+              />
               {discountAmount > 0 && receiptGross > 0 && (
                 <p className="text-xs text-muted-foreground tabular-nums">
-                  รวม {curSymbol}{receiptGross.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  {' '}− ส่วนลด {curSymbol}{discountAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  {p({ th: 'รวม', en: 'Gross', zh: '合计' })} {curSymbol}{receiptGross.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  {' '}− {p({ th: 'ส่วนลด', en: 'discount', zh: '折扣' })} {curSymbol}{discountAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </p>
               )}
               {homeHint(receiptNet) && (
@@ -978,11 +1045,21 @@ export function TripExpenseFormV2({
       <div className="space-y-3">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
-            <Label htmlFor="trip-expense-split">หารกับเพื่อนในทริป</Label>
+            <Label htmlFor="trip-expense-split">
+              {p({ th: 'หารกับเพื่อนในทริป', en: 'Split with trip members', zh: '与行程成员分摊' })}
+            </Label>
             <p className="text-xs text-muted-foreground">
               {splitEnabled
-                ? `หารกับ ${tripMembers.length} คนเป็นค่าเริ่มต้น — เปลี่ยนได้ด้านล่าง`
-                : 'ปิดไว้ = คุณออกเองทั้งหมด'}
+                ? p({
+                    th: `หารกับ ${tripMembers.length} คนเป็นค่าเริ่มต้น — เปลี่ยนได้ด้านล่าง`,
+                    en: `Split between ${tripMembers.length} people by default — change below`,
+                    zh: `默认由 ${tripMembers.length} 人分摊——可在下方修改`,
+                  })
+                : p({
+                    th: 'ปิดไว้ = คุณออกเองทั้งหมด',
+                    en: 'Off — you pay the whole thing',
+                    zh: '关闭 = 全部由你支付',
+                  })}
             </p>
           </div>
           <Switch
@@ -996,7 +1073,11 @@ export function TripExpenseFormV2({
         </div>
 
         {splitEnabled && inputMode === 'receipt' && (
-          <div role="group" aria-label="วิธีหารใบเสร็จ" className="grid grid-cols-2 gap-2">
+          <div
+            role="group"
+            aria-label={p({ th: 'วิธีหารใบเสร็จ', en: 'How to split the receipt', zh: '收据分摊方式' })}
+            className="grid grid-cols-2 gap-2"
+          >
             <button
               type="button"
               aria-pressed={useItemSplit}
@@ -1008,7 +1089,7 @@ export function TripExpenseFormV2({
                   : 'border-border hover:border-primary/50'
               )}
             >
-              หารตามรายการสินค้า
+              {p({ th: 'หารตามรายการสินค้า', en: 'Split by item', zh: '按商品分摊' })}
             </button>
             <button
               type="button"
@@ -1021,7 +1102,7 @@ export function TripExpenseFormV2({
                   : 'border-border hover:border-primary/50'
               )}
             >
-              หารทั้งบิล
+              {p({ th: 'หารทั้งบิล', en: 'Split whole bill', zh: '整单分摊' })}
             </button>
           </div>
         )}
@@ -1042,7 +1123,9 @@ export function TripExpenseFormV2({
             />
             {useItemSplit && inputMode === 'receipt' && (
               <div className="space-y-1.5">
-                <p className="text-xs text-muted-foreground font-medium">สรุปการหารรายชิ้น:</p>
+                <p className="text-xs text-muted-foreground font-medium">
+                  {p({ th: 'สรุปการหารรายชิ้น:', en: 'Per-item split summary:', zh: '按商品分摊汇总：' })}
+                </p>
                 <div className="space-y-1 bg-muted/30 p-2.5 rounded-lg text-xs text-muted-foreground">
                   {tripMembers.map(m => (
                     <div key={m.key} className="flex justify-between gap-2">
@@ -1056,7 +1139,13 @@ export function TripExpenseFormV2({
           </>
         )}
         {splitEnabled && total <= 0 && (
-          <p className="text-xs text-muted-foreground">กรอกจำนวนเงินก่อนเพื่อตั้งค่าการแบ่งจ่าย</p>
+          <p className="text-xs text-muted-foreground">
+            {p({
+              th: 'กรอกจำนวนเงินก่อนเพื่อตั้งค่าการแบ่งจ่าย',
+              en: 'Enter an amount first to set up the split',
+              zh: '请先输入金额再设置分摊',
+            })}
+          </p>
         )}
       </div>
 
@@ -1071,8 +1160,10 @@ export function TripExpenseFormV2({
       )}
 
       <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end">
-        <Button type="button" variant="outline" onClick={onCancel}>ยกเลิก</Button>
-        <Button type="submit" disabled={submitting}>{submitting ? 'กำลังบันทึก...' : 'บันทึก'}</Button>
+        <Button type="button" variant="outline" onClick={onCancel}>{tr('common.cancel')}</Button>
+        <Button type="submit" disabled={submitting}>
+          {submitting ? tr('common.saving') : tr('common.save')}
+        </Button>
       </div>
     </form>
   )

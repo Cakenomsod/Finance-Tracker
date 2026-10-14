@@ -8,6 +8,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { TripExpenseFormV2 } from '@/components/trips/trip-expense-form'
+import { useLocale } from '@/components/locale-provider'
 import { Trip, TripExpense } from '@/lib/firestore-types'
 import { updateTripExpenseWithTransaction } from '@/lib/sync-expense-transaction'
 import { getTripSelfMemberKey } from '@/lib/trip-balance'
@@ -27,6 +28,7 @@ export function TripExpenseDialog({
   trip,
   myUserId,
 }: TripExpenseDialogProps) {
+  const { p } = useLocale()
   if (!expense || !trip) return null
 
   const memberObjects = (trip.members || []).map((key) => ({
@@ -41,9 +43,13 @@ export function TripExpenseDialog({
         className="max-h-[min(90vh,90dvh)] w-[calc(100vw-1rem)] overflow-y-auto overflow-x-hidden p-4 max-sm:top-[4vh] max-sm:translate-y-0 sm:max-w-[680px] sm:p-6"
       >
         <DialogHeader>
-          <DialogTitle>Trip expense</DialogTitle>
+          <DialogTitle>{p({ th: 'รายจ่ายทริป', en: 'Trip expense', zh: '行程支出' })}</DialogTitle>
           <DialogDescription>
-            Review and edit this trip expense. Saving keeps the linked transaction in sync.
+            {p({
+              th: 'ตรวจสอบและแก้ไขรายจ่ายทริปนี้ การบันทึกจะซิงก์กับรายการที่เชื่อมไว้ด้วย',
+              en: 'Review and edit this trip expense. Saving keeps the linked transaction in sync.',
+              zh: '查看并编辑此行程支出。保存后会同步更新关联的交易记录。',
+            })}
           </DialogDescription>
         </DialogHeader>
         <TripExpenseFormV2

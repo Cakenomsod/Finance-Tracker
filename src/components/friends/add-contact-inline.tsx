@@ -5,6 +5,7 @@ import { UserPlus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useFriends } from '@/hooks/use-friends'
+import { useLocale } from '@/components/locale-provider'
 import { cn } from '@/lib/utils'
 
 interface AddContactInlineProps {
@@ -17,10 +18,12 @@ interface AddContactInlineProps {
 /** Creates a custom contact without leaving the current form. */
 export function AddContactInline({
   onAdded,
-  label = 'เพิ่มรายชื่อใหม่',
+  label: labelProp,
   className,
   disabled,
 }: AddContactInlineProps) {
+  const { p, t } = useLocale()
+  const label = labelProp ?? p({ th: 'เพิ่มรายชื่อใหม่', en: 'Add new contact', zh: '添加新联系人' })
   const { addCustomFriend } = useFriends()
   const [open, setOpen] = React.useState(false)
   const [name, setName] = React.useState('')
@@ -31,7 +34,7 @@ export function AddContactInline({
   const submit = async () => {
     const trimmed = name.trim()
     if (!trimmed) {
-      setError('กรุณากรอกชื่อ')
+      setError(p({ th: 'กรุณากรอกชื่อ', en: 'Please enter a name', zh: '请输入名字' }))
       return
     }
     setSaving(true)
@@ -42,7 +45,11 @@ export function AddContactInline({
       setName('')
       setOpen(false)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'เพิ่มรายชื่อไม่สำเร็จ')
+      setError(
+        err instanceof Error
+          ? err.message
+          : p({ th: 'เพิ่มรายชื่อไม่สำเร็จ', en: "Couldn't add contact", zh: '添加联系人失败' })
+      )
     } finally {
       setSaving(false)
     }
@@ -67,14 +74,14 @@ export function AddContactInline({
   return (
     <div className={cn('space-y-1', className)}>
       <label htmlFor={inputId} className="sr-only">
-        ชื่อรายชื่อใหม่
+        {p({ th: 'ชื่อรายชื่อใหม่', en: 'New contact name', zh: '新联系人名字' })}
       </label>
       <div className="flex gap-1.5">
         <Input
           id={inputId}
           autoFocus
           value={name}
-          placeholder="ชื่อเพื่อน เช่น บี"
+          placeholder={p({ th: 'ชื่อเพื่อน เช่น บี', en: "Friend's name, e.g. Bee", zh: '好友名字，例如：小明' })}
           className="h-9 min-w-0 flex-1 text-sm"
           aria-invalid={Boolean(error)}
           onChange={(e) => {
@@ -95,7 +102,9 @@ export function AddContactInline({
           }}
         />
         <Button type="button" size="sm" className="h-9" disabled={saving} onClick={() => void submit()}>
-          {saving ? 'กำลังเพิ่ม…' : 'เพิ่ม'}
+          {saving
+            ? p({ th: 'กำลังเพิ่ม…', en: 'Adding…', zh: '添加中…' })
+            : p({ th: 'เพิ่ม', en: 'Add', zh: '添加' })}
         </Button>
         <Button
           type="button"
@@ -108,7 +117,7 @@ export function AddContactInline({
             setError(null)
           }}
         >
-          ยกเลิก
+          {t('common.cancel')}
         </Button>
       </div>
       {error ? (
@@ -116,7 +125,13 @@ export function AddContactInline({
           {error}
         </p>
       ) : (
-        <p className="text-xs text-muted-foreground">เพื่อนไม่ต้องมีบัญชีก็หารได้</p>
+        <p className="text-xs text-muted-foreground">
+          {p({
+            th: 'เพื่อนไม่ต้องมีบัญชีก็หารได้',
+            en: "Friends don't need an account to split bills.",
+            zh: '好友无需账户也能分账。',
+          })}
+        </p>
       )}
     </div>
   )

@@ -1,5 +1,7 @@
 /** Client-side resize/compress to WebP (JPEG/PNG fallbacks) so Immich uploads finish faster over tunnels. */
 
+import { pickClient } from '@/lib/i18n'
+
 const MAX_EDGE = 1600
 const WEBP_QUALITY = 0.8
 const JPEG_QUALITY = 0.82
@@ -39,7 +41,12 @@ function canvasToBlob(
     canvas.toBlob(
       (blob) => {
         if (blob) resolve(blob)
-        else reject(new Error('ไม่สามารถบีบอัดรูปได้'))
+        else
+          reject(
+            new Error(
+              pickClient({ th: 'ไม่สามารถบีบอัดรูปได้', en: "Couldn't compress the image", zh: '无法压缩图片' })
+            )
+          )
       },
       type,
       quality

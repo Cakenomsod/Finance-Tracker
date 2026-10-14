@@ -5,6 +5,9 @@ export async function getAuthHeaders(
   extra?: HeadersInit
 ): Promise<Headers> {
   const headers = new Headers(extra)
+  if (typeof document !== 'undefined' && !headers.has('x-app-locale')) {
+    headers.set('x-app-locale', document.documentElement.lang || 'th')
+  }
   const user = auth.currentUser
   if (user) {
     const token = await user.getIdToken()

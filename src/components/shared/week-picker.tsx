@@ -25,6 +25,8 @@ import {
   isSameWeekSelection,
   type WeekSelection,
 } from '@/lib/insight-periods'
+import { useLocale } from '@/components/locale-provider'
+import { intlLocale } from '@/lib/i18n'
 
 export function WeekPicker({
   value,
@@ -32,7 +34,7 @@ export function WeekPicker({
   className,
   size = 'default',
   weeksWithData,
-  locale = 'th-TH',
+  locale: localeOverride,
 }: {
   value: WeekSelection
   onChange: (value: WeekSelection) => void
@@ -40,8 +42,11 @@ export function WeekPicker({
   size?: 'default' | 'sm'
   /** When set, only these `YYYY-Www` weeks are selectable. */
   weeksWithData?: Set<string>
+  /** BCP-47 tag; defaults to the app locale. */
   locale?: string
 }) {
+  const { locale: appLocale, p } = useLocale()
+  const locale = localeOverride ?? intlLocale(appLocale)
   const [open, setOpen] = React.useState(false)
   const [pickerYear, setPickerYear] = React.useState(value.year)
   const [yearDirection, setYearDirection] = React.useState<'prev' | 'next'>('next')
@@ -96,7 +101,7 @@ export function WeekPicker({
         className={cn(size === 'sm' ? 'size-7' : 'size-8')}
         onClick={goToPrevWeek}
         disabled={!prevWeek}
-        aria-label="สัปดาห์ก่อนหน้า"
+        aria-label={p({ th: 'สัปดาห์ก่อนหน้า', en: 'Previous week', zh: '上一周' })}
       >
         <ChevronLeft className="size-4" />
       </Button>
@@ -124,7 +129,7 @@ export function WeekPicker({
               size="icon"
               className="size-7"
               onClick={goToPrevYear}
-              aria-label="ปีก่อนหน้า"
+              aria-label={p({ th: 'ปีก่อนหน้า', en: 'Previous year', zh: '上一年' })}
             >
               <ChevronLeft className="size-4" />
             </Button>
@@ -145,7 +150,7 @@ export function WeekPicker({
               size="icon"
               className="size-7"
               onClick={goToNextYear}
-              aria-label="ปีถัดไป"
+              aria-label={p({ th: 'ปีถัดไป', en: 'Next year', zh: '下一年' })}
             >
               <ChevronRight className="size-4" />
             </Button>
@@ -185,8 +190,12 @@ export function WeekPicker({
                   aria-disabled={!hasData}
                   aria-label={
                     hasData
-                      ? `สัปดาห์ ${week}`
-                      : `สัปดาห์ ${week} — ไม่มีข้อมูล`
+                      ? p({ th: `สัปดาห์ ${week}`, en: `Week ${week}`, zh: `第 ${week} 周` })
+                      : p({
+                          th: `สัปดาห์ ${week} — ไม่มีข้อมูล`,
+                          en: `Week ${week} — no data`,
+                          zh: `第 ${week} 周 — 无数据`,
+                        })
                   }
                   onClick={() => {
                     if (!hasData) return
@@ -211,7 +220,7 @@ export function WeekPicker({
                 setOpen(false)
               }}
             >
-              กลับไปสัปดาห์ปัจจุบัน
+              {p({ th: 'กลับไปสัปดาห์ปัจจุบัน', en: 'Back to this week', zh: '回到本周' })}
             </Button>
           )}
         </PopoverContent>
@@ -224,7 +233,7 @@ export function WeekPicker({
         className={cn(size === 'sm' ? 'size-7' : 'size-8')}
         onClick={goToNextWeek}
         disabled={!nextWeek}
-        aria-label="สัปดาห์ถัดไป"
+        aria-label={p({ th: 'สัปดาห์ถัดไป', en: 'Next week', zh: '下一周' })}
       >
         <ChevronRight className="size-4" />
       </Button>

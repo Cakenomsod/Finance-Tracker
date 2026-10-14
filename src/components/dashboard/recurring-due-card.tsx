@@ -19,11 +19,13 @@ import {
 } from '@/lib/recurring-expenses';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
+import { intlLocale } from '@/lib/i18n';
+import { categoryLabel } from '@/lib/default-categories';
 
 export function RecurringDueCard() {
   const { expenses, loading, confirmPayment, skipCycle } = useRecurringExpenses();
   const { currency } = useUserSettings();
-  const { locale, t } = useLocale();
+  const { locale, t, p } = useLocale();
   const [actionId, setActionId] = React.useState<string | null>(null);
   const [snoozeTick, setSnoozeTick] = React.useState(0);
 
@@ -48,7 +50,7 @@ export function RecurringDueCard() {
       return t('dashboard.recurringDueToday');
     }
 
-    const formatted = dueDate.toLocaleDateString(locale === 'th' ? 'th-TH' : 'en-US', {
+    const formatted = dueDate.toLocaleDateString(intlLocale(locale), {
       month: 'short',
       day: 'numeric',
     });
@@ -63,7 +65,13 @@ export function RecurringDueCard() {
       toast.success(t('dashboard.recurringConfirmed'));
     } catch (err) {
       console.error('Confirm recurring payment failed:', err);
-      toast.error(locale === 'th' ? 'บันทึกไม่สำเร็จ ลองใหม่อีกครั้ง' : 'Could not save the payment — try again');
+      toast.error(
+        p({
+          th: 'บันทึกไม่สำเร็จ ลองใหม่อีกครั้ง',
+          en: 'Could not save the payment — try again',
+          zh: '保存失败，请重试',
+        })
+      );
     } finally {
       setActionId(null);
     }
@@ -76,7 +84,14 @@ export function RecurringDueCard() {
       await skipCycle(expense);
       toast.success(t('dashboard.recurringSkipped'));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to skip cycle');
+      console.error('Skip recurring cycle failed:', err);
+      toast.error(
+        p({
+          th: 'ข้ามรอบไม่สำเร็จ ลองใหม่อีกครั้ง',
+          en: 'Could not skip this cycle — try again',
+          zh: '跳过本期失败，请重试',
+        })
+      );
     } finally {
       setActionId(null);
     }
@@ -127,7 +142,7 @@ export function RecurringDueCard() {
                     <span className="font-semibold text-foreground tabular-nums">
                       {formatMoney(expense.amount, currency)}
                     </span>
-                    {expense.category && <span>· {expense.category}</span>}
+                    {expense.category && <span>· {categoryLabel(expense.category, locale)}</span>}
                     <Badge
                       variant="outline"
                       className={cn(
@@ -154,7 +169,11 @@ export function RecurringDueCard() {
                     variant="outline"
                     disabled={busy}
                     onClick={() => handleSkip(expense)}
-                    aria-label={busy ? 'Skipping…' : t('dashboard.skipCycle')}
+                    aria-label={
+                      busy
+                        ? p({ th: 'กำลังข้ามรอบ…', en: 'Skipping…', zh: '正在跳过…' })
+                        : t('dashboard.skipCycle')
+                    }
                   >
                     {busy ? (
                       <Loader2 className="size-4 animate-spin" aria-hidden />
@@ -169,7 +188,11 @@ export function RecurringDueCard() {
                     size="sm"
                     disabled={busy}
                     onClick={() => handleConfirm(expense)}
-                    aria-label={busy ? 'Confirming…' : t('dashboard.confirmPaid')}
+                    aria-label={
+                      busy
+                        ? p({ th: 'กำลังบันทึก…', en: 'Confirming…', zh: '正在确认…' })
+                        : t('dashboard.confirmPaid')
+                    }
                   >
                     {busy ? (
                       <Loader2 className="size-4 animate-spin" aria-hidden />

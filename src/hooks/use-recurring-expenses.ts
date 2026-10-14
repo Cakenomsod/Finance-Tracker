@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { collection, onSnapshot, query, where, Timestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { pickClient } from '@/lib/i18n';
 import { useAuth } from '@/hooks/use-auth';
 import { RecurringExpense } from '@/lib/firestore-types';
 import {
@@ -16,6 +17,10 @@ import {
   getRecurringDueDate,
   normalizeFrequencyInterval,
 } from '@/lib/recurring-expenses';
+
+function notLoggedInMessage(): string {
+  return pickClient({ th: 'ยังไม่ได้เข้าสู่ระบบ', en: 'Not logged in', zh: '尚未登录' });
+}
 
 export function useRecurringExpenses() {
   const { user } = useAuth();
@@ -50,7 +55,7 @@ export function useRecurringExpenses() {
 
   const addExpense = useCallback(
     async (data: Omit<RecurringExpense, 'id' | 'createdAt' | 'userId'>) => {
-      if (!user) throw new Error('Not logged in');
+      if (!user) throw new Error(notLoggedInMessage());
       return createRecurringExpense({ ...data, userId: user.uid });
     },
     [user]
@@ -82,7 +87,7 @@ export function useRecurringExpenses() {
 
   const confirmPayment = useCallback(
     async (expense: RecurringExpense, paidBy: string, currency = 'THB') => {
-      if (!user) throw new Error('Not logged in');
+      if (!user) throw new Error(notLoggedInMessage());
       if (!expense.id) throw new Error('Missing recurring expense id');
 
       await createTransaction({

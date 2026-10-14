@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { pickClient } from '@/lib/i18n';
 import { useAuth } from '@/hooks/use-auth';
 import { PaymentSource } from '@/lib/firestore-types';
 import {
@@ -23,6 +24,10 @@ function sortSources(items: PaymentSource[]): PaymentSource[] {
     if (a.type !== 'cash' && b.type === 'cash') return -1;
     return a.name.localeCompare(b.name, 'th');
   });
+}
+
+function notLoggedInMessage(): string {
+  return pickClient({ th: 'ยังไม่ได้เข้าสู่ระบบ', en: 'Not logged in', zh: '尚未登录' });
 }
 
 export function usePaymentSources() {
@@ -86,7 +91,7 @@ export function usePaymentSources() {
 
   const addSource = useCallback(
     async (data: Omit<PaymentSource, 'id' | 'createdAt' | 'userId'>) => {
-      if (!user) throw new Error('Not logged in');
+      if (!user) throw new Error(notLoggedInMessage());
       if (data.isDefault) {
         await clearDefaultPaymentSources(user.uid);
       }
@@ -101,7 +106,7 @@ export function usePaymentSources() {
 
   const editSource = useCallback(
     async (id: string, data: Partial<Omit<PaymentSource, 'id' | 'createdAt' | 'userId'>>) => {
-      if (!user) throw new Error('Not logged in');
+      if (!user) throw new Error(notLoggedInMessage());
       if (data.isDefault) {
         await clearDefaultPaymentSources(user.uid, id);
       }
@@ -120,7 +125,7 @@ export function usePaymentSources() {
 
   const setDefaultSource = useCallback(
     async (id: string) => {
-      if (!user) throw new Error('Not logged in');
+      if (!user) throw new Error(notLoggedInMessage());
       await clearDefaultPaymentSources(user.uid, id);
       return updatePaymentSource(id, { isDefault: true });
     },

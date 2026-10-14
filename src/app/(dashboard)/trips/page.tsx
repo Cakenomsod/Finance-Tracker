@@ -72,6 +72,7 @@ import { saveTripExpenseWithTransaction } from '@/lib/sync-expense-transaction'
 import { getTripSelfMemberKey } from '@/lib/trip-balance'
 import { Timestamp } from 'firebase/firestore'
 import { useLocale } from '@/components/locale-provider'
+import { intlLocale } from '@/lib/i18n'
 
 // --- Settlement calculation ---
 interface Settlement {
@@ -193,7 +194,7 @@ function TripCard({
   const router = useRouter()
   const { user } = useAuth()
   const { p, locale } = useLocale()
-  const dateLocale = locale === 'th' ? 'th-TH' : locale === 'zh' ? 'zh-CN' : 'en-US'
+  const dateLocale = intlLocale(locale)
 
   // --- 1. Legacy Calculations ---
   const members = trip.members || []
@@ -253,7 +254,10 @@ function TripCard({
   })
 
   // --- 4. Combine participants ---
-  const getDisplayName = (key: string) => trip.memberProfiles?.[key]?.displayName || key
+  const getDisplayName = (key: string) =>
+    trip.memberProfiles?.[key]?.displayName ||
+    (key === 'Me' ? p({ th: 'ฉัน', en: 'Me', zh: '我' }) : key)
+  const homeSymbol = formatCurrencySymbol((trip.homeCurrency || 'THB') as TripCurrencyCode)
 
   const participants = members.map((member) => {
     const legacyPaid = paid[member] || 0
@@ -403,13 +407,14 @@ function TripCard({
 
       <CardContent className="space-y-4">
         {/* Ledger totals — flat, not nested cards */}
-        <div className="flex items-end justify-between gap-4 border-y border-border/80 py-3">
+        <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2 border-y border-border/80 py-3">
           <div className="min-w-0">
             <p className="text-xs font-medium text-muted-foreground">
               {p({ th: 'ค่าใช้จ่ายรวม', en: 'Total expenses', zh: '总支出' })}
             </p>
-            <p className="mt-0.5 text-xl font-semibold tracking-tight tabular-nums sm:text-2xl">
-              ฿{totalExpenses.toLocaleString()}
+            <p className="mt-0.5 break-words text-xl font-semibold tracking-tight tabular-nums sm:text-2xl">
+              {homeSymbol}
+              {totalExpenses.toLocaleString()}
             </p>
             {expenseCount > 0 && (
               <p className="mt-0.5 text-xs text-muted-foreground tabular-nums">
@@ -422,7 +427,7 @@ function TripCard({
             )}
           </div>
           {meParticipant && (
-            <div className="shrink-0 text-right">
+            <div className="ml-auto min-w-0 text-right">
               <p className="text-xs font-medium text-muted-foreground">
                 {p({ th: 'ยอดของคุณ', en: 'Your balance', zh: '你的余额' })}
               </p>
@@ -436,7 +441,9 @@ function TripCard({
                       : 'text-foreground'
                 )}
               >
-                {myNetBalance > 0 ? '+' : ''}฿{myNetBalance.toLocaleString()}
+                {myNetBalance > 0 ? '+' : myNetBalance < 0 ? '−' : ''}
+                {homeSymbol}
+                {Math.abs(myNetBalance).toLocaleString()}
               </p>
               <p className="mt-0.5 text-xs text-muted-foreground">
                 {myNetBalance > 0
@@ -505,7 +512,8 @@ function TripCard({
                     </span>
                   </div>
                   <span className="shrink-0 font-semibold tabular-nums">
-                    ฿{settlement.amount.toLocaleString()}
+                    {homeSymbol}
+                    {settlement.amount.toLocaleString()}
                   </span>
                 </li>
               ))}
@@ -549,7 +557,7 @@ function TripCard({
                       onViewTransaction(tx)
                     }}
                   >
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium">{tx.description}</p>
                       <p className="truncate text-xs text-muted-foreground">
                         {p({

@@ -24,7 +24,10 @@ import {
 } from '@/lib/datetime'
 import { shouldIgnoreRowClick } from '@/lib/row-click'
 import { MoneyAmount } from '@/components/money-amount'
-import { STATIC_FALLBACK_RATES } from '@/lib/currency'
+import { currencySymbol, isAppCurrency, STATIC_FALLBACK_RATES } from '@/lib/currency'
+import { useLocale } from '@/components/locale-provider'
+import { categoryLabel } from '@/lib/default-categories'
+import { intlLocale } from '@/lib/i18n'
 
 type CombinedTransaction = {
   id: string | undefined
@@ -64,8 +67,12 @@ interface TransactionMobileListProps {
   onClearFilters: () => void
 }
 
-function paidByLabel(paidBy: string | undefined) {
-  if (!paidBy || paidBy === 'Me') return 'ฉัน'
+function symbolFor(code: string) {
+  return isAppCurrency(code) ? currencySymbol(code) : code
+}
+
+function paidByLabel(paidBy: string | undefined, me: string) {
+  if (!paidBy || paidBy === 'Me') return me
   return paidBy
 }
 
@@ -85,13 +92,16 @@ export function TransactionMobileList({
   onAddClick,
   onClearFilters,
 }: TransactionMobileListProps) {
+  const { p, t, locale } = useLocale()
   const effectiveRates = rates ?? (STATIC_FALLBACK_RATES as Record<string, number>)
   const grouped = React.useMemo(
     () =>
-      groupItemsByDate(transactions, (transaction) =>
-        toDateFromFirestore(transaction.date)
+      groupItemsByDate(
+        transactions,
+        (transaction) => toDateFromFirestore(transaction.date),
+        intlLocale(locale)
       ),
-    [transactions]
+    [transactions, locale]
   )
 
   if (loading) {
@@ -146,8 +156,8 @@ export function TransactionMobileList({
                 >
                   <div className="min-w-0 flex-1">
                     <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium leading-snug">
+                      <div className="min-w-0 flex-1">
+                        <p className="break-words text-sm font-medium leading-snug">
                           {transaction.description}
                         </p>
                         <div className="mt-1 flex flex-wrap items-center gap-1.5">
@@ -156,14 +166,14 @@ export function TransactionMobileList({
                               variant="outline"
                               className="text-[10px] border-chart-2/40 text-chart-2"
                             >
-                              เป๋าตัง
+                              {p({ th: 'เป๋าตัง', en: 'Paotang', zh: 'Paotang' })}
                             </Badge>
                           )}
                           {!transaction.isLegacy && (
                             <Badge variant="outline" className="text-[10px]">
                               {transaction.isTripDebtPending
-                                ? 'ค้างจ่ายทริป'
-                                : 'รายจ่ายทริป'}
+                                ? p({ th: 'ค้างจ่ายทริป', en: 'Trip unpaid', zh: '行程待付' })
+                                : p({ th: 'รายจ่ายทริป', en: 'Trip expense', zh: '行程支出' })}
                             </Badge>
                           )}
                           <Badge
@@ -179,11 +189,11 @@ export function TransactionMobileList({
                             }
                           >
                             {cat?.icon ? `${cat.icon} ` : ''}
-                            {transaction.category}
+                            {categoryLabel(transaction.category, locale)}
                           </Badge>
                         </div>
                       </div>
-                      <div className="shrink-0 text-right">
+                      <div className="max-w-[55%] shrink-0 break-all text-right">
                         <MoneyAmount
                           amount={displayAmount}
                           currency={recordedCurrency}
@@ -200,7 +210,11 @@ export function TransactionMobileList({
                         />
                         {transaction.isTripDebtPending && (
                           <p className="text-[10px] text-muted-foreground">
-                            ยังไม่นับในรายจ่าย
+                            {p({
+                              th: 'ยังไม่นับในรายจ่าย',
+                              en: 'Not counted yet',
+                              zh: '尚未计入支出',
+                            })}
                           </p>
                         )}
                       </div>
@@ -209,7 +223,7 @@ export function TransactionMobileList({
                       <span className="min-w-0 truncate tabular-nums">
                         {txDate ? formatTransactionDisplayTime(txDate) : ''}
                         {' · '}
-                        {paidByLabel(transaction.paidBy)}
+                        {paidByLabel(transaction.paidBy, p({ th: 'ฉัน', en: 'Me', zh: '我' }))}
                       </span>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
@@ -217,7 +231,11 @@ export function TransactionMobileList({
                             variant="ghost"
                             size="icon"
                             className="size-8 shrink-0"
-                            aria-label={`เมนูสำหรับ ${transaction.description}`}
+                            aria-label={p({
+                              th: `เมนูสำหรับ ${transaction.description}`,
+                              en: `Actions for ${transaction.description}`,
+                              zh: `${transaction.description} 的操作`,
+                            })}
                           >
                             <MoreHorizontal className="size-4" aria-hidden />
                           </Button>
@@ -229,7 +247,7 @@ export function TransactionMobileList({
                                 onClick={() => onEdit(transaction.rawTx!)}
                               >
                                 <Edit2 className="mr-2 size-4" aria-hidden />
-                                แก้ไข
+                                {p({ th: 'แก้ไข', en: 'Edit', zh: '编辑' })}
                               </DropdownMenuItem>
                               <DropdownMenuSeparator />
                               <DropdownMenuItem
@@ -239,12 +257,16 @@ export function TransactionMobileList({
                                 }
                               >
                                 <Trash2 className="mr-2 size-4" aria-hidden />
-                                ลบ
+                                {t('common.delete')}
                               </DropdownMenuItem>
                             </>
                           ) : (
                             <DropdownMenuItem disabled>
-                              ไปที่หน้าทริปเพื่อแก้ไข
+                              {p({
+                                th: 'ไปที่หน้าทริปเพื่อแก้ไข',
+                                en: 'Edit from the trip page',
+                                zh: '请在行程页面编辑',
+                              })}
                             </DropdownMenuItem>
                           )}
                         </DropdownMenuContent>
@@ -258,13 +280,16 @@ export function TransactionMobileList({
                     {transaction.isPaotang &&
                       Math.abs(fullAmount) !== Math.abs(displayAmount) && (
                         <p className="mt-1 text-[10px] text-muted-foreground">
-                          เต็ม {recordedCurrency === 'JPY' ? '¥' : '฿'}{Math.abs(fullAmount).toLocaleString()} · รัฐ{' '}
-                          {PAOTANG_GOV_PERCENT}% (ตามโควต้า)
+                          {p({
+                            th: `เต็ม ${symbolFor(recordedCurrency)}${Math.abs(fullAmount).toLocaleString()} · รัฐ ${PAOTANG_GOV_PERCENT}% (ตามโควต้า)`,
+                            en: `Full ${symbolFor(recordedCurrency)}${Math.abs(fullAmount).toLocaleString()} · Gov ${PAOTANG_GOV_PERCENT}% (per quota)`,
+                            zh: `全额 ${symbolFor(recordedCurrency)}${Math.abs(fullAmount).toLocaleString()} · 政府 ${PAOTANG_GOV_PERCENT}%（按额度）`,
+                          })}
                         </p>
                       )}
                     {transaction.isPaotang && transaction.paotangQuotaCapped && (
                       <p className="text-[10px] text-warning">
-                        โควต้าจำกัด —{' '}
+                        {p({ th: 'โควต้าจำกัด', en: 'Quota limited', zh: '额度受限' })} —{' '}
                         {getPaotangCapReasonLabel(transaction.paotangCapReason)}
                       </p>
                     )}

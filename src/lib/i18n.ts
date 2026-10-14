@@ -259,7 +259,7 @@ const messages = {
     'tx.time': 'Time',
     'tx.split': 'Split with friends',
     'tx.splitOff': 'Off — you paid for yourself',
-    'tx.splitOn': 'Choose who paid and who shares below',
+    'tx.splitOn': "Pick who's on the bill, then who paid",
     'tx.enterAmountFirst': 'Enter the amount first',
     'tx.debtTracking': 'Add to Debts',
     'tx.debtOn': 'Unpaid shares appear on Debts until settled, and don’t count as spending until repaid.',
@@ -541,7 +541,7 @@ const messages = {
     'tx.time': 'เวลา',
     'tx.split': 'หารกับเพื่อน',
     'tx.splitOff': 'ปิดไว้ = จ่ายเองคนเดียว',
-    'tx.splitOn': 'เลือกว่าใครจ่าย และหารกับใครด้านล่าง',
+    'tx.splitOn': 'เลือกคนในบิลนี้ แล้วเลือกว่าใครจ่ายไปก่อน',
     'tx.enterAmountFirst': 'กรอกจำนวนเงินก่อน',
     'tx.debtTracking': 'บันทึกในหน้าหนี้',
     'tx.debtOn': 'ส่วนที่ยังไม่คืนจะอยู่ในหน้าหนี้จนกว่าจะจ่ายคืน และยังไม่นับเป็นรายจ่ายจนกว่าจะคืนจริง',
@@ -822,7 +822,7 @@ const messages = {
     'tx.time': '时间',
     'tx.split': '与朋友分摊',
     'tx.splitOff': '关闭 = 自己支付',
-    'tx.splitOn': '在下方选择谁付款、与谁分摊',
+    'tx.splitOn': '先选择账单成员，再选择谁先付款',
     'tx.enterAmountFirst': '请先输入金额',
     'tx.debtTracking': '记入债务',
     'tx.debtOn': '未还部分会显示在债务页，还款前不计入支出。',
@@ -867,4 +867,26 @@ export function pick(locale: AppLocale, text: LocalizedText): string {
   if (locale === 'th') return text.th;
   if (locale === 'zh') return text.zh ?? text.en;
   return text.en;
+}
+
+/**
+ * Locale for code outside React (thrown errors, toasts from lib helpers).
+ * LocaleProvider keeps <html lang> in sync with the user's choice.
+ */
+export function clientLocale(): AppLocale {
+  if (typeof document === 'undefined') return 'th';
+  const lang = document.documentElement.lang;
+  return lang === 'en' || lang === 'zh' || lang === 'th' ? lang : 'th';
+}
+
+/** `pick` for code outside React. */
+export function pickClient(text: LocalizedText): string {
+  return pick(clientLocale(), text);
+}
+
+/** BCP-47 tag for Intl/date formatting. Thai uses the Buddhist calendar via th-TH. */
+export function intlLocale(locale: AppLocale): string {
+  if (locale === 'th') return 'th-TH';
+  if (locale === 'zh') return 'zh-CN';
+  return 'en-US';
 }

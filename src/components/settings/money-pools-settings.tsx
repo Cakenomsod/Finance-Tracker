@@ -92,7 +92,8 @@ export function MoneyPoolsSettings() {
   const { activePools, loading, addPool, editPool, archivePool } = useMoneyPools();
   const { activeSources } = usePaymentSources();
   const { moneyPoolsEnabled, accountsEnabled, saveMoneyFeatures, currency } = useUserSettings();
-  const { t } = useLocale();
+  const { t, p } = useLocale();
+  const failedMessage = p({ th: 'ไม่สำเร็จ ลองใหม่อีกครั้ง', en: 'Something went wrong — try again', zh: '操作失败，请重试' });
   const [dialogOpen, setDialogOpen] = React.useState(false);
   const [editing, setEditing] = React.useState<MoneyPool | null>(null);
   const [deleteTarget, setDeleteTarget] = React.useState<MoneyPool | null>(null);
@@ -132,7 +133,7 @@ export function MoneyPoolsSettings() {
       await saveMoneyFeatures({ moneyPoolsEnabled: checked });
       toast.success(t('settings.saved'));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed');
+      toast.error(err instanceof Error ? err.message : failedMessage);
     } finally {
       setToggling(false);
     }
@@ -200,7 +201,7 @@ export function MoneyPoolsSettings() {
       }
       setDialogOpen(false);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed');
+      toast.error(err instanceof Error ? err.message : failedMessage);
     } finally {
       setSaving(false);
     }
@@ -214,7 +215,7 @@ export function MoneyPoolsSettings() {
       toast.success(t('accounts.poolArchived'));
       setDeleteTarget(null);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed');
+      toast.error(err instanceof Error ? err.message : failedMessage);
     } finally {
       setDeleting(false);
     }

@@ -80,7 +80,8 @@ function ProfileSkeleton() {
 export function ProfileSettings() {
   const { user } = useAuth();
   const { profile, loading, currency, saveProfile, saveCurrency } = useUserSettings();
-  const { locale, setLocale, t } = useLocale();
+  const { locale, setLocale, t, p } = useLocale();
+  const failedMessage = p({ th: 'บันทึกไม่สำเร็จ ลองใหม่อีกครั้ง', en: 'Could not save — try again', zh: '保存失败，请重试' });
   const [editOpen, setEditOpen] = React.useState(false);
   const [displayName, setDisplayName] = React.useState('');
   const [saving, setSaving] = React.useState(false);
@@ -106,7 +107,7 @@ export function ProfileSettings() {
       toast.success(t('settings.profileUpdated'));
       setEditOpen(false);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to update profile');
+      toast.error(err instanceof Error ? err.message : failedMessage);
     } finally {
       setSaving(false);
     }
@@ -117,7 +118,7 @@ export function ProfileSettings() {
       await saveCurrency(value);
       toast.success(t('settings.saved'));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to save currency');
+      toast.error(err instanceof Error ? err.message : failedMessage);
     }
   };
 
@@ -126,7 +127,7 @@ export function ProfileSettings() {
       await setLocale(value as 'en' | 'th' | 'zh');
       toast.success(t('settings.saved'));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to save language');
+      toast.error(err instanceof Error ? err.message : failedMessage);
     }
   };
 

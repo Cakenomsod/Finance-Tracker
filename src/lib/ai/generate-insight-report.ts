@@ -91,7 +91,11 @@ export function resolvePeriodMeta(
   priorStart: Date;
   priorEnd: Date;
 } {
-  const labelLocale = locale === 'th' || locale.startsWith('th') ? 'th-TH' : 'en-US';
+  const labelLocale = locale.startsWith('th')
+    ? 'th-TH'
+    : locale.startsWith('zh')
+      ? 'zh-CN'
+      : 'en-US';
 
   if (periodType === 'month') {
     const sel = parseMonthKey(periodKey);

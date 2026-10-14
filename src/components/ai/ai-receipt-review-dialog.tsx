@@ -15,16 +15,19 @@ import { Check, FileText, Receipt, Users, Wallet } from 'lucide-react'
 import { ReceiptParseResult } from '@/lib/ai/receipt-schema'
 import { normalizeAiTime } from '@/lib/ai/receipt-mapper'
 import type { DraftCurrencySource } from '@/lib/ai/draft-resolve'
+import { useLocale } from '@/components/locale-provider'
+import { categoryLabel } from '@/lib/default-categories'
+import type { LocalizedText } from '@/lib/i18n'
 
-const DOC_TYPE_LABELS: Record<ReceiptParseResult['documentType'], string> = {
-  receipt: 'ใบเสร็จ',
-  transfer_slip: 'สลิปโอนเงิน',
+const DOC_TYPE_LABELS: Record<ReceiptParseResult['documentType'], LocalizedText> = {
+  receipt: { th: 'ใบเสร็จ', en: 'Receipt', zh: '收据' },
+  transfer_slip: { th: 'สลิปโอนเงิน', en: 'Transfer slip', zh: '转账凭证' },
 }
 
-const CURRENCY_SOURCE_LABELS: Record<DraftCurrencySource, string> = {
-  parsed: 'ตามที่พิมพ์',
-  account: 'ตามสกุลเงินบัญชี',
-  default: 'สกุลเงินหลัก',
+const CURRENCY_SOURCE_LABELS: Record<DraftCurrencySource, LocalizedText> = {
+  parsed: { th: 'ตามที่พิมพ์', en: 'as typed', zh: '按输入' },
+  account: { th: 'ตามสกุลเงินบัญชี', en: 'account currency', zh: '账户币种' },
+  default: { th: 'สกุลเงินหลัก', en: 'main currency', zh: '主币种' },
 }
 
 export interface AiReceiptReviewTarget {
@@ -52,6 +55,7 @@ export function AiReceiptReviewDialog({
   target,
   onConfirm,
 }: AiReceiptReviewDialogProps) {
+  const { p, t, locale } = useLocale()
   if (!result) return null
 
   const currency = target?.currency || result.currency || defaultCurrency
@@ -66,14 +70,18 @@ export function AiReceiptReviewDialog({
     (result.shares?.length ?? 0) > 0 ||
     !!result.splitMode
   const paymentLabel =
-    result.paymentMethod === 'paotang' ? 'เป๋าตัง' : result.paymentMethod === 'normal' ? 'ปกติ' : null
+    result.paymentMethod === 'paotang'
+      ? p({ th: 'เป๋าตัง', en: 'Paotang', zh: 'Paotang' })
+      : result.paymentMethod === 'normal'
+        ? p({ th: 'ปกติ', en: 'Regular', zh: '普通' })
+        : null
   const splitModeLabel =
     result.splitMode === 'equal'
-      ? 'หารเท่าๆ กัน'
+      ? p({ th: 'หารเท่าๆ กัน', en: 'Split equally', zh: '平均分摊' })
       : result.splitMode === 'custom'
-        ? 'กำหนดเอง'
+        ? p({ th: 'กำหนดเอง', en: 'Custom', zh: '自定义' })
         : result.splitMode === 'solo'
-          ? 'คนเดียว'
+          ? p({ th: 'คนเดียว', en: 'Just me', zh: '仅自己' })
           : null
 
   return (
@@ -82,54 +90,71 @@ export function AiReceiptReviewDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileText className="size-5 text-primary" />
-            ตรวจสอบข้อมูลจาก AI
+            {p({ th: 'ตรวจสอบข้อมูลจาก AI', en: 'Review AI result', zh: '检查 AI 识别结果' })}
           </DialogTitle>
           <DialogDescription>
-            {result
-              ? 'AI แยกข้อมูลแล้ว — กรุณาตรวจสอบก่อนเปิดฟอร์มบันทึก'
-              : 'กรุณาตรวจสอบก่อนเปิดฟอร์มบันทึก'}
+            {p({
+              th: 'AI แยกข้อมูลแล้ว — กรุณาตรวจสอบก่อนเปิดฟอร์มบันทึก',
+              en: 'AI has read the details — check them before opening the form',
+              zh: 'AI 已识别信息 — 请在打开表单前检查',
+            })}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
           <div className="flex flex-wrap gap-2">
-            <Badge variant="secondary">{DOC_TYPE_LABELS[result.documentType]}</Badge>
+            <Badge variant="secondary">{p(DOC_TYPE_LABELS[result.documentType])}</Badge>
             <Badge variant="outline">
               {currency}
               {target && (
                 <span className="font-normal text-muted-foreground">
-                  · {CURRENCY_SOURCE_LABELS[target.currencySource]}
+                  · {p(CURRENCY_SOURCE_LABELS[target.currencySource])}
                 </span>
               )}
             </Badge>
             {result.taxMode && (
               <Badge variant="outline">
-                ภาษี {result.taxMode === 'exclusive' ? 'แยกนอก' : 'รวมใน'}
+                {result.taxMode === 'exclusive'
+                  ? p({ th: 'ภาษี แยกนอก', en: 'Tax excluded', zh: '税额另计' })
+                  : p({ th: 'ภาษี รวมใน', en: 'Tax included', zh: '含税' })}
               </Badge>
             )}
           </div>
 
           <div className="grid gap-3 rounded-lg border p-4 text-sm">
-            <Row label="รายละเอียด" value={result.description} />
-            <Row label="หมวดหมู่" value={result.category} />
-            <Row label="วันที่" value={result.date} />
-            <Row label="เวลา" value={normalizeAiTime(result.time)} />
+            <Row label={p({ th: 'รายละเอียด', en: 'Details', zh: '详情' })} value={result.description} />
+            <Row
+              label={p({ th: 'หมวดหมู่', en: 'Category', zh: '分类' })}
+              value={categoryLabel(result.category, locale)}
+            />
+            <Row label={p({ th: 'วันที่', en: 'Date', zh: '日期' })} value={result.date} />
+            <Row label={p({ th: 'เวลา', en: 'Time', zh: '时间' })} value={normalizeAiTime(result.time)} />
             {accountLabel && (
-              <Row label="บัญชี" value={accountLabel} icon={<Wallet className="size-3.5" />} />
+              <Row
+                label={p({ th: 'บัญชี', en: 'Account', zh: '账户' })}
+                value={accountLabel}
+                icon={<Wallet className="size-3.5" />}
+              />
             )}
             <Row
-              label="ยอดรวม"
+              label={p({ th: 'ยอดรวม', en: 'Total', zh: '总额' })}
               value={`${result.totalAmount.toLocaleString()} ${currency}`}
               highlight
             />
             {result.baseAmount != null && (
-              <Row label="ยอดก่อนภาษี" value={result.baseAmount.toLocaleString()} />
+              <Row
+                label={p({ th: 'ยอดก่อนภาษี', en: 'Before tax', zh: '税前金额' })}
+                value={result.baseAmount.toLocaleString()}
+              />
             )}
             {result.taxAmount != null && (
-              <Row label="ภาษี" value={result.taxAmount.toLocaleString()} />
+              <Row label={p({ th: 'ภาษี', en: 'Tax', zh: '税额' })} value={result.taxAmount.toLocaleString()} />
             )}
             {result.discount != null && result.discount > 0 && (
-              <Row label="ส่วนลด" value={result.discount.toLocaleString()} />
+              <Row
+                label={p({ th: 'ส่วนลด', en: 'Discount', zh: '折扣' })}
+                value={result.discount.toLocaleString()}
+              />
             )}
           </div>
 
@@ -137,27 +162,39 @@ export function AiReceiptReviewDialog({
             <div className="space-y-2">
               <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 <Users className="size-3.5" />
-                แบ่งจ่าย / หนี้
+                {p({ th: 'แบ่งจ่าย / หนี้', en: 'Split / debts', zh: '分账 / 欠款' })}
               </p>
               <div className="grid gap-2 rounded-lg border p-4 text-sm">
-                {splitModeLabel && <Row label="โหมดแบ่ง" value={splitModeLabel} />}
+                {splitModeLabel && (
+                  <Row label={p({ th: 'โหมดแบ่ง', en: 'Split mode', zh: '分账方式' })} value={splitModeLabel} />
+                )}
                 {paymentLabel && (
-                  <Row label="วิธีจ่าย" value={paymentLabel} icon={<Wallet className="size-3.5" />} />
+                  <Row
+                    label={p({ th: 'วิธีจ่าย', en: 'Payment', zh: '支付方式' })}
+                    value={paymentLabel}
+                    icon={<Wallet className="size-3.5" />}
+                  />
                 )}
                 {result.debtTracking != null && (
                   <Row
-                    label="ติดตามหนี้"
-                    value={result.debtTracking ? 'เปิด' : 'ปิด'}
+                    label={p({ th: 'ติดตามหนี้', en: 'Track debts', zh: '记录欠款' })}
+                    value={
+                      result.debtTracking
+                        ? p({ th: 'เปิด', en: 'On', zh: '开' })
+                        : p({ th: 'ปิด', en: 'Off', zh: '关' })
+                    }
                   />
                 )}
                 {result.payers && result.payers.length > 0 && (
                   <div className="space-y-1">
-                    <span className="text-muted-foreground">ผู้จ่าย</span>
-                    {result.payers.map((p, i) => (
+                    <span className="text-muted-foreground">
+                      {p({ th: 'ผู้จ่าย', en: 'Paid by', zh: '付款人' })}
+                    </span>
+                    {result.payers.map((payer, i) => (
                       <div key={i} className="flex justify-between gap-4 pl-2">
-                        <span>{p.name}</span>
-                        <span className="tabular-nums font-medium">
-                          {p.amount.toLocaleString()} {currency}
+                        <span className="min-w-0 truncate">{payer.name}</span>
+                        <span className="shrink-0 tabular-nums font-medium">
+                          {payer.amount.toLocaleString()} {currency}
                         </span>
                       </div>
                     ))}
@@ -165,11 +202,13 @@ export function AiReceiptReviewDialog({
                 )}
                 {result.shares && result.shares.length > 0 && (
                   <div className="space-y-1">
-                    <span className="text-muted-foreground">ส่วนแบ่ง</span>
+                    <span className="text-muted-foreground">
+                      {p({ th: 'ส่วนแบ่ง', en: 'Shares', zh: '分摊' })}
+                    </span>
                     {result.shares.map((s, i) => (
                       <div key={i} className="flex justify-between gap-4 pl-2">
-                        <span>{s.name}</span>
-                        <span className="tabular-nums font-medium">
+                        <span className="min-w-0 truncate">{s.name}</span>
+                        <span className="shrink-0 tabular-nums font-medium">
                           {s.amount.toLocaleString()} {currency}
                         </span>
                       </div>
@@ -183,7 +222,7 @@ export function AiReceiptReviewDialog({
           {hasItems && (
             <div className="space-y-2">
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                รายการสินค้า ({result.items!.length})
+                {p({ th: 'รายการสินค้า', en: 'Items', zh: '商品' })} ({result.items!.length})
               </p>
               <div className="max-h-40 space-y-2 overflow-y-auto">
                 {result.items!.map((item, idx) => (
@@ -195,7 +234,9 @@ export function AiReceiptReviewDialog({
                       <Receipt className="size-3.5 shrink-0 text-muted-foreground" />
                       <div className="min-w-0">
                         <p className="truncate font-medium">{item.name}</p>
-                        <p className="text-xs text-muted-foreground">{item.category}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {categoryLabel(item.category, locale)}
+                        </p>
                       </div>
                     </div>
                     <span className="ml-2 shrink-0 font-semibold tabular-nums">
@@ -210,7 +251,7 @@ export function AiReceiptReviewDialog({
 
         <DialogFooter className="gap-2 sm:gap-0">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            ยกเลิก
+            {t('common.cancel')}
           </Button>
           <Button
             className="gap-1"
@@ -220,7 +261,7 @@ export function AiReceiptReviewDialog({
             }}
           >
             <Check className="size-4" />
-            เปิดฟอร์มแก้ไข / บันทึก
+            {p({ th: 'เปิดฟอร์มแก้ไข / บันทึก', en: 'Open form to edit / save', zh: '打开表单编辑 / 保存' })}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -245,7 +286,9 @@ function Row({
         {icon}
         {label}
       </span>
-      <span className={highlight ? 'text-right font-semibold' : 'text-right'}>{value}</span>
+      <span className={highlight ? 'min-w-0 break-words text-right font-semibold' : 'min-w-0 break-words text-right'}>
+        {value}
+      </span>
     </div>
   )
 }

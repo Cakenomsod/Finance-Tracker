@@ -6,11 +6,7 @@ import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts'
 
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart'
 import { cn } from '@/lib/utils'
-
-const chartConfig = {
-  income: { label: 'Income', color: 'var(--chart-1)' },
-  expenses: { label: 'Expenses', color: 'var(--chart-3)' },
-}
+import { useLocale } from '@/components/locale-provider'
 
 const MONTHLY_BAR_WIDTH = 72
 const SCROLL_EDGE_THRESHOLD = 48
@@ -34,6 +30,16 @@ export function IncomeExpensesScrollChart({
   loadingOlder: boolean
   onLoadOlder: () => void
 }) {
+  const { p } = useLocale()
+  const incomeLabel = p({ th: 'รายรับ', en: 'Income', zh: '收入' })
+  const expensesLabel = p({ th: 'รายจ่าย', en: 'Expenses', zh: '支出' })
+  const chartConfig = React.useMemo(
+    () => ({
+      income: { label: incomeLabel, color: 'var(--chart-1)' },
+      expenses: { label: expensesLabel, color: 'var(--chart-3)' },
+    }),
+    [incomeLabel, expensesLabel]
+  )
   const scrollRef = React.useRef<HTMLDivElement>(null)
   const scrollWidthBeforeLoadRef = React.useRef(0)
   const hasScrolledToEndRef = React.useRef(false)
@@ -133,7 +139,11 @@ export function IncomeExpensesScrollChart({
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
         role="region"
-        aria-label="Income versus expenses by month. Scroll left for older months."
+        aria-label={p({
+          th: 'รายรับเทียบรายจ่ายรายเดือน เลื่อนไปทางซ้ายเพื่อดูเดือนก่อนหน้า',
+          en: 'Income versus expenses by month. Scroll left for older months.',
+          zh: '每月收入与支出对比。向左滚动查看更早的月份。',
+        })}
         tabIndex={0}
       >
         <ChartContainer
@@ -161,8 +171,8 @@ export function IncomeExpensesScrollChart({
               className="text-xs fill-muted-foreground"
             />
             <ChartTooltip content={<ChartTooltipContent />} />
-            <Bar dataKey="income" fill="var(--chart-1)" radius={[4, 4, 0, 0]} name="Income" />
-            <Bar dataKey="expenses" fill="var(--chart-3)" radius={[4, 4, 0, 0]} name="Expenses" />
+            <Bar dataKey="income" fill="var(--chart-1)" radius={[4, 4, 0, 0]} name={incomeLabel} />
+            <Bar dataKey="expenses" fill="var(--chart-3)" radius={[4, 4, 0, 0]} name={expensesLabel} />
           </BarChart>
         </ChartContainer>
       </div>
@@ -179,10 +189,14 @@ export function IncomeExpensesScrollChart({
           {loadingOlder ? (
             <>
               <Loader2 className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden />
-              <span>Loading older months…</span>
+              <span>
+                {p({ th: 'กำลังโหลดเดือนก่อนหน้า…', en: 'Loading older months…', zh: '正在加载更早的月份…' })}
+              </span>
             </>
           ) : (
-            <span>Scroll left for older months</span>
+            <span>
+              {p({ th: 'เลื่อนซ้ายเพื่อดูเดือนก่อนหน้า', en: 'Scroll left for older months', zh: '向左滚动查看更早的月份' })}
+            </span>
           )}
         </div>
       )}

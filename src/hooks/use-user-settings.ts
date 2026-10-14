@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { doc, onSnapshot, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { pickClient } from '@/lib/i18n';
 import { useAuth } from '@/hooks/use-auth';
 import { AiTextProvider, ImmichSettings, UserProfile } from '@/lib/firestore-types';
 
@@ -50,6 +51,10 @@ function resolveFlag(
     if (local !== null) return local;
   }
   return false;
+}
+
+function notLoggedInMessage(): string {
+  return pickClient({ th: 'ยังไม่ได้เข้าสู่ระบบ', en: 'Not logged in', zh: '尚未登录' });
 }
 
 export function useUserSettings() {
@@ -122,7 +127,7 @@ export function useUserSettings() {
 
   const saveImmichSettings = useCallback(
     async (settings: Omit<ImmichSettings, 'lastVerifiedAt'>) => {
-      if (!user) throw new Error('Not logged in');
+      if (!user) throw new Error(notLoggedInMessage());
       await updateDoc(doc(db, 'users', user.uid), {
         immich: {
           baseUrl: settings.baseUrl.replace(/\/$/, ''),
@@ -137,7 +142,7 @@ export function useUserSettings() {
 
   const saveAiSettings = useCallback(
     async (aiTextProvider: AiTextProvider, localAiBaseUrl?: string) => {
-      if (!user) throw new Error('Not logged in');
+      if (!user) throw new Error(notLoggedInMessage());
       await updateDoc(doc(db, 'users', user.uid), {
         aiTextProvider,
         ...(localAiBaseUrl !== undefined ? { localAiBaseUrl } : {}),
@@ -149,7 +154,7 @@ export function useUserSettings() {
 
   const saveProfile = useCallback(
     async (data: { displayName?: string; photoURL?: string | null }) => {
-      if (!user) throw new Error('Not logged in');
+      if (!user) throw new Error(notLoggedInMessage());
       await updateDoc(doc(db, 'users', user.uid), {
         ...data,
         updatedAt: serverTimestamp(),
@@ -160,7 +165,7 @@ export function useUserSettings() {
 
   const saveCurrency = useCallback(
     async (currency: string) => {
-      if (!user) throw new Error('Not logged in');
+      if (!user) throw new Error(notLoggedInMessage());
       await updateDoc(doc(db, 'users', user.uid), {
         currency,
         updatedAt: serverTimestamp(),
@@ -171,7 +176,7 @@ export function useUserSettings() {
 
   const saveLocale = useCallback(
     async (locale: string) => {
-      if (!user) throw new Error('Not logged in');
+      if (!user) throw new Error(notLoggedInMessage());
       await updateDoc(doc(db, 'users', user.uid), {
         locale,
         updatedAt: serverTimestamp(),
@@ -182,7 +187,7 @@ export function useUserSettings() {
 
   const saveAiInsightsSettings = useCallback(
     async (settings: { aiInsightsWeekly?: boolean; aiInsightsMonthly?: boolean }) => {
-      if (!user) throw new Error('Not logged in');
+      if (!user) throw new Error(notLoggedInMessage());
       pendingSaveRef.current += 1;
       const patch: Partial<Record<FeatureFlagKey, boolean>> = {};
       if (typeof settings.aiInsightsWeekly === 'boolean') {
@@ -208,7 +213,7 @@ export function useUserSettings() {
 
   const saveMoneyFeatures = useCallback(
     async (settings: { accountsEnabled?: boolean; moneyPoolsEnabled?: boolean }) => {
-      if (!user) throw new Error('Not logged in');
+      if (!user) throw new Error(notLoggedInMessage());
       pendingSaveRef.current += 1;
       const patch: Partial<Record<FeatureFlagKey, boolean>> = {};
       if (typeof settings.accountsEnabled === 'boolean') {

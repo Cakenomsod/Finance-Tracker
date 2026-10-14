@@ -11,6 +11,7 @@ import {
   type TripCountryCode,
   type TripCurrencyCode,
 } from '@/lib/tax/countries'
+import { useLocale } from '@/components/locale-provider'
 
 export interface TripSettingsValue {
   countryCode: TripCountryCode
@@ -62,7 +63,23 @@ interface TripSettingsFieldsProps {
   onChange: (value: TripSettingsValue) => void
 }
 
+const COUNTRY_NAME_ZH: Record<TripCountryCode, string> = {
+  TH: '泰国',
+  JP: '日本',
+}
+
 export function TripSettingsFields({ value, onChange }: TripSettingsFieldsProps) {
+  const { p, locale } = useLocale()
+  const countryName = (code: TripCountryCode) => {
+    const config = COUNTRY_TAX_CONFIGS[code]
+    if (locale === 'th') return `${config.nameTh} (${config.name})`
+    if (locale === 'zh') return `${COUNTRY_NAME_ZH[code] ?? config.name} (${config.name})`
+    return config.name
+  }
+  const currencyLabel = (code: TripCurrencyCode) =>
+    code === 'JPY'
+      ? `¥ ${p({ th: 'เยน', en: 'Yen', zh: '日元' })} (JPY)`
+      : `฿ ${p({ th: 'บาท', en: 'Baht', zh: '泰铢' })} (THB)`
   const needsRate = value.tripCurrency !== value.homeCurrency
 
   const patch = (partial: Partial<TripSettingsValue>) => {
@@ -95,13 +112,19 @@ export function TripSettingsFields({ value, onChange }: TripSettingsFieldsProps)
 
   return (
     <fieldset className="space-y-4 border-t border-border/80 pt-4">
-      <legend className="text-sm font-medium">Country & currency</legend>
+      <legend className="text-sm font-medium">
+        {p({ th: 'ประเทศและสกุลเงิน', en: 'Country & currency', zh: '国家和货币' })}
+      </legend>
       <p className="text-xs text-muted-foreground">
-        ตั้งค่าประเทศและสกุลเงินสำหรับทริปนี้ · Used for receipt tax and totals
+        {p({
+          th: 'ตั้งค่าประเทศและสกุลเงินสำหรับทริปนี้ ใช้คำนวณภาษีในใบเสร็จและยอดรวม',
+          en: 'Country and currency for this trip — used for receipt tax and totals',
+          zh: '此行程的国家和货币——用于计算收据税费和总额',
+        })}
       </p>
 
       <div className="grid gap-2">
-        <Label>Country (receipt tax)</Label>
+        <Label>{p({ th: 'ประเทศ (ภาษีในใบเสร็จ)', en: 'Country (receipt tax)', zh: '国家（收据税费）' })}</Label>
         <Select
           value={value.countryCode}
           onValueChange={(v) => patch({ countryCode: v as TripCountryCode })}
@@ -112,42 +135,50 @@ export function TripSettingsFields({ value, onChange }: TripSettingsFieldsProps)
           <SelectContent>
             {(Object.keys(COUNTRY_TAX_CONFIGS) as TripCountryCode[]).map((code) => (
               <SelectItem key={code} value={code}>
-                {COUNTRY_TAX_CONFIGS[code].nameTh} ({COUNTRY_TAX_CONFIGS[code].name})
+                {countryName(code)}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
         <p className="text-xs text-muted-foreground">
           {value.countryCode === 'JP'
-            ? 'ญี่ปุ่น: ภาษี 8% (อาหาร) / 10% (สินค้า) — ราคาบนใบเสร็จมักรวมภาษีแล้ว'
-            : 'ไทย: VAT 7% — ราคามักยังไม่รวมภาษี'}
+            ? p({
+                th: 'ญี่ปุ่น: ภาษี 8% (อาหาร) / 10% (สินค้า) — ราคาบนใบเสร็จมักรวมภาษีแล้ว',
+                en: 'Japan: 8% tax (food) / 10% (goods) — receipt prices usually include tax',
+                zh: '日本：税率 8%（食品）/ 10%（商品）——收据价格通常已含税',
+              })
+            : p({
+                th: 'ไทย: VAT 7% — ราคามักยังไม่รวมภาษี',
+                en: 'Thailand: 7% VAT — prices usually exclude tax',
+                zh: '泰国：增值税 7%——价格通常不含税',
+              })}
         </p>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="grid gap-2">
-          <Label>Trip currency</Label>
+          <Label>{p({ th: 'สกุลเงินของทริป', en: 'Trip currency', zh: '行程货币' })}</Label>
           <Select
             value={value.tripCurrency}
             onValueChange={(v) => patch({ tripCurrency: v as TripCurrencyCode })}
           >
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="THB">฿ บาท (THB)</SelectItem>
-              <SelectItem value="JPY">¥ เยน (JPY)</SelectItem>
+              <SelectItem value="THB">{currencyLabel('THB')}</SelectItem>
+              <SelectItem value="JPY">{currencyLabel('JPY')}</SelectItem>
             </SelectContent>
           </Select>
         </div>
         <div className="grid gap-2">
-          <Label>Home display currency</Label>
+          <Label>{p({ th: 'สกุลเงินที่ใช้แสดงผล', en: 'Home display currency', zh: '显示货币' })}</Label>
           <Select
             value={value.homeCurrency}
             onValueChange={(v) => patch({ homeCurrency: v as TripCurrencyCode })}
           >
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="THB">฿ บาท (THB)</SelectItem>
-              <SelectItem value="JPY">¥ เยน (JPY)</SelectItem>
+              <SelectItem value="THB">{currencyLabel('THB')}</SelectItem>
+              <SelectItem value="JPY">{currencyLabel('JPY')}</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -156,7 +187,8 @@ export function TripSettingsFields({ value, onChange }: TripSettingsFieldsProps)
       {needsRate && (
         <div className="grid gap-2">
           <Label>
-            Exchange rate (1 {value.tripCurrency} = ? {value.homeCurrency})
+            {p({ th: 'อัตราแลกเปลี่ยน', en: 'Exchange rate', zh: '汇率' })} (1 {value.tripCurrency} = ?{' '}
+            {value.homeCurrency})
           </Label>
           <Input
             type="number"
@@ -167,7 +199,11 @@ export function TripSettingsFields({ value, onChange }: TripSettingsFieldsProps)
             placeholder={value.countryCode === 'JP' ? '0.22' : '1'}
           />
           <p className="text-xs text-muted-foreground">
-            Converts totals and settlements to {value.homeCurrency}
+            {p({
+              th: `แปลงยอดรวมและยอดเคลียร์เงินเป็น ${value.homeCurrency}`,
+              en: `Converts totals and settlements to ${value.homeCurrency}`,
+              zh: `将总额和结算金额换算为 ${value.homeCurrency}`,
+            })}
           </p>
         </div>
       )}

@@ -138,7 +138,11 @@ function SettingsPageInner() {
       await saveAiInsightsSettings({ [field]: enabled })
       toast.success(t('settings.saved'))
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to save')
+      toast.error(
+        err instanceof Error
+          ? err.message
+          : p({ th: 'บันทึกไม่สำเร็จ', en: 'Failed to save', zh: '保存失败' })
+      )
     } finally {
       setSavingInsights(null)
     }
@@ -149,7 +153,13 @@ function SettingsPageInner() {
     try {
       const currentUser = auth.currentUser
       if (!currentUser) {
-        throw new Error('ไม่พบข้อมูลการล็อกอิน กรุณาลองเข้าสู่ระบบใหม่อีกครั้ง')
+        throw new Error(
+          p({
+            th: 'ไม่พบข้อมูลการล็อกอิน กรุณาลองเข้าสู่ระบบใหม่อีกครั้ง',
+            en: 'Sign-in session not found. Please sign in again.',
+            zh: '未找到登录信息，请重新登录。',
+          })
+        )
       }
 
       const token = await currentUser.getIdToken(true)
@@ -164,7 +174,7 @@ function SettingsPageInner() {
       })
 
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Connection failed')
+      if (!res.ok) throw new Error(data.error || t('settings.immichFailed'))
       toast.success(t('settings.immichConnected'))
       await refreshImmichStatus()
     } catch (err) {
@@ -182,7 +192,7 @@ function SettingsPageInner() {
         headers: { 'Content-Type': 'application/json' },
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || data.message || 'Connection failed')
+      if (!res.ok) throw new Error(data.error || data.message || t('settings.localAiFailed'))
       toast.success(t('settings.localAiConnected'))
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t('settings.localAiFailed'))
@@ -301,7 +311,12 @@ function SettingsPageInner() {
                   <p className="text-sm font-medium leading-none">{t('settings.theme')}</p>
                   <p className="text-sm text-muted-foreground text-pretty">
                     {activeTheme === 'system' && resolvedTheme
-                      ? t('settings.themeSystem', { mode: resolvedTheme })
+                      ? t('settings.themeSystem', {
+                          mode:
+                            resolvedTheme === 'dark'
+                              ? t('settings.themeDark')
+                              : t('settings.themeLight'),
+                        })
                       : t('settings.themeDesc')}
                   </p>
                 </div>
@@ -373,7 +388,11 @@ function SettingsPageInner() {
             <CardContent className="space-y-4">
               <p className="text-sm text-muted-foreground text-pretty">
                 {!IMMICH_ENABLED
-                  ? `${IMMICH_MAINTENANCE_MESSAGE} (เปิดกลับด้วย NEXT_PUBLIC_IMMICH_ENABLED=1)`
+                  ? p({
+                      th: `${IMMICH_MAINTENANCE_MESSAGE} (เปิดกลับด้วย NEXT_PUBLIC_IMMICH_ENABLED=1)`,
+                      en: 'Photo attachments are under maintenance (re-enable with NEXT_PUBLIC_IMMICH_ENABLED=1)',
+                      zh: '照片附件功能维护中（设置 NEXT_PUBLIC_IMMICH_ENABLED=1 可重新启用）',
+                    })
                   : immichStatusLoading
                   ? t('settings.immichChecking')
                   : immichConfigured

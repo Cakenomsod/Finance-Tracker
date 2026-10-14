@@ -17,6 +17,8 @@ import { Transaction, TripExpense } from '@/lib/firestore-types'
 import { formatTransactionDisplayTime, toDateFromFirestore } from '@/lib/datetime'
 import { formatCurrencySymbol } from '@/lib/trip-currency'
 import { cn } from '@/lib/utils'
+import { useLocale } from '@/components/locale-provider'
+import { categoryLabel } from '@/lib/default-categories'
 
 interface TransactionDetailDialogProps {
   open: boolean
@@ -62,6 +64,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 }
 
 function TripExpenseDetailView({ expense }: { expense: TripExpense }) {
+  const { p, locale } = useLocale()
   const txDate = toDateFromFirestore(expense.date)
   const currency = expense.currency || 'THB'
   const symbol = formatCurrencySymbol(currency)
@@ -72,11 +75,17 @@ function TripExpenseDetailView({ expense }: { expense: TripExpense }) {
   return (
     <div className="space-y-4">
       <div className="space-y-3 rounded-lg border p-4">
-        <DetailRow label="รายละเอียด" value={expense.description} />
-        <DetailRow label="หมวดหมู่" value={expense.category || 'Other'} />
+        <DetailRow
+          label={p({ th: 'รายละเอียด', en: 'Details', zh: '详情' })}
+          value={expense.description}
+        />
+        <DetailRow
+          label={p({ th: 'หมวดหมู่', en: 'Category', zh: '分类' })}
+          value={categoryLabel(expense.category || 'Other', locale)}
+        />
         {txDate && (
           <DetailRow
-            label="วันที่"
+            label={p({ th: 'วันที่', en: 'Date', zh: '日期' })}
             value={
               <span className="tabular-nums">
                 {formatTransactionDisplayTime(txDate)}
@@ -85,28 +94,30 @@ function TripExpenseDetailView({ expense }: { expense: TripExpense }) {
           />
         )}
         <DetailRow
-          label="ยอดรวม"
+          label={p({ th: 'ยอดรวม', en: 'Total', zh: '总额' })}
           value={`${symbol}${total.toLocaleString()}`}
           highlight
         />
-        {expense.note && <DetailRow label="หมายเหตุ" value={expense.note} />}
+        {expense.note && (
+          <DetailRow label={p({ th: 'หมายเหตุ', en: 'Note', zh: '备注' })} value={expense.note} />
+        )}
         <DetailRow
-          label="แบ่งจ่าย"
+          label={p({ th: 'แบ่งจ่าย', en: 'Split', zh: '分账方式' })}
           value={
             expense.splitMode === 'solo'
-              ? 'คนเดียว'
+              ? p({ th: 'คนเดียว', en: 'Just me', zh: '仅自己' })
               : expense.splitMode === 'equal'
-                ? 'หารเท่ากัน'
+                ? p({ th: 'หารเท่ากัน', en: 'Split equally', zh: '平均分摊' })
                 : expense.splitMode === 'item'
-                  ? 'ตามรายการ'
-                  : 'กำหนดเอง'
+                  ? p({ th: 'ตามรายการ', en: 'By item', zh: '按项目' })
+                  : p({ th: 'กำหนดเอง', en: 'Custom', zh: '自定义' })
           }
         />
       </div>
 
       {payers.length > 0 && (
         <div className="space-y-2">
-          <SectionLabel>ผู้จ่าย</SectionLabel>
+          <SectionLabel>{p({ th: 'ผู้จ่าย', en: 'Paid by', zh: '付款人' })}</SectionLabel>
           <div className="space-y-1.5">
             {payers.map((payer, index) => (
               <div
@@ -125,7 +136,7 @@ function TripExpenseDetailView({ expense }: { expense: TripExpense }) {
 
       {shares.length > 0 && (
         <div className="space-y-2">
-          <SectionLabel>ส่วนแบ่ง</SectionLabel>
+          <SectionLabel>{p({ th: 'ส่วนแบ่ง', en: 'Shares', zh: '分摊' })}</SectionLabel>
           <div className="space-y-1.5">
             {shares.map((share, index) => (
               <div
@@ -144,7 +155,9 @@ function TripExpenseDetailView({ expense }: { expense: TripExpense }) {
 
       {expense.items && expense.items.length > 0 && (
         <div className="space-y-2">
-          <SectionLabel>รายการสินค้า ({expense.items.length})</SectionLabel>
+          <SectionLabel>
+            {p({ th: 'รายการสินค้า', en: 'Items', zh: '商品' })} ({expense.items.length})
+          </SectionLabel>
           <div className="max-h-40 space-y-2 overflow-y-auto">
             {expense.items.map((item, index) => (
               <div
@@ -155,7 +168,7 @@ function TripExpenseDetailView({ expense }: { expense: TripExpense }) {
                   <Receipt className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
                   <div className="min-w-0">
                     <p className="truncate font-medium">{item.name}</p>
-                    <p className="text-xs text-muted-foreground">{item.category}</p>
+                    <p className="text-xs text-muted-foreground">{categoryLabel(item.category, locale)}</p>
                   </div>
                 </div>
                 <span className="ml-2 shrink-0 font-semibold tabular-nums">
@@ -168,7 +181,9 @@ function TripExpenseDetailView({ expense }: { expense: TripExpense }) {
       )}
 
       <Button variant="outline" className="w-full" asChild>
-        <Link href={`/trips/${expense.tripId}`}>ดูในทริป</Link>
+        <Link href={`/trips/${expense.tripId}`}>
+          {p({ th: 'ดูในทริป', en: 'View in trip', zh: '在行程中查看' })}
+        </Link>
       </Button>
     </div>
   )
@@ -181,6 +196,7 @@ export function TransactionDetailDialog({
   tripExpense,
   onSaveTransaction,
 }: TransactionDetailDialogProps) {
+  const { p } = useLocale()
   const isLegacy = !!transaction
   const isTripExpense = !!tripExpense
 
@@ -195,12 +211,22 @@ export function TransactionDetailDialog({
         className="max-h-[min(90vh,90dvh)] w-[calc(100vw-1rem)] overflow-y-auto overflow-x-hidden p-4 max-sm:top-[4vh] max-sm:translate-y-0 sm:max-w-[680px] sm:p-6"
       >
         <DialogHeader>
-          <DialogTitle>รายละเอียดธุรกรรม</DialogTitle>
+          <DialogTitle>
+            {p({ th: 'รายละเอียดธุรกรรม', en: 'Transaction details', zh: '交易详情' })}
+          </DialogTitle>
           <DialogDescription>
             {isLegacy
-              ? 'แก้ไขธุรกรรมนี้จะอัปเดตข้อมูลที่เกี่ยวข้องโดยอัตโนมัติ'
+              ? p({
+                  th: 'แก้ไขธุรกรรมนี้จะอัปเดตข้อมูลที่เกี่ยวข้องโดยอัตโนมัติ',
+                  en: 'Editing this transaction updates related data automatically',
+                  zh: '编辑此交易会自动更新相关数据',
+                })
               : isTripExpense
-                ? 'รายจ่ายจากทริป — แก้ไขได้ที่หน้าทริป'
+                ? p({
+                    th: 'รายจ่ายจากทริป — แก้ไขได้ที่หน้าทริป',
+                    en: 'Trip expense — edit it on the trip page',
+                    zh: '行程支出 — 请在行程页面编辑',
+                  })
                 : ''}
           </DialogDescription>
         </DialogHeader>
@@ -218,7 +244,7 @@ export function TransactionDetailDialog({
         ) : isTripExpense && tripExpense ? (
           <div className="space-y-3">
             <Badge variant="outline" className="text-[10px]">
-              รายจ่ายทริป
+              {p({ th: 'รายจ่ายทริป', en: 'Trip expense', zh: '行程支出' })}
             </Badge>
             <TripExpenseDetailView expense={tripExpense} />
           </div>

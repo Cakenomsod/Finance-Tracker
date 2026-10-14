@@ -8,6 +8,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { useFriends } from '@/hooks/use-friends'
+import { useLocale } from '@/components/locale-provider'
 
 export interface PickedMember {
   /** userId for friends, or name string for manual entries */
@@ -27,6 +28,7 @@ interface MemberPickerProps {
 
 export function MemberPicker({ value, onChange, selfUid, className }: MemberPickerProps) {
   const { friendListItems, addCustomFriend } = useFriends()
+  const { p } = useLocale()
   const [manualName, setManualName] = React.useState('')
   const [adding, setAdding] = React.useState(false)
 
@@ -85,14 +87,21 @@ export function MemberPicker({ value, onChange, selfUid, className }: MemberPick
     <div className={cn('space-y-3', className)}>
       {/* Selected members */}
       {value.length > 0 && (
-        <div className="flex flex-wrap gap-2" aria-label="สมาชิกที่เลือก">
+        <div
+          className="flex flex-wrap gap-2"
+          aria-label={p({ th: 'สมาชิกที่เลือก', en: 'Selected members', zh: '已选成员' })}
+        >
           {value.map((m) => (
             <Badge key={m.key} variant="secondary" className="flex items-center gap-1 py-1 pl-2 pr-1">
               <span className="text-sm font-medium">{m.displayName}</span>
               <button
                 type="button"
                 onClick={() => remove(m.key)}
-                aria-label={`เอา ${m.displayName} ออก`}
+                aria-label={p({
+                  th: `เอา ${m.displayName} ออก`,
+                  en: `Remove ${m.displayName}`,
+                  zh: `移除 ${m.displayName}`,
+                })}
                 className={cn(
                   'ml-1 flex size-7 items-center justify-center rounded-full',
                   'transition-colors duration-150 ease-out motion-reduce:transition-none',
@@ -110,8 +119,18 @@ export function MemberPicker({ value, onChange, selfUid, className }: MemberPick
       {/* Friends list */}
       {availableContacts.length > 0 && (
         <div>
-          <p className="mb-2 text-xs text-muted-foreground">รายชื่อของคุณ</p>
-          <div className="flex flex-wrap gap-2" role="group" aria-label="เลือกสมาชิกจากรายชื่อ">
+          <p className="mb-2 text-xs text-muted-foreground">
+            {p({ th: 'รายชื่อของคุณ', en: 'Your contacts', zh: '你的联系人' })}
+          </p>
+          <div
+            className="flex flex-wrap gap-2"
+            role="group"
+            aria-label={p({
+              th: 'เลือกสมาชิกจากรายชื่อ',
+              en: 'Pick members from your contacts',
+              zh: '从联系人中选择成员',
+            })}
+          >
             {availableContacts.map((item) => {
               const isSelected = selectedKeys.has(item.key)
               return (
@@ -152,16 +171,28 @@ export function MemberPicker({ value, onChange, selfUid, className }: MemberPick
       {/* Manual name entry */}
       <div>
         <p className="mb-2 text-xs text-muted-foreground">
-          เพิ่มชื่อใหม่ — จะบันทึกไว้ในรายชื่อให้ใช้ครั้งหน้า (เพื่อนไม่ต้องมีบัญชี)
+          {p({
+            th: 'เพิ่มชื่อใหม่ — จะบันทึกไว้ในรายชื่อให้ใช้ครั้งหน้า (เพื่อนไม่ต้องมีบัญชี)',
+            en: "Add a new name — it's saved to your contacts for next time (friends don't need an account)",
+            zh: '添加新名字——会保存到联系人方便下次使用（朋友无需注册账号）',
+          })}
         </p>
         <div className="flex gap-2">
           <Input
-            placeholder="พิมพ์ชื่อแล้วกด Enter"
+            placeholder={p({
+              th: 'พิมพ์ชื่อแล้วกด Enter',
+              en: 'Type a name and press Enter',
+              zh: '输入名字后按回车',
+            })}
             value={manualName}
             onChange={(e) => setManualName(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void addManual() } }}
             className="h-10 flex-1"
-            aria-label="เพิ่มสมาชิกด้วยชื่อ"
+            aria-label={p({
+              th: 'เพิ่มสมาชิกด้วยชื่อ',
+              en: 'Add a member by name',
+              zh: '按名字添加成员',
+            })}
           />
           <Button
             type="button"
@@ -169,7 +200,7 @@ export function MemberPicker({ value, onChange, selfUid, className }: MemberPick
             className="h-10"
             onClick={() => void addManual()}
             disabled={!manualName.trim() || adding}
-            aria-label="เพิ่มสมาชิก"
+            aria-label={p({ th: 'เพิ่มสมาชิก', en: 'Add member', zh: '添加成员' })}
           >
             <Plus className="size-4" aria-hidden />
           </Button>

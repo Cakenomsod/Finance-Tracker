@@ -109,6 +109,9 @@ function languageInstruction(locale: string): string {
   if (locale === 'th' || locale.startsWith('th-')) {
     return 'Write ALL text fields (summary, titles, descriptions, change) in Thai (ภาษาไทย).';
   }
+  if (locale === 'zh' || locale.startsWith('zh-')) {
+    return 'Write ALL text fields (summary, titles, descriptions, change) in Simplified Chinese (简体中文).';
+  }
   return 'Write ALL text fields (summary, titles, descriptions, change) in English.';
 }
 
@@ -164,10 +167,13 @@ ${ctx.compactTxJson}`;
 
 export function emptyInsightLlmResult(locale: string): AiInsightLlmResult {
   const isTh = locale === 'th' || locale.startsWith('th-');
+  const isZh = locale === 'zh' || locale.startsWith('zh-');
   return {
     summary: isTh
       ? 'ข้อมูลในช่วงนี้ยังไม่เพียงพอสำหรับการวิเคราะห์เชิงลึก ลองเพิ่มรายรับรายจ่ายแล้วสร้างอินไซต์อีกครั้ง'
-      : 'Not enough activity in this period for a detailed analysis. Add more transactions and generate insights again.',
+      : isZh
+        ? '此期间的记录不足，无法进行详细分析。请添加更多收支记录后再生成洞察。'
+        : 'Not enough activity in this period for a detailed analysis. Add more transactions and generate insights again.',
     highlights: [],
     tips: [],
     anomalies: [],

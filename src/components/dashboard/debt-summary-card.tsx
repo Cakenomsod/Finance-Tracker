@@ -116,7 +116,7 @@ export function DebtSummaryCard({
               })}
             </p>
             <Button variant="outline" size="sm" className="mt-4" asChild>
-              <Link href="/debts">{p({ th: 'ไปหน้าหนี้ & หาร', en: 'Go to debts', zh: '前往债务' })}</Link>
+              <Link href="/debts">{p({ th: 'ไปหน้าหนี้ & หาร', en: 'Go to debts', zh: '前往欠款' })}</Link>
             </Button>
           </div>
         )}

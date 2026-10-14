@@ -218,7 +218,7 @@ export default function AccountsPage() {
           </CardTitle>
           <p
             className={cn(
-              'text-3xl font-semibold tabular-nums tracking-tight',
+              'min-w-0 break-words text-3xl font-semibold tabular-nums tracking-tight',
               amountColorClass(totalBalance, 'text-foreground')
             )}
           >

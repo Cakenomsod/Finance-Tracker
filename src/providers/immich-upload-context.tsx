@@ -5,6 +5,12 @@ import { Loader2, CheckCircle2, AlertCircle, X, Upload } from 'lucide-react'
 import { uploadAttachmentImage } from '@/lib/immich/upload-client'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
+import { useLocale } from '@/components/locale-provider'
+import { pickClient } from '@/lib/i18n'
+
+function uploadFailedMessage() {
+  return pickClient({ th: 'อัปโหลดไม่สำเร็จ', en: 'Upload failed', zh: '上传失败' })
+}
 
 export type ImmichUploadJobStatus = 'uploading' | 'done' | 'error'
 
@@ -50,6 +56,7 @@ function createJobId() {
 }
 
 export function ImmichUploadProvider({ children }: { children: React.ReactNode }) {
+  const { p } = useLocale()
   const [jobs, setJobs] = React.useState<ImmichUploadJob[]>([])
   const listenersRef = React.useRef(new Map<string, Set<(assetId: string) => void>>())
   const pendingRef = React.useRef(new Map<string, string[]>())
@@ -115,7 +122,7 @@ export function ImmichUploadProvider({ children }: { children: React.ReactNode }
   const enqueue = React.useCallback(
     ({ file, deliveryKey, tripId, label, successToast }: EnqueueOptions) => {
       const id = createJobId()
-      const fileName = label || file.name || 'รูปภาพ'
+      const fileName = label || file.name || pickClient({ th: 'รูปภาพ', en: 'Photo', zh: '图片' })
       const job: ImmichUploadJob = {
         id,
         fileName,
@@ -127,9 +134,20 @@ export function ImmichUploadProvider({ children }: { children: React.ReactNode }
 
       setJobs((prev) => [job, ...prev].slice(0, 40))
 
-      const toastId = toast.loading(`กำลังอัปโหลด: ${fileName}`, {
-        description: 'ทำอย่างอื่นต่อได้ — อัปโหลดทำงานเบื้องหลัง',
-      })
+      const toastId = toast.loading(
+        pickClient({
+          th: `กำลังอัปโหลด: ${fileName}`,
+          en: `Uploading: ${fileName}`,
+          zh: `正在上传：${fileName}`,
+        }),
+        {
+          description: pickClient({
+            th: 'ทำอย่างอื่นต่อได้ — อัปโหลดทำงานเบื้องหลัง',
+            en: 'Feel free to keep going — it uploads in the background',
+            zh: '可以继续操作 — 上传在后台进行',
+          }),
+        }
+      )
       toastIdsRef.current.set(id, toastId)
 
       void (async () => {
@@ -141,10 +159,14 @@ export function ImmichUploadProvider({ children }: { children: React.ReactNode }
               j.id === id ? { ...j, status: 'done' as const, assetId } : j
             )
           )
-          toast.success(successToast || 'อัปโหลดรูปสำเร็จ', { id: toastId })
+          toast.success(
+            successToast ||
+              pickClient({ th: 'อัปโหลดรูปสำเร็จ', en: 'Photo uploaded', zh: '图片上传成功' }),
+            { id: toastId }
+          )
           window.setTimeout(() => dismissJob(id), DONE_AUTO_DISMISS_MS)
         } catch (err) {
-          const message = err instanceof Error ? err.message : 'อัปโหลดไม่สำเร็จ'
+          const message = err instanceof Error ? err.message : uploadFailedMessage()
           setJobs((prev) =>
             prev.map((j) =>
               j.id === id ? { ...j, status: 'error' as const, error: message } : j
@@ -193,8 +215,14 @@ export function ImmichUploadProvider({ children }: { children: React.ReactNode }
             <div className="flex items-center gap-2 border-b px-3 py-2">
               <Upload className="size-3.5 text-muted-foreground" aria-hidden />
               <p className="min-w-0 flex-1 text-xs font-medium">
-                อัปโหลดรูป
-                {activeCount > 0 ? ` (${activeCount} กำลังทำ)` : ''}
+                {p({ th: 'อัปโหลดรูป', en: 'Photo uploads', zh: '图片上传' })}
+                {activeCount > 0
+                  ? p({
+                      th: ` (${activeCount} กำลังทำ)`,
+                      en: ` (${activeCount} in progress)`,
+                      zh: `（${activeCount} 个进行中）`,
+                    })
+                  : ''}
               </p>
               {activeCount === 0 && (
                 <button
@@ -204,7 +232,11 @@ export function ImmichUploadProvider({ children }: { children: React.ReactNode }
                     e.stopPropagation()
                     for (const job of visibleJobs) dismissJob(job.id)
                   }}
-                  aria-label="ปิดแผงสถานะอัปโหลด"
+                  aria-label={p({
+                    th: 'ปิดแผงสถานะอัปโหลด',
+                    en: 'Close upload panel',
+                    zh: '关闭上传面板',
+                  })}
                 >
                   <X className="size-3.5" />
                 </button>
@@ -232,9 +264,11 @@ export function ImmichUploadProvider({ children }: { children: React.ReactNode }
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-medium">{job.fileName}</p>
                     <p className="text-muted-foreground">
-                      {job.status === 'uploading' && 'กำลังอัปโหลด...'}
-                      {job.status === 'done' && 'เสร็จแล้ว'}
-                      {job.status === 'error' && (job.error || 'ล้มเหลว')}
+                      {job.status === 'uploading' &&
+                        p({ th: 'กำลังอัปโหลด...', en: 'Uploading...', zh: '正在上传...' })}
+                      {job.status === 'done' && p({ th: 'เสร็จแล้ว', en: 'Done', zh: '已完成' })}
+                      {job.status === 'error' &&
+                        (job.error || p({ th: 'ล้มเหลว', en: 'Failed', zh: '失败' }))}
                     </p>
                   </div>
                   <button
@@ -244,7 +278,7 @@ export function ImmichUploadProvider({ children }: { children: React.ReactNode }
                       e.stopPropagation()
                       dismissJob(job.id)
                     }}
-                    aria-label="ปิดสถานะอัปโหลด"
+                    aria-label={p({ th: 'ปิดสถานะอัปโหลด', en: 'Dismiss', zh: '关闭' })}
                   >
                     <X className="size-3.5" />
                   </button>
@@ -302,7 +336,7 @@ export function useImmichUploadDelivery(
         void uploadAttachmentImage(file, { tripId: options?.tripId }).then(
           ({ assetId }) => onAssetRef.current(assetId),
           (err) =>
-            toast.error(err instanceof Error ? err.message : 'อัปโหลดไม่สำเร็จ')
+            toast.error(err instanceof Error ? err.message : uploadFailedMessage())
         )
         return ''
       }

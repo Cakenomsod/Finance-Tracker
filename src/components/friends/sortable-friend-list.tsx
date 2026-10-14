@@ -28,6 +28,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { cn } from '@/lib/utils'
 import type { FriendListItem } from '@/hooks/use-friends'
+import { useLocale } from '@/components/locale-provider'
 
 interface SortableFriendListProps {
   items: FriendListItem[]
@@ -42,6 +43,7 @@ export function SortableFriendList({
   onRemoveCustom,
   onSaveAliases,
 }: SortableFriendListProps) {
+  const { p, t } = useLocale()
   const [dragIndex, setDragIndex] = React.useState<number | null>(null)
   const [overIndex, setOverIndex] = React.useState<number | null>(null)
   const [editingKey, setEditingKey] = React.useState<string | null>(null)
@@ -102,9 +104,14 @@ export function SortableFriendList({
     }
   }
 
+  const moveUpLabel = (name: string) =>
+    p({ th: `เลื่อน ${name} ขึ้น`, en: `Move ${name} up`, zh: `上移 ${name}` })
+  const moveDownLabel = (name: string) =>
+    p({ th: `เลื่อน ${name} ลง`, en: `Move ${name} down`, zh: `下移 ${name}` })
+
   return (
     <>
-      <ul className="space-y-3" aria-label="รายชื่อเพื่อน">
+      <ul className="space-y-3" aria-label={p({ th: 'รายชื่อเพื่อน', en: 'Friends list', zh: '好友列表' })}>
         {items.map((item, index) => {
           const isEditing = editingKey === item.key
           const isDragging = dragIndex === index
@@ -145,7 +152,11 @@ export function SortableFriendList({
                         'focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50',
                         'motion-reduce:transition-none',
                       )}
-                      aria-label={`ลากเพื่อจัดลำดับ ${item.displayName}`}
+                      aria-label={p({
+                        th: `ลากเพื่อจัดลำดับ ${item.displayName}`,
+                        en: `Drag to reorder ${item.displayName}`,
+                        zh: `拖动排序 ${item.displayName}`,
+                      })}
                       aria-grabbed={isDragging}
                       onPointerDown={(e) => e.stopPropagation()}
                     >
@@ -158,7 +169,7 @@ export function SortableFriendList({
                         variant="ghost"
                         className="size-8"
                         disabled={index === 0 || isEditing}
-                        aria-label={`เลื่อน ${item.displayName} ขึ้น`}
+                        aria-label={moveUpLabel(item.displayName)}
                         onClick={() => moveItem(index, index - 1)}
                       >
                         <ChevronUp className="size-3.5" aria-hidden />
@@ -169,7 +180,7 @@ export function SortableFriendList({
                         variant="ghost"
                         className="size-8"
                         disabled={index === items.length - 1 || isEditing}
-                        aria-label={`เลื่อน ${item.displayName} ลง`}
+                        aria-label={moveDownLabel(item.displayName)}
                         onClick={() => moveItem(index, index + 1)}
                       >
                         <ChevronDown className="size-3.5" aria-hidden />
@@ -192,12 +203,16 @@ export function SortableFriendList({
                     <p className="truncate font-medium">{item.displayName}</p>
                     <p className="text-xs text-muted-foreground">
                       {item.type === 'friend'
-                        ? 'มีบัญชีในระบบ'
-                        : 'รายชื่อที่เพิ่มเอง (ไม่มีบัญชี)'}
+                        ? p({ th: 'มีบัญชีในระบบ', en: 'Has an account', zh: '已注册账户' })
+                        : p({
+                            th: 'รายชื่อที่เพิ่มเอง (ไม่มีบัญชี)',
+                            en: 'Private contact (no account)',
+                            zh: '私人联系人（无账户）',
+                          })}
                     </p>
                     {item.aliases && item.aliases.length > 0 && !isEditing ? (
                       <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                        ชื่อเล่น: {item.aliases.join(', ')}
+                        {p({ th: 'ชื่อเล่น', en: 'Nicknames', zh: '昵称' })}: {item.aliases.join(', ')}
                       </p>
                     ) : null}
                   </div>
@@ -211,7 +226,7 @@ export function SortableFriendList({
                       variant="ghost"
                       className="size-9"
                       disabled={index === 0 || isEditing}
-                      aria-label={`เลื่อน ${item.displayName} ขึ้น`}
+                      aria-label={moveUpLabel(item.displayName)}
                       onClick={() => moveItem(index, index - 1)}
                     >
                       <ChevronUp className="size-4" aria-hidden />
@@ -222,7 +237,7 @@ export function SortableFriendList({
                       variant="ghost"
                       className="size-9"
                       disabled={index === items.length - 1 || isEditing}
-                      aria-label={`เลื่อน ${item.displayName} ลง`}
+                      aria-label={moveDownLabel(item.displayName)}
                       onClick={() => moveItem(index, index + 1)}
                     >
                       <ChevronDown className="size-4" aria-hidden />
@@ -235,7 +250,11 @@ export function SortableFriendList({
                       variant="ghost"
                       className="size-9 px-0"
                       onClick={() => startEditAliases(item)}
-                      aria-label={`แก้ไขชื่อเล่นของ ${item.displayName}`}
+                      aria-label={p({
+                        th: `แก้ไขชื่อเล่นของ ${item.displayName}`,
+                        en: `Edit nicknames for ${item.displayName}`,
+                        zh: `编辑 ${item.displayName} 的昵称`,
+                      })}
                     >
                       <Pencil className="size-4" aria-hidden />
                     </Button>
@@ -244,17 +263,21 @@ export function SortableFriendList({
                   {item.type === 'friend' ? (
                     <Badge variant="outline" className="text-primary border-primary/30">
                       <UserCheck className="mr-1 size-3" aria-hidden />
-                      เพื่อน
+                      {t('nav.friends')}
                     </Badge>
                   ) : (
                     <>
-                      <Badge variant="secondary">รายชื่อเอง</Badge>
+                      <Badge variant="secondary">{p({ th: 'รายชื่อเอง', en: 'Private', zh: '私人' })}</Badge>
                       <Button
                         size="sm"
                         variant="ghost"
                         className="size-9 px-0 text-destructive hover:text-destructive"
                         onClick={() => setRemoveTarget(item)}
-                        aria-label={`ลบ ${item.displayName} ออกจากรายชื่อ`}
+                        aria-label={p({
+                          th: `ลบ ${item.displayName} ออกจากรายชื่อ`,
+                          en: `Remove ${item.displayName} from contacts`,
+                          zh: `从联系人中删除 ${item.displayName}`,
+                        })}
                       >
                         <Trash2 className="size-4" aria-hidden />
                       </Button>
@@ -266,12 +289,16 @@ export function SortableFriendList({
               {isEditing && onSaveAliases ? (
                 <div className="mt-3 space-y-2 border-t pt-3 pl-0 sm:pl-11">
                   <Label htmlFor={`alias-${item.key}`} className="text-xs">
-                    ชื่อเล่น (คั่นด้วยจุลภาค)
+                    {p({
+                      th: 'ชื่อเล่น (คั่นด้วยจุลภาค)',
+                      en: 'Nicknames (comma-separated)',
+                      zh: '昵称（用逗号分隔）',
+                    })}
                   </Label>
                   <div className="flex flex-col gap-2 sm:flex-row">
                     <Input
                       id={`alias-${item.key}`}
-                      placeholder="เช่น เบล, Bell"
+                      placeholder={p({ th: 'เช่น เบล, Bell', en: 'e.g. Bell, Belle', zh: '例如：小贝, Bell' })}
                       value={aliasDraft}
                       onChange={(e) => setAliasDraft(e.target.value)}
                       onKeyDown={(e) => {
@@ -288,10 +315,10 @@ export function SortableFriendList({
                         className="min-h-9 flex-1 sm:flex-none"
                         onClick={() => void saveAliases(item)}
                         disabled={saving}
-                        aria-label="บันทึกชื่อเล่น"
+                        aria-label={p({ th: 'บันทึกชื่อเล่น', en: 'Save nicknames', zh: '保存昵称' })}
                       >
                         <Check className="size-4" aria-hidden />
-                        <span className="sm:sr-only">บันทึก</span>
+                        <span className="sm:sr-only">{t('common.save')}</span>
                       </Button>
                       <Button
                         size="sm"
@@ -299,10 +326,10 @@ export function SortableFriendList({
                         className="min-h-9 flex-1 sm:flex-none"
                         onClick={cancelEdit}
                         disabled={saving}
-                        aria-label="ยกเลิกการแก้ไข"
+                        aria-label={p({ th: 'ยกเลิกการแก้ไข', en: 'Cancel editing', zh: '取消编辑' })}
                       >
                         <X className="size-4" aria-hidden />
-                        <span className="sm:sr-only">ยกเลิก</span>
+                        <span className="sm:sr-only">{t('common.cancel')}</span>
                       </Button>
                     </div>
                   </div>
@@ -321,13 +348,19 @@ export function SortableFriendList({
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>ลบรายชื่อ?</AlertDialogTitle>
+            <AlertDialogTitle>
+              {p({ th: 'ลบรายชื่อ?', en: 'Remove contact?', zh: '删除联系人？' })}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              ลบ “{removeTarget?.displayName}” ออกจากรายชื่อส่วนตัว — ไม่สามารถกู้คืนได้
+              {p({
+                th: `ลบ “${removeTarget?.displayName ?? ''}” ออกจากรายชื่อส่วนตัว — ไม่สามารถกู้คืนได้`,
+                en: `Remove “${removeTarget?.displayName ?? ''}” from your private contacts? This can't be undone.`,
+                zh: `从私人联系人中删除“${removeTarget?.displayName ?? ''}”？此操作无法撤销。`,
+              })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={removing}>ยกเลิก</AlertDialogCancel>
+            <AlertDialogCancel disabled={removing}>{t('common.cancel')}</AlertDialogCancel>
             <AlertDialogAction
               disabled={removing}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
@@ -336,7 +369,9 @@ export function SortableFriendList({
                 void confirmRemove()
               }}
             >
-              {removing ? 'กำลังลบ...' : 'ลบรายชื่อ'}
+              {removing
+                ? p({ th: 'กำลังลบ...', en: 'Removing…', zh: '删除中…' })
+                : p({ th: 'ลบรายชื่อ', en: 'Remove contact', zh: '删除联系人' })}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

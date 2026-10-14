@@ -5,6 +5,7 @@ import { StickyNote, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { useLocale } from '@/components/locale-provider'
 import { cn } from '@/lib/utils'
 
 interface OptionalNoteFieldProps {
@@ -14,6 +15,7 @@ interface OptionalNoteFieldProps {
 }
 
 export function OptionalNoteField({ value, onChange, className }: OptionalNoteFieldProps) {
+  const { p } = useLocale()
   const [expanded, setExpanded] = React.useState(!!value)
 
   React.useEffect(() => {
@@ -33,7 +35,7 @@ export function OptionalNoteField({ value, onChange, className }: OptionalNoteFi
         onClick={() => setExpanded(true)}
       >
         <StickyNote className="size-3.5 shrink-0" />
-        เพิ่มหมายเหตุ (ไม่บังคับ)
+        {p({ th: 'เพิ่มหมายเหตุ (ไม่บังคับ)', en: 'Add a note (optional)', zh: '添加备注（可选）' })}
       </Button>
     )
   }
@@ -41,7 +43,9 @@ export function OptionalNoteField({ value, onChange, className }: OptionalNoteFi
   return (
     <div className={cn('space-y-1.5', className)}>
       <div className="flex items-center justify-between gap-2">
-        <Label className="text-sm">หมายเหตุ (ไม่บังคับ)</Label>
+        <Label className="text-sm">
+          {p({ th: 'หมายเหตุ (ไม่บังคับ)', en: 'Note (optional)', zh: '备注（可选）' })}
+        </Label>
         {!value && (
           <Button
             type="button"
@@ -54,12 +58,16 @@ export function OptionalNoteField({ value, onChange, className }: OptionalNoteFi
             }}
           >
             <X className="size-3" />
-            ปิด
+            {p({ th: 'ปิด', en: 'Close', zh: '关闭' })}
           </Button>
         )}
       </div>
       <Textarea
-        placeholder="บันทึกเพิ่มเติม เช่น ใบเสร็จหาย, สถานที่, ข้อตกลง..."
+        placeholder={p({
+          th: 'บันทึกเพิ่มเติม เช่น ใบเสร็จหาย, สถานที่, ข้อตกลง...',
+          en: 'Extra details, e.g. lost receipt, place, agreement...',
+          zh: '补充说明，例如：收据丢失、地点、约定...',
+        })}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         rows={2}

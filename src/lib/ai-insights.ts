@@ -1,4 +1,5 @@
 import { readApiJson } from '@/lib/api-json'
+import { clientLocale } from '@/lib/i18n'
 import type {
   AiInsightPeriodType,
   AiInsightReport,
@@ -55,6 +56,7 @@ export async function fetchAiInsight(
   const res = await fetch(`/api/ai/insights?${params.toString()}`, {
     method: 'GET',
     credentials: 'same-origin',
+    headers: { 'x-app-locale': clientLocale() },
   })
 
   const data = await readApiJson<AiInsightResponse>(res)
@@ -71,7 +73,7 @@ export async function generateAiInsight(
   const res = await fetch('/api/ai/insights/generate', {
     method: 'POST',
     credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'x-app-locale': clientLocale() },
     body: JSON.stringify(body),
   })
 

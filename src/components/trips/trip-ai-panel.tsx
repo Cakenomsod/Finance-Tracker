@@ -7,6 +7,7 @@ import { getTripTimeZone } from '@/lib/trip-currency'
 import { Trip, TripCurrency, TripExpense } from '@/lib/firestore-types'
 import { AiReceiptReviewDialog } from '@/components/ai/ai-receipt-review-dialog'
 import { useAuth } from '@/hooks/use-auth'
+import { useLocale } from '@/components/locale-provider'
 import {
   AiExpenseQuickInput,
   type AiExpenseQuickInputHandle,
@@ -34,6 +35,7 @@ export interface TripAiPanelHandle {
 export const TripAiPanel = React.forwardRef<TripAiPanelHandle, TripAiPanelProps>(
   function TripAiPanel({ tripId, trip, tripMembers, onOpenExpenseForm }, ref) {
     const { user } = useAuth()
+    const { p: localeText } = useLocale()
     const aiInputRef = React.useRef<AiExpenseQuickInputHandle>(null)
     const activeJobIdRef = React.useRef<string | null>(null)
 
@@ -80,7 +82,9 @@ export const TripAiPanel = React.forwardRef<TripAiPanelHandle, TripAiPanelProps>
     }
 
     return (
-      <section aria-label="AI expense capture" className="animate-in fade-in-0 duration-200 motion-reduce:animate-none">
+      <section
+        aria-label={localeText({ th: 'บันทึกรายจ่ายด้วย AI', en: 'AI expense capture', zh: 'AI 记录支出' })}
+        className="animate-in fade-in-0 duration-200 motion-reduce:animate-none">
         <AiExpenseQuickInput
           ref={aiInputRef}
           tripId={tripId}

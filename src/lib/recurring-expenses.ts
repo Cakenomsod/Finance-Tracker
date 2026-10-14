@@ -89,6 +89,16 @@ export function formatFrequencyLabel(
     return step === 1 ? `ทุก${unitText}` : `ทุก ${step} ${unitText}`;
   }
 
+  if (locale === 'zh') {
+    const zhUnits: Record<RecurringFrequencyUnit, { one: string; many: string }> = {
+      daily: { one: '天', many: '天' },
+      weekly: { one: '周', many: '周' },
+      monthly: { one: '月', many: '个月' },
+      yearly: { one: '年', many: '年' },
+    };
+    return step === 1 ? `每${zhUnits[unit].one}` : `每 ${step} ${zhUnits[unit].many}`;
+  }
+
   return step === 1 ? `Every ${unitText}` : `Every ${step} ${unitText}`;
 }
 

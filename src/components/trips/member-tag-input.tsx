@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { useLocale } from '@/components/locale-provider'
 
 interface MemberTagInputProps {
   value: string[]
@@ -18,10 +19,14 @@ interface MemberTagInputProps {
 export function MemberTagInput({
   value,
   onChange,
-  placeholder = 'พิมพ์ชื่อแล้วกด Enter...',
+  placeholder: placeholderProp,
   className,
   disableMe = false,
 }: MemberTagInputProps) {
+  const { p } = useLocale()
+  const placeholder =
+    placeholderProp ??
+    p({ th: 'พิมพ์ชื่อแล้วกด Enter...', en: 'Type a name and press Enter…', zh: '输入名字后按回车…' })
   const [inputValue, setInputValue] = React.useState('')
 
   const addMember = (name: string) => {
@@ -54,10 +59,11 @@ export function MemberTagInput({
             variant="secondary"
             className="flex items-center gap-1 pl-2 pr-1"
           >
-            {member}
+            {member === 'Me' ? p({ th: 'ฉัน', en: 'Me', zh: '我' }) : member}
             <button
               type="button"
               onClick={() => removeMember(member)}
+              aria-label={p({ th: `เอา ${member} ออก`, en: `Remove ${member}`, zh: `移除 ${member}` })}
               className="ml-1 rounded-full hover:bg-muted-foreground/20 p-0.5"
             >
               <X className="size-3" />
@@ -68,7 +74,11 @@ export function MemberTagInput({
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={value.length === 0 ? placeholder : 'เพิ่มคนอื่น...'}
+          placeholder={
+            value.length === 0
+              ? placeholder
+              : p({ th: 'เพิ่มคนอื่น...', en: 'Add someone else…', zh: '添加其他人…' })
+          }
           className="border-0 p-0 shadow-none focus-visible:ring-0 h-auto flex-1 min-w-[120px]"
         />
       </div>
@@ -82,7 +92,7 @@ export function MemberTagInput({
           className="h-7 text-xs"
         >
           <Plus className="size-3 mr-1" />
-          เพิ่ม
+          {p({ th: 'เพิ่ม', en: 'Add', zh: '添加' })}
         </Button>
         {!disableMe && !value.includes('Me') && (
           <Button
@@ -92,7 +102,7 @@ export function MemberTagInput({
             onClick={() => addMember('Me')}
             className="h-7 text-xs text-muted-foreground"
           >
-            + เพิ่มตัวเอง (ฉัน)
+            {p({ th: '+ เพิ่มตัวเอง (ฉัน)', en: '+ Add myself', zh: '+ 添加自己' })}
           </Button>
         )}
       </div>

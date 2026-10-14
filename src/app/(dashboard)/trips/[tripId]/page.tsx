@@ -90,6 +90,8 @@ import { useMoneyPools } from '@/hooks/use-money-pools'
 import { useUserSettings } from '@/hooks/use-user-settings'
 import { useLocale } from '@/components/locale-provider'
 import { categoryLabel } from '@/lib/default-categories'
+import { intlLocale } from '@/lib/i18n'
+import { MoneyInput } from '@/components/shared/money-input'
 
 function TripDetailSkeleton() {
   const { p } = useLocale()
@@ -147,7 +149,7 @@ export default function TripDetailPage() {
   const tripId = params.tripId as string
   const { user } = useAuth()
   const { t, p, locale } = useLocale()
-  const dateLocale = locale === 'th' ? 'th-TH' : locale === 'zh' ? 'zh-CN' : 'en-US'
+  const dateLocale = intlLocale(locale)
   const { pendingIds: pendingDeleteIds, scheduleDelete } = useUndoableDelete()
   const { accountsEnabled, moneyPoolsEnabled } = useUserSettings()
   const { activeSources, defaultSource } = usePaymentSources()
@@ -219,6 +221,11 @@ export default function TripDetailPage() {
   /** Get display name from memberProfiles or fallback to key */
   const getDisplayName = (key: string) =>
     trip?.memberProfiles?.[key]?.displayName || key
+  /** Display-only name: never feed this into saved payer/share data. */
+  const showName = (key: string) => {
+    const name = getDisplayName(key)
+    return name === 'Me' ? p({ th: 'ฉัน', en: 'Me', zh: '我' }) : name
+  }
 
   const members = trip?.members || []
   const selfMemberKey = React.useMemo(
@@ -560,12 +567,15 @@ export default function TripDetailPage() {
   }, [allExpensesCombined, trip])
 
   // Per-person bar chart data
-  const perPersonData = participants.map((p) => ({
-    name: p.name,
-    displayName: p.displayName.length > 10 ? `${p.displayName.slice(0, 9)}…` : p.displayName,
-    paid: p.paid,
-    net: p.netBalance,
-  }))
+  const perPersonData = participants.map((person) => {
+    const label = showName(person.name)
+    return {
+      name: person.name,
+      displayName: label.length > 10 ? `${label.slice(0, 9)}…` : label,
+      paid: person.paid,
+      net: person.netBalance,
+    }
+  })
 
   const meParticipant = participants.find((p) => isCurrentUserKey(p.name, user?.uid || ''))
   const myBalance = meParticipant ? meParticipant.netBalance : 0
@@ -711,7 +721,7 @@ export default function TripDetailPage() {
             <p className="text-sm font-medium text-muted-foreground">
               {p({ th: 'ค่าใช้จ่ายรวม', en: 'Total expenses', zh: '总支出' })}
             </p>
-            <p className="mt-2 text-2xl font-semibold tracking-tight tabular-nums sm:text-3xl">
+            <p className="mt-2 break-words text-2xl font-semibold tracking-tight tabular-nums sm:text-3xl">
               {homeSymbol}{totalExpenses.toLocaleString()}
             </p>
           </CardContent>
@@ -721,8 +731,8 @@ export default function TripDetailPage() {
             <p className="text-sm font-medium text-muted-foreground">
               {p({ th: 'ยอดของคุณ', en: 'Your balance', zh: '你的余额' })}
             </p>
-            <p className={cn('mt-2 text-2xl font-semibold tracking-tight tabular-nums sm:text-3xl', amountColorClass(myBalance, 'text-foreground'))}>
-              {myBalance > 0 ? '+' : ''}{homeSymbol}{myBalance.toLocaleString()}
+            <p className={cn('mt-2 break-words text-2xl font-semibold tracking-tight tabular-nums sm:text-3xl', amountColorClass(myBalance, 'text-foreground'))}>
+              {myBalance > 0 ? '+' : myBalance < 0 ? '−' : ''}{homeSymbol}{Math.abs(myBalance).toLocaleString()}
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
               {myBalance > 0
@@ -761,7 +771,7 @@ export default function TripDetailPage() {
         </Card>
       </div>
 
-      {/* AI panel — แสดงทุกแท็บ สถานะแยกรายการ persist ต่อทริป */}
+      {/* AI panel — shown on every tab; item-split state persists per trip */}
       {trip && trip.status === 'active' && (
         <TripAiPanel
           ref={tripAiPanelRef}
@@ -859,7 +869,7 @@ export default function TripDetailPage() {
                             : 'bg-background hover:bg-muted'
                         )}
                       >
-                        {getDisplayName(m)}
+                        {showName(m)}
                       </button>
                     ))}
                   </div>
@@ -917,7 +927,7 @@ export default function TripDetailPage() {
                   expenses={filteredExpenses}
                   trip={trip}
                   transactions={transactions}
-                  getDisplayName={getDisplayName}
+                  getDisplayName={showName}
                   expandedReceipts={expandedReceipts}
                   onToggleReceipt={(id) =>
                     setExpandedReceipts((prev) => ({ ...prev, [id]: !prev[id] }))
@@ -929,7 +939,14 @@ export default function TripDetailPage() {
                   }}
                   onDeleteLegacy={(id, tx) =>
                     scheduleDelete(id, () => removeTransaction(id, tx), {
-                      message: `ลบ "${tx?.description || 'รายการ'}" แล้ว`,
+                      message: (() => {
+                        const name = tx?.description || p({ th: 'รายการ', en: 'Expense', zh: '支出' })
+                        return p({
+                          th: `ลบ "${name}" แล้ว`,
+                          en: `Deleted "${name}"`,
+                          zh: `已删除“${name}”`,
+                        })
+                      })(),
                       undoLabel: t('common.undo'),
                     })
                   }
@@ -941,7 +958,14 @@ export default function TripDetailPage() {
                         await deleteTripExpenseWithTransaction(id, raw.transactionId)
                       },
                       {
-                        message: `ลบ "${raw.description || 'รายการ'}" แล้ว — ยอดหารของทุกคนในทริปจะคำนวณใหม่`,
+                        message: (() => {
+                          const name = raw.description || p({ th: 'รายการ', en: 'Expense', zh: '支出' })
+                          return p({
+                            th: `ลบ "${name}" แล้ว — ยอดหารของทุกคนในทริปจะคำนวณใหม่`,
+                            en: `Deleted "${name}" — everyone's trip shares will be recalculated`,
+                            zh: `已删除“${name}”——行程中每个人的分摊金额将重新计算`,
+                          })
+                        })(),
                         undoLabel: t('common.undo'),
                       }
                     )
@@ -1096,7 +1120,7 @@ export default function TripDetailPage() {
                             <AvatarFallback className="bg-muted text-xs">{person.initials}</AvatarFallback>
                           </Avatar>
                           <div className="min-w-0">
-                            <p className="truncate font-medium [overflow-wrap:anywhere]">{person.displayName}</p>
+                            <p className="truncate font-medium [overflow-wrap:anywhere]">{showName(person.name)}</p>
                             <p className="text-xs text-muted-foreground tabular-nums">
                               {p({ th: `จ่ายไป ${paidText}`, en: `Paid ${paidText}`, zh: `已付 ${paidText}` })}
                             </p>
@@ -1166,8 +1190,8 @@ export default function TripDetailPage() {
                 ) : (
                   <ul className="space-y-2">
                     {settlements.map((s, i) => {
-                      const fromName = getDisplayName(s.from)
-                      const toName = getDisplayName(s.to)
+                      const fromName = showName(s.from)
+                      const toName = showName(s.to)
                       return (
                         <li
                           key={`${s.from}-${s.to}-${i}`}
@@ -1298,8 +1322,8 @@ export default function TripDetailPage() {
 
                           <ul className="space-y-1.5">
                             {transfers.map((t, index) => {
-                              const fromName = getDisplayName(t.from)
-                              const toName = getDisplayName(t.to)
+                              const fromName = showName(t.from)
+                              const toName = showName(t.to)
                               const exId = ex.id || `${ex.description}-${ex.date?.seconds}`
                               const debtState = itemizedDebtStates[exId]?.[`${t.from}-${t.to}`] || {
                                 status: 'pending' as const,
@@ -1421,8 +1445,8 @@ export default function TripDetailPage() {
                 ) : (
                   <ul className="divide-y overflow-hidden rounded-lg border">
                     {paymentHistory.map((s) => {
-                      const fromName = getDisplayName(s.fromUserId)
-                      const toName = getDisplayName(s.toUserId)
+                      const fromName = showName(s.fromUserId)
+                      const toName = showName(s.toUserId)
                       const date = s.date?.seconds ? new Date(s.date.seconds * 1000) : new Date()
                       return (
                         <li
@@ -1686,9 +1710,9 @@ export default function TripDetailPage() {
             <DialogDescription>
               {recordPaymentData
                 ? p({
-                    th: `${getDisplayName(recordPaymentData.from)} จ่ายคืน ${getDisplayName(recordPaymentData.to)}`,
-                    en: `${getDisplayName(recordPaymentData.from)} paid ${getDisplayName(recordPaymentData.to)}`,
-                    zh: `${getDisplayName(recordPaymentData.from)} 还给 ${getDisplayName(recordPaymentData.to)}`,
+                    th: `${showName(recordPaymentData.from)} จ่ายคืน ${showName(recordPaymentData.to)}`,
+                    en: `${showName(recordPaymentData.from)} paid ${showName(recordPaymentData.to)}`,
+                    zh: `${showName(recordPaymentData.from)} 还给 ${showName(recordPaymentData.to)}`,
                   })
                 : ''}
             </DialogDescription>
@@ -1699,23 +1723,18 @@ export default function TripDetailPage() {
                 <Label htmlFor="settlement-amount">
                   {p({ th: `จำนวนที่จ่าย (${homeSymbol})`, en: `Amount paid (${homeSymbol})`, zh: `还款金额（${homeSymbol}）` })}
                 </Label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" aria-hidden>
-                    {homeSymbol}
-                  </span>
-                  <Input
-                    id="settlement-amount"
-                    type="number"
-                    inputMode="decimal"
-                    min="0"
-                    step="0.01"
-                    className="h-12 pl-8 text-lg font-semibold tabular-nums"
-                    value={settlementAmount}
-                    onChange={(e) => setSettlementAmount(e.target.value)}
-                    aria-invalid={Boolean(settlementError)}
-                    aria-describedby="settlement-amount-hint"
-                  />
-                </div>
+                <MoneyInput
+                  id="settlement-amount"
+                  currencySymbol={homeSymbol}
+                  symbolClassName="left-3 text-base"
+                  min="0"
+                  step="0.01"
+                  className="h-12 text-lg font-semibold"
+                  value={settlementAmount}
+                  onChange={(e) => setSettlementAmount(e.target.value)}
+                  aria-invalid={Boolean(settlementError)}
+                  aria-describedby="settlement-amount-hint"
+                />
                 <p
                   id="settlement-amount-hint"
                   className={cn('text-xs tabular-nums', settlementError ? 'text-destructive' : 'text-muted-foreground')}

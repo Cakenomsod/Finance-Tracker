@@ -1,4 +1,5 @@
 import { PaymentMethod, Transaction, TripExpensePayer } from './firestore-types';
+import { pickClient } from './i18n';
 
 /** Fixed Paotang co-payment split (government wallet subsidy programs) */
 export const PAOTANG_GOV_PERCENT = 60;
@@ -333,14 +334,29 @@ export function buildPaotangPaymentFields(
 }
 
 export function getPaotangCapReasonLabel(reason?: PaotangCapReason | null): string {
+  const daily = PAOTANG_DAILY_GOV_MAX.toLocaleString();
+  const monthly = PAOTANG_MONTHLY_QUOTA.toLocaleString();
+  const total = PAOTANG_TOTAL_QUOTA.toLocaleString();
   switch (reason) {
     case 'daily':
-      return `โควต้ารายวัน (สูงสุด ฿${PAOTANG_DAILY_GOV_MAX.toLocaleString()}/วัน)`;
+      return pickClient({
+        th: `โควต้ารายวัน (สูงสุด ฿${daily}/วัน)`,
+        en: `Daily quota (max ฿${daily}/day)`,
+        zh: `每日额度（最高 ฿${daily}/天）`,
+      });
     case 'monthly':
-      return `โควต้ารายเดือน (฿${PAOTANG_MONTHLY_QUOTA.toLocaleString()}/เดือน ไม่ยกยอด)`;
+      return pickClient({
+        th: `โควต้ารายเดือน (฿${monthly}/เดือน ไม่ยกยอด)`,
+        en: `Monthly quota (฿${monthly}/month, no rollover)`,
+        zh: `每月额度（฿${monthly}/月，不结转）`,
+      });
     case 'total':
-      return `โควต้ารวม (฿${PAOTANG_TOTAL_QUOTA.toLocaleString()} ตลอดโครงการ)`;
+      return pickClient({
+        th: `โควต้ารวม (฿${total} ตลอดโครงการ)`,
+        en: `Total quota (฿${total} for the whole program)`,
+        zh: `总额度（整个项目 ฿${total}）`,
+      });
     default:
-      return 'โควต้าเป๋าตัง';
+      return pickClient({ th: 'โควต้าเป๋าตัง', en: 'Paotang quota', zh: 'Paotang 额度' });
   }
 }

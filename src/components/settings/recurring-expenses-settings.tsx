@@ -43,6 +43,8 @@ import { useLocale } from '@/components/locale-provider';
 import { RecurringExpense, RecurringFrequencyUnit } from '@/lib/firestore-types';
 import { formatMoney } from '@/lib/aggregate-transactions';
 import { formatLocalDateInput } from '@/lib/datetime';
+import { intlLocale } from '@/lib/i18n';
+import { categoryLabel } from '@/lib/default-categories';
 import { formatFrequencyLabel, normalizeFrequencyInterval } from '@/lib/recurring-expenses';
 import { toast } from 'sonner';
 
@@ -104,7 +106,7 @@ export function RecurringExpensesSettings() {
   const { expenseCategories } = useCategories();
   const { currency, accountsEnabled } = useUserSettings();
   const { activeSources } = usePaymentSources();
-  const { locale, t } = useLocale();
+  const { locale, t, p } = useLocale();
   const [dialogOpen, setDialogOpen] = React.useState(false);
   const [editing, setEditing] = React.useState<RecurringExpense | null>(null);
   const [deleteTarget, setDeleteTarget] = React.useState<RecurringExpense | null>(null);
@@ -146,7 +148,14 @@ export function RecurringExpensesSettings() {
       toast.success(t('settings.saved'));
       setDialogOpen(false);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to save recurring expense');
+      console.error('Save recurring expense failed:', err);
+      toast.error(
+        p({
+          th: 'บันทึกรายจ่ายประจำไม่สำเร็จ ลองใหม่อีกครั้ง',
+          en: 'Could not save the recurring expense — try again',
+          zh: '保存定期支出失败，请重试',
+        })
+      );
     } finally {
       setSaving(false);
     }
@@ -160,7 +169,10 @@ export function RecurringExpensesSettings() {
       toast.success(t('settings.saved'));
       setDeleteTarget(null);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to delete');
+      console.error('Delete recurring expense failed:', err);
+      toast.error(
+        p({ th: 'ลบไม่สำเร็จ ลองใหม่อีกครั้ง', en: 'Could not delete — try again', zh: '删除失败，请重试' })
+      );
     } finally {
       setDeleting(false);
     }
@@ -169,7 +181,7 @@ export function RecurringExpensesSettings() {
   const formatNextDate = (expense: RecurringExpense) => {
     if (!expense.nextDate?.seconds) return '—';
     const date = new Date(expense.nextDate.seconds * 1000);
-    return date.toLocaleDateString(locale === 'th' ? 'th-TH' : 'en-US', {
+    return date.toLocaleDateString(intlLocale(locale), {
       month: 'short',
       day: 'numeric',
       year: 'numeric',
@@ -229,7 +241,7 @@ export function RecurringExpensesSettings() {
                       <span>
                         {t('settings.next')}: {formatNextDate(expense)}
                       </span>
-                      {expense.category ? <span>· {expense.category}</span> : null}
+                      {expense.category ? <span>· {categoryLabel(expense.category, locale)}</span> : null}
                     </div>
                   </div>
                   <div className="flex items-center justify-between gap-2 sm:justify-end">
@@ -281,7 +293,7 @@ export function RecurringExpensesSettings() {
                 id="recurring-name"
                 value={form.name}
                 onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                placeholder="Netflix"
+                placeholder={p({ th: 'เช่น Netflix', en: 'e.g. Netflix', zh: '例如 Netflix' })}
                 autoFocus
               />
             </div>
@@ -353,7 +365,7 @@ export function RecurringExpensesSettings() {
                   <SelectItem value="none">{t('settings.noCategory')}</SelectItem>
                   {expenseCategories.map((c) => (
                     <SelectItem key={c.id} value={c.name}>
-                      {c.icon} {c.name}
+                      {c.icon} {categoryLabel(c.name, locale)}
                     </SelectItem>
                   ))}
                 </SelectContent>

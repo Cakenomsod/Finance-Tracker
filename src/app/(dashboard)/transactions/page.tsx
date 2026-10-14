@@ -66,7 +66,7 @@ import { computeTotalLedgerBalanceUpToMonth } from '@/lib/account-balances'
 import { usePaymentSources } from '@/hooks/use-payment-sources'
 import { useUserSettings } from '@/hooks/use-user-settings'
 import { useExchangeRates } from '@/hooks/use-exchange-rates'
-import { isAppCurrency, convertCurrency, STATIC_FALLBACK_RATES } from '@/lib/currency'
+import { isAppCurrency, convertCurrency, currencySymbol, STATIC_FALLBACK_RATES } from '@/lib/currency'
 import { PaymentSource } from '@/lib/firestore-types'
 import { useCategories } from '@/hooks/use-categories'
 import { TransactionForm } from '@/components/transactions/transaction-form'
@@ -104,8 +104,13 @@ import { collectImmichAssetIds } from '@/lib/immich/asset-ids'
 import { isStorageAttachment } from '@/lib/attachments/ids'
 import { useLocale } from '@/components/locale-provider'
 import { categoryLabel } from '@/lib/default-categories'
+import { intlLocale } from '@/lib/i18n'
 
 const ALL_CATEGORIES = '__all__'
+
+function symbolFor(code: string) {
+  return isAppCurrency(code) ? currencySymbol(code) : code
+}
 
 type TransactionsPageRow = {
   id: string | undefined
@@ -444,10 +449,12 @@ export default function TransactionsPage() {
 
   const dateGroupedTransactions = React.useMemo(
     () =>
-      groupItemsByDate(filteredTransactions, (transaction) =>
-        toDateFromFirestore(transaction.date)
+      groupItemsByDate(
+        filteredTransactions,
+        (transaction) => toDateFromFirestore(transaction.date),
+        intlLocale(locale)
       ),
-    [filteredTransactions]
+    [filteredTransactions, locale]
   )
 
   const handleClearFilters = React.useCallback(() => {
@@ -622,10 +629,12 @@ export default function TransactionsPage() {
               <div
                 className="grid grid-cols-2 sm:grid-cols-4"
                 role="group"
-                aria-label="สรุปยอดเดือนที่เลือก"
+                aria-label={p({ th: 'สรุปยอดเดือนที่เลือก', en: 'Selected month summary', zh: '所选月份汇总' })}
               >
                 <div className="min-w-0 space-y-1 border-b border-r border-border px-3 py-3 sm:border-b-0 sm:px-4 sm:py-3.5">
-                  <p className="text-xs font-medium text-muted-foreground">รายรับรวม</p>
+                  <p className="text-xs font-medium text-muted-foreground">
+                    {p({ th: 'รายรับรวม', en: 'Total income', zh: '总收入' })}
+                  </p>
                   <MonthAnimatedValue
                     valueKey={`${monthKey}-income`}
                     className="block truncate text-lg font-semibold tabular-nums text-success duration-200 ease-out sm:text-xl"
@@ -634,7 +643,9 @@ export default function TransactionsPage() {
                   </MonthAnimatedValue>
                 </div>
                 <div className="min-w-0 space-y-1 border-b border-border px-3 py-3 sm:border-b-0 sm:border-r sm:px-4 sm:py-3.5">
-                  <p className="text-xs font-medium text-muted-foreground">รายจ่ายรวม</p>
+                  <p className="text-xs font-medium text-muted-foreground">
+                    {p({ th: 'รายจ่ายรวม', en: 'Total expenses', zh: '总支出' })}
+                  </p>
                   <MonthAnimatedValue
                     valueKey={`${monthKey}-expenses`}
                     className="block truncate text-lg font-semibold tabular-nums text-destructive duration-200 ease-out sm:text-xl"
@@ -643,7 +654,9 @@ export default function TransactionsPage() {
                   </MonthAnimatedValue>
                 </div>
                 <div className="min-w-0 space-y-1 border-r border-border px-3 py-3 sm:px-4 sm:py-3.5">
-                  <p className="text-xs font-medium text-muted-foreground">ยอดสุทธิเดือนนี้</p>
+                  <p className="text-xs font-medium text-muted-foreground">
+                    {p({ th: 'ยอดสุทธิเดือนนี้', en: 'Net this month', zh: '本月净额' })}
+                  </p>
                   <MonthAnimatedValue
                     valueKey={`${monthKey}-net`}
                     className={cn(
@@ -655,7 +668,9 @@ export default function TransactionsPage() {
                   </MonthAnimatedValue>
                 </div>
                 <div className="min-w-0 space-y-1 px-3 py-3 sm:px-4 sm:py-3.5">
-                  <p className="text-xs font-medium text-muted-foreground">เงินสะสมทั้งหมด</p>
+                  <p className="text-xs font-medium text-muted-foreground">
+                    {p({ th: 'เงินสะสมทั้งหมด', en: 'Total balance', zh: '累计余额' })}
+                  </p>
                   <MonthAnimatedValue
                     valueKey={`${monthKey}-balance`}
                     className={cn(
@@ -667,8 +682,16 @@ export default function TransactionsPage() {
                   </MonthAnimatedValue>
                   <p className="text-xs leading-tight text-muted-foreground">
                     {accountsEnabled
-                      ? 'ยอดรวมทุกบัญชี · เงินเริ่มต้น + รายการที่ระบุบัญชี'
-                      : 'สะสมถึงสิ้นเดือนนี้ · จากทุกรายการ'}
+                      ? p({
+                          th: 'ยอดรวมทุกบัญชี · เงินเริ่มต้น + รายการที่ระบุบัญชี',
+                          en: 'All accounts · opening balance + entries with an account',
+                          zh: '所有账户 · 初始余额 + 已指定账户的记录',
+                        })
+                      : p({
+                          th: 'สะสมถึงสิ้นเดือนนี้ · จากทุกรายการ',
+                          en: 'Up to end of this month · from all entries',
+                          zh: '截至本月底 · 来自所有记录',
+                        })}
                   </p>
                 </div>
               </div>
@@ -683,9 +706,13 @@ export default function TransactionsPage() {
       >
         <span>
           {loading
-            ? 'กำลังโหลด…'
-            : `${filteredTransactions.length.toLocaleString()} รายการในเดือนนี้`}
-          {hasActiveFilters ? ' (กรองแล้ว)' : ''}
+            ? p({ th: 'กำลังโหลด…', en: 'Loading…', zh: '加载中…' })
+            : p({
+                th: `${filteredTransactions.length.toLocaleString()} รายการในเดือนนี้`,
+                en: `${filteredTransactions.length.toLocaleString()} ${filteredTransactions.length === 1 ? 'entry' : 'entries'} this month`,
+                zh: `本月 ${filteredTransactions.length.toLocaleString()} 条记录`,
+              })}
+          {hasActiveFilters ? p({ th: ' (กรองแล้ว)', en: ' (filtered)', zh: '（已筛选）' }) : ''}
         </span>
       </div>
 
@@ -715,13 +742,19 @@ export default function TransactionsPage() {
             <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead className="w-[72px] text-xs font-semibold">เวลา</TableHead>
-                <TableHead className="text-xs font-semibold">รายละเอียด</TableHead>
-                <TableHead className="text-xs font-semibold">หมวดหมู่</TableHead>
-                <TableHead className="text-xs font-semibold">ผู้จ่าย</TableHead>
-                <TableHead className="text-right text-xs font-semibold">จำนวนเงิน</TableHead>
+                <TableHead className="w-[72px] text-xs font-semibold">
+                  {p({ th: 'เวลา', en: 'Time', zh: '时间' })}
+                </TableHead>
+                <TableHead className="text-xs font-semibold">
+                  {p({ th: 'รายละเอียด', en: 'Details', zh: '详情' })}
+                </TableHead>
+                <TableHead className="text-xs font-semibold">{t('tx.category')}</TableHead>
+                <TableHead className="text-xs font-semibold">
+                  {p({ th: 'ผู้จ่าย', en: 'Paid by', zh: '付款人' })}
+                </TableHead>
+                <TableHead className="text-right text-xs font-semibold">{t('tx.amount')}</TableHead>
                 <TableHead className="w-[44px]">
-                  <span className="sr-only">การดำเนินการ</span>
+                  <span className="sr-only">{p({ th: 'การดำเนินการ', en: 'Actions', zh: '操作' })}</span>
                 </TableHead>
               </TableRow>
             </TableHeader>
@@ -767,12 +800,14 @@ export default function TransactionsPage() {
                         {transaction.description}
                         {transaction.isPaotang && (
                           <Badge variant="outline" className="ml-2 align-middle text-xs border-chart-2/40 text-chart-2">
-                            เป๋าตัง
+                            {p({ th: 'เป๋าตัง', en: 'Paotang', zh: 'Paotang' })}
                           </Badge>
                         )}
                         {!transaction.isLegacy && (
                           <Badge variant="outline" className="ml-2 align-middle text-xs">
-                            {transaction.isTripDebtPending ? 'ค้างจ่ายทริป' : 'รายจ่ายทริป'}
+                            {transaction.isTripDebtPending
+                              ? p({ th: 'ค้างจ่ายทริป', en: 'Trip unpaid', zh: '行程待付' })
+                              : p({ th: 'รายจ่ายทริป', en: 'Trip expense', zh: '行程支出' })}
                           </Badge>
                         )}
                       </p>
@@ -803,7 +838,9 @@ export default function TransactionsPage() {
                     })()}
                   </TableCell>
                   <TableCell className="py-2.5 text-muted-foreground">
-                    {transaction.paidBy === 'Me' || !transaction.paidBy ? 'ฉัน' : transaction.paidBy}
+                    {transaction.paidBy === 'Me' || !transaction.paidBy
+                      ? p({ th: 'ฉัน', en: 'Me', zh: '我' })
+                      : transaction.paidBy}
                   </TableCell>
                   <TableCell
                     className={cn(
@@ -833,23 +870,32 @@ export default function TransactionsPage() {
                           />
                           {transaction.isPaotang && Math.abs(fullAmount) !== Math.abs(displayAmount) && (
                             <span className="block text-xs font-normal text-muted-foreground">
-                              เต็ม {fullAmount > 0 ? '+' : ''}{recordedCurrency === 'JPY' ? '¥' : '฿'}{Math.abs(fullAmount).toLocaleString()}
-                              {' · '}รัฐ {PAOTANG_GOV_PERCENT}% (ตามโควต้า)
+                              {p({ th: 'เต็ม', en: 'Full', zh: '全额' })} {fullAmount > 0 ? '+' : ''}{symbolFor(recordedCurrency)}{Math.abs(fullAmount).toLocaleString()}
+                              {' · '}
+                              {p({
+                                th: `รัฐ ${PAOTANG_GOV_PERCENT}% (ตามโควต้า)`,
+                                en: `Gov ${PAOTANG_GOV_PERCENT}% (per quota)`,
+                                zh: `政府 ${PAOTANG_GOV_PERCENT}%（按额度）`,
+                              })}
                             </span>
                           )}
                           {!transaction.isLegacy && Math.abs(fullAmount) !== Math.abs(displayAmount) && (
                             <span className="block text-xs font-normal text-muted-foreground">
-                              เต็ม {recordedCurrency === 'JPY' ? '¥' : '฿'}{Math.abs(fullAmount).toLocaleString()}
+                              {p({ th: 'เต็ม', en: 'Full', zh: '全额' })} {symbolFor(recordedCurrency)}{Math.abs(fullAmount).toLocaleString()}
                             </span>
                           )}
                           {transaction.isPaotang && transaction.paotangQuotaCapped && (
                             <span className="block text-xs font-normal text-warning">
-                              โควต้าจำกัด — {getPaotangCapReasonLabel(transaction.paotangCapReason)}
+                              {p({ th: 'โควต้าจำกัด', en: 'Quota limited', zh: '额度受限' })} — {getPaotangCapReasonLabel(transaction.paotangCapReason)}
                             </span>
                           )}
                           {transaction.isTripDebtPending && (
                             <span className="block text-xs font-normal text-muted-foreground">
-                              ยังไม่นับในรายจ่าย — จ่ายคืนในหน้าทริป
+                              {p({
+                                th: 'ยังไม่นับในรายจ่าย — จ่ายคืนในหน้าทริป',
+                                en: 'Not counted as expense yet — settle on the trip page',
+                                zh: '尚未计入支出 — 请在行程页面结清',
+                              })}
                             </span>
                           )}
                         </>
@@ -863,7 +909,11 @@ export default function TransactionsPage() {
                           variant="ghost"
                           size="icon"
                           className="size-8 opacity-100 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 md:focus-visible:opacity-100"
-                          aria-label={`เมนูสำหรับ ${transaction.description}`}
+                          aria-label={p({
+                            th: `เมนูสำหรับ ${transaction.description}`,
+                            en: `Actions for ${transaction.description}`,
+                            zh: `${transaction.description} 的操作`,
+                          })}
                         >
                           <MoreHorizontal className="size-4" aria-hidden />
                         </Button>
@@ -887,7 +937,7 @@ export default function TransactionsPage() {
                         ) : (
                           <DropdownMenuItem onClick={() => handleViewTransaction(transaction)}>
                             <ExternalLink className="mr-2 size-4" aria-hidden />
-                            {p({ th: 'เปิดรายการทริป', en: 'Open trip expense', zh: '打开旅行支出' })}
+                            {p({ th: 'เปิดรายการทริป', en: 'Open trip expense', zh: '打开行程支出' })}
                           </DropdownMenuItem>
                         )}
                       </DropdownMenuContent>
@@ -911,7 +961,7 @@ export default function TransactionsPage() {
         {loadingOlder && (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden />
-            กำลังโหลดรายการเพิ่ม...
+            {p({ th: 'กำลังโหลดรายการเพิ่ม...', en: 'Loading more entries...', zh: '正在加载更多记录...' })}
           </div>
         )}
       </div>

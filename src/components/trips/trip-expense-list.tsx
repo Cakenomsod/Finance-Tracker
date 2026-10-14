@@ -22,6 +22,7 @@ import {
 import { cn } from '@/lib/utils'
 import { useLocale } from '@/components/locale-provider'
 import { categoryLabel } from '@/lib/default-categories'
+import { intlLocale } from '@/lib/i18n'
 import { DateGroupDividerRow } from '@/components/transactions/date-group-divider'
 import {
   formatTransactionDisplayTime,
@@ -78,13 +79,14 @@ function TripExpenseReceiptBreakdown({
   exHomeHint: string | null
   getDisplayName: (key: string) => string
 }) {
+  const { p, locale } = useLocale()
   if (!expense.rawEx?.items) return null
 
   return (
     <div className="mt-3 space-y-2 border-t pt-3 text-xs">
       <div className="flex justify-between text-xs font-medium text-muted-foreground">
-        <span>รายการสินค้า</span>
-        <span>ราคา & ภาษี</span>
+        <span>{p({ th: 'รายการสินค้า', en: 'Items', zh: '商品' })}</span>
+        <span>{p({ th: 'ราคา & ภาษี', en: 'Price & tax', zh: '价格和税费' })}</span>
       </div>
       <div className="space-y-1.5">
         {expense.rawEx.items.map((item, index) => {
@@ -94,17 +96,19 @@ function TripExpenseReceiptBreakdown({
               key={index}
               className="flex items-center justify-between border-b border-muted/50 py-1 last:border-0"
             >
-              <div className="space-y-0.5">
+              <div className="min-w-0 space-y-0.5">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-medium text-foreground">
-                    {item.name || 'สินค้า'}
+                  <span className="break-words font-medium text-foreground">
+                    {item.name || p({ th: 'สินค้า', en: 'Item', zh: '商品' })}
                   </span>
                   <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
-                    {item.category}
+                    {categoryLabel(item.category, locale)}
                   </span>
                 </div>
                 <div className="mt-0.5 flex items-center gap-1">
-                  <span className="text-xs text-muted-foreground">คนหาร:</span>
+                  <span className="text-xs text-muted-foreground">
+                    {p({ th: 'คนหาร:', en: 'Split with:', zh: '分摊人：' })}
+                  </span>
                   <div className="flex gap-0.5">
                     {(item.splitWith || []).map((memberKey) => {
                       const initials = getDisplayName(memberKey)
@@ -138,12 +142,15 @@ function TripExpenseReceiptBreakdown({
                 )}
                 {item.tax != null && item.tax > 0 ? (
                   <span className="block text-xs text-muted-foreground tabular-nums">
-                    (สินค้า {exSymbol}
-                    {(Number(item.price) || 0).toLocaleString()} + ภาษี {exSymbol}
+                    ({p({ th: 'สินค้า', en: 'Item', zh: '商品' })} {exSymbol}
+                    {(Number(item.price) || 0).toLocaleString()} +{' '}
+                    {p({ th: 'ภาษี', en: 'tax', zh: '税' })} {exSymbol}
                     {(Number(item.tax) || 0).toLocaleString()})
                   </span>
                 ) : (
-                  <span className="block text-xs text-success">ปลอดภาษี</span>
+                  <span className="block text-xs text-success">
+                    {p({ th: 'ปลอดภาษี', en: 'Tax-free', zh: '免税' })}
+                  </span>
                 )}
               </div>
             </div>
@@ -152,16 +159,20 @@ function TripExpenseReceiptBreakdown({
       </div>
       {expense.rawEx.baseAmount !== undefined && (
         <div className="flex flex-wrap justify-between gap-1 border-t pt-1.5 text-xs text-muted-foreground">
-          <span>
-            ราคาสินค้ารวม: {exSymbol}
-            {expense.rawEx.baseAmount.toLocaleString()} · ภาษีรวม: {exSymbol}
+          <span className="tabular-nums">
+            {p({ th: 'ราคาสินค้ารวม:', en: 'Subtotal:', zh: '商品合计：' })} {exSymbol}
+            {expense.rawEx.baseAmount.toLocaleString()} ·{' '}
+            {p({ th: 'ภาษีรวม:', en: 'Tax:', zh: '税费合计：' })} {exSymbol}
             {(expense.rawEx.taxAmount || 0).toLocaleString()}
             {expense.rawEx.discount != null && expense.rawEx.discount > 0 && (
-              <> · ส่วนลด: {exSymbol}{expense.rawEx.discount.toLocaleString()}</>
+              <>
+                {' '}· {p({ th: 'ส่วนลด:', en: 'Discount:', zh: '折扣：' })} {exSymbol}
+                {expense.rawEx.discount.toLocaleString()}
+              </>
             )}
           </span>
-          <span className="font-semibold text-foreground">
-            ยอดรวมทั้งหมด: {exSymbol}
+          <span className="font-semibold tabular-nums text-foreground">
+            {p({ th: 'ยอดรวมทั้งหมด:', en: 'Total:', zh: '总计：' })} {exSymbol}
             {expense.amount.toLocaleString()} {exHomeHint && `(${exHomeHint})`}
           </span>
         </div>
@@ -197,10 +208,16 @@ export function TripExpenseList({
         return label
     }
   }
+  const paidByText = (paidBy: string) =>
+    !paidBy || paidBy === 'Me' ? p({ th: 'ฉัน', en: 'Me', zh: '我' }) : paidBy
   const grouped = React.useMemo(
     () =>
-      groupItemsByDate(expenses, (expense) => toDateFromFirestore(expense.date)),
-    [expenses]
+      groupItemsByDate(
+        expenses,
+        (expense) => toDateFromFirestore(expense.date),
+        intlLocale(locale)
+      ),
+    [expenses, locale]
   )
 
   const renderAmount = (expense: TripExpenseListItem) => {
@@ -331,7 +348,7 @@ export function TripExpenseList({
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
-                          <p className="font-medium leading-snug">{expense.description}</p>
+                          <p className="min-w-0 break-words font-medium leading-snug">{expense.description}</p>
                           {expense.isLegacy && (
                             <Badge variant="outline" className="h-5 px-1.5 text-xs">
                               {p({ th: 'ส่วนตัว', en: 'Personal', zh: '个人' })}
@@ -349,7 +366,7 @@ export function TripExpenseList({
                         </div>
                         <p className="mt-2 text-xs text-muted-foreground tabular-nums">
                           {txDate ? formatTransactionDisplayTime(txDate) : ''} ·{' '}
-                          {expense.paidBy || 'Me'}
+                          {paidByText(expense.paidBy)}
                         </p>
                         {(expense.rawEx?.note || expense.rawTx?.note) && (
                           <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
@@ -458,7 +475,7 @@ export function TripExpenseList({
                         </Badge>
                       </TableCell>
                       <TableCell className="text-muted-foreground">
-                        {expense.paidBy || 'Me'}
+                        {paidByText(expense.paidBy)}
                       </TableCell>
                       <TableCell className="text-right">{renderAmount(expense)}</TableCell>
                       <TableCell>

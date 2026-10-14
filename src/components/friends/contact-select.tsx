@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/select'
 import { useFriends, type Contact } from '@/hooks/use-friends'
 import { AddContactInline } from '@/components/friends/add-contact-inline'
+import { useLocale } from '@/components/locale-provider'
 
 const NONE_VALUE = '__none__'
 const ME_VALUE = 'me'
@@ -53,15 +54,19 @@ function matchesContact(stored: string, c: Contact): boolean {
 export function ContactSelect({
   value,
   onChange,
-  placeholder = 'เลือกรายชื่อ',
+  placeholder: placeholderProp,
   allowNone = false,
-  noneLabel = 'ไม่แบ่ง',
+  noneLabel: noneLabelProp,
   includeMe = true,
   allowCreate = false,
   id,
 }: ContactSelectProps) {
+  const { p } = useLocale()
+  const placeholder = placeholderProp ?? p({ th: 'เลือกรายชื่อ', en: 'Choose a contact', zh: '选择联系人' })
+  const noneLabel = noneLabelProp ?? p({ th: 'ไม่แบ่ง', en: 'No split', zh: '不分摊' })
+  const selfLabel = p({ th: 'Me (ฉัน)', en: 'Me', zh: '我' })
   const { contacts, loading } = useFriends()
-  // Track user-opened menu so remount clears to ไม่ระบุ are ignored.
+  // Track user-opened menu so remount clears to the empty option are ignored.
   const userOpenedRef = React.useRef(false)
 
   const options = contacts.filter((c) => includeMe || !c.isSelf)
@@ -132,21 +137,27 @@ export function ContactSelect({
       disabled={loading && allOptions.length === 0 && !value}
     >
       <SelectTrigger id={id} aria-busy={loading} aria-label={id ? undefined : placeholder} className="h-10 w-full">
-        <SelectValue placeholder={loading ? 'กำลังโหลด…' : placeholder} />
+        <SelectValue
+          placeholder={loading ? p({ th: 'กำลังโหลด…', en: 'Loading…', zh: '加载中…' }) : placeholder}
+        />
       </SelectTrigger>
       <SelectContent>
         {allowNone && (
           <SelectItem value={NONE_VALUE}>{noneLabel}</SelectItem>
         )}
-        {showMeOrphan && <SelectItem value="Me">Me</SelectItem>}
+        {showMeOrphan && <SelectItem value="Me">{selfLabel}</SelectItem>}
         {allOptions.map((c) => (
           <SelectItem key={c.key} value={optionSelectValue(c)}>
-            {c.displayName}
-            {c.isSelf
-              ? ' (ฉัน)'
-              : c.isCustom
-                ? ' (รายชื่อส่วนตัว)'
-                : ''}
+            {c.isSelf ? (
+              selfLabel
+            ) : (
+              <>
+                {c.displayName}
+                {c.isCustom
+                  ? p({ th: ' (รายชื่อส่วนตัว)', en: ' (private contact)', zh: '（私人联系人）' })
+                  : ''}
+              </>
+            )}
           </SelectItem>
         ))}
       </SelectContent>

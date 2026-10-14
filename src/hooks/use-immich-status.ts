@@ -4,6 +4,11 @@ import * as React from 'react'
 import { auth } from '@/lib/firebase'
 import { useAuth } from '@/hooks/use-auth'
 import { IMMICH_ENABLED } from '@/lib/immich/feature'
+import { pickClient } from '@/lib/i18n'
+
+function statusFailedMessage(): string {
+  return pickClient({ th: 'โหลดสถานะ Immich ไม่สำเร็จ', en: 'Failed to load Immich status', zh: 'Immich 状态加载失败' })
+}
 
 export type ImmichStatus = {
   configured: boolean
@@ -49,7 +54,7 @@ export function useImmichStatus() {
       })
       const data = await res.json()
       if (!res.ok) {
-        throw new Error(data.error || 'Failed to load Immich status')
+        throw new Error(data.error || statusFailedMessage())
       }
       setStatus({
         configured: Boolean(data.configured),
@@ -59,7 +64,7 @@ export function useImmichStatus() {
       })
     } catch (err) {
       setStatus(INITIAL)
-      setError(err instanceof Error ? err.message : 'Failed to load Immich status')
+      setError(err instanceof Error ? err.message : statusFailedMessage())
     } finally {
       setLoading(false)
     }

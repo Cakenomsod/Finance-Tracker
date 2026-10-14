@@ -1,11 +1,16 @@
 import { useState, useEffect } from 'react';
 import { collection, query, where, onSnapshot, orderBy, or } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { pickClient } from '@/lib/i18n';
 import { TripSettlement } from '@/lib/firestore-types';
 import { createTripSettlement, deleteTripSettlement } from '@/lib/firestore';
 import { createDebtSettlementTransaction } from '@/lib/debt-payment';
 import { isCurrentUserKey } from '@/lib/trip-balance';
 import { useAuth } from './use-auth';
+
+function notLoggedInMessage(): string {
+  return pickClient({ th: 'ยังไม่ได้เข้าสู่ระบบ', en: 'Not logged in', zh: '尚未登录' });
+}
 
 export function useTripSettlements(tripId?: string) {
   const { user } = useAuth();
@@ -54,7 +59,7 @@ export function useTripSettlements(tripId?: string) {
     data: Omit<TripSettlement, 'id' | 'createdAt' | 'userId'>,
     cashOptions?: { accountId?: string; moneyPoolId?: string }
   ) => {
-    if (!user) throw new Error('Not logged in');
+    if (!user) throw new Error(notLoggedInMessage());
     const settlementRef = await createTripSettlement({ ...data, userId: user.uid });
 
     const isPayer = isCurrentUserKey(data.fromUserId, user.uid);

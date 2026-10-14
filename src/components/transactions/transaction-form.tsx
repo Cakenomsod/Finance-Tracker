@@ -131,7 +131,7 @@ export function TransactionForm({
   const saveCurrency = currencyProp ?? settingsCurrency ?? 'THB'
   const { activeSources, defaultSource } = usePaymentSources()
   const { activePools } = useMoneyPools()
-  const { t, locale } = useLocale()
+  const { t, p, locale } = useLocale()
   const { user } = useAuth()
   const uid = user?.uid
   const formSchema = React.useMemo(() => buildFormSchema(t), [t])
@@ -475,7 +475,13 @@ export function TransactionForm({
       let rawAmount: number
       if (isReceiptMode) {
         if (disc > 0 && receiptTotal > 0 && disc > receiptTotal) {
-          form.setError('amount', { message: 'ส่วนลดต้องไม่เกินยอดรวม' })
+          form.setError('amount', {
+            message: p({
+              th: 'ส่วนลดต้องไม่เกินยอดรวม',
+              en: 'Discount cannot exceed the total',
+              zh: '折扣不能超过总额',
+            }),
+          })
           return
         }
         rawAmount = receiptNet
@@ -486,7 +492,11 @@ export function TransactionForm({
       if (isNaN(rawAmount) || rawAmount <= 0) {
         form.setError('amount', {
           message: isReceiptMode
-            ? 'กรุณาเพิ่มรายการใบเสร็จและระบุราคา'
+            ? p({
+                th: 'กรุณาเพิ่มรายการใบเสร็จและระบุราคา',
+                en: 'Add receipt items with prices',
+                zh: '请添加收据项目并填写价格',
+              })
             : t('tx.errAmount'),
         })
         return
@@ -688,10 +698,16 @@ export function TransactionForm({
   const moreSummary = [
     isReceiptMode ? t('tx.inputReceipt') : null,
     discountAmount > 0 ? `${t('tx.discount')} ${sym}${discountAmount.toLocaleString()}` : null,
-    paymentMethod === 'paotang' ? 'เป๋าตัง' : null,
+    paymentMethod === 'paotang' ? p({ th: 'เป๋าตัง', en: 'Paotang', zh: 'Paotang' }) : null,
     activeTripName ?? null,
-    attachmentIds.length > 0 ? `${attachmentIds.length} รูป` : null,
-    note.trim() ? 'หมายเหตุ' : null,
+    attachmentIds.length > 0
+      ? p({
+          th: `${attachmentIds.length} รูป`,
+          en: `${attachmentIds.length} ${attachmentIds.length === 1 ? 'photo' : 'photos'}`,
+          zh: `${attachmentIds.length} 张图片`,
+        })
+      : null,
+    note.trim() ? p({ th: 'หมายเหตุ', en: 'Note', zh: '备注' }) : null,
   ].filter(Boolean).join(' · ')
 
   const segmentClass = (on: boolean) =>
@@ -808,7 +824,7 @@ export function TransactionForm({
                 </div>
                 {!isIncome && discountAmount > 0 && (parseFloat(watchedAmount) || 0) > 0 && (
                   <p className="text-xs text-muted-foreground tabular-nums">
-                    ยอดก่อนหักส่วนลด {sym}{((parseFloat(watchedAmount) || 0) + discountAmount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} − ส่วนลด {sym}{discountAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    {p({ th: 'ยอดก่อนหักส่วนลด', en: 'Before discount', zh: '折前金额' })} {sym}{((parseFloat(watchedAmount) || 0) + discountAmount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} − {t('tx.discount')} {sym}{discountAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </p>
                 )}
                 <FormMessage />
@@ -820,7 +836,9 @@ export function TransactionForm({
         {!isTransfer && isReceiptMode && (
           <div className="space-y-3 rounded-lg border p-3">
             <div className="flex items-center justify-between gap-2">
-              <h4 className="text-sm font-medium">รายการในใบเสร็จ</h4>
+              <h4 className="text-sm font-medium">
+                {p({ th: 'รายการในใบเสร็จ', en: 'Receipt items', zh: '收据项目' })}
+              </h4>
               <CurrencySelect
                 compact
                 value={currency}
@@ -835,8 +853,12 @@ export function TransactionForm({
                 <div key={idx} className="space-y-1.5 border-b pb-2.5 last:border-b-0 last:pb-0">
                   <div className="flex items-center gap-1.5">
                     <Input
-                      placeholder="ชื่อสินค้า"
-                      aria-label={`ชื่อสินค้ารายการที่ ${idx + 1}`}
+                      placeholder={p({ th: 'ชื่อสินค้า', en: 'Item name', zh: '商品名称' })}
+                      aria-label={p({
+                        th: `ชื่อสินค้ารายการที่ ${idx + 1}`,
+                        en: `Item ${idx + 1} name`,
+                        zh: `第 ${idx + 1} 项名称`,
+                      })}
                       className="h-9 min-w-0 flex-1 text-sm"
                       value={item.name}
                       onChange={e => {
@@ -850,7 +872,11 @@ export function TransactionForm({
                         type="button"
                         variant="ghost"
                         size="icon"
-                        aria-label={`ลบรายการที่ ${idx + 1}`}
+                        aria-label={p({
+                          th: `ลบรายการที่ ${idx + 1}`,
+                          en: `Remove item ${idx + 1}`,
+                          zh: `删除第 ${idx + 1} 项`,
+                        })}
                         className="size-9 shrink-0 hover:bg-destructive/10 hover:text-destructive"
                         onClick={() => setReceiptItems(receiptItems.filter((_, i) => i !== idx))}
                       >
@@ -869,7 +895,11 @@ export function TransactionForm({
                         setReceiptItems(next)
                       }}
                     >
-                      <SelectTrigger className="h-9 w-full text-sm" aria-label={`หมวดหมู่รายการที่ ${idx + 1}`}>
+                      <SelectTrigger className="h-9 w-full text-sm" aria-label={p({
+                        th: `หมวดหมู่รายการที่ ${idx + 1}`,
+                        en: `Item ${idx + 1} category`,
+                        zh: `第 ${idx + 1} 项分类`,
+                      })}>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -896,7 +926,11 @@ export function TransactionForm({
                       step="0.01"
                       min="0"
                       placeholder="0.00"
-                      aria-label={`ราคารายการที่ ${idx + 1} (${currency})`}
+                      aria-label={p({
+                        th: `ราคารายการที่ ${idx + 1} (${currency})`,
+                        en: `Item ${idx + 1} price (${currency})`,
+                        zh: `第 ${idx + 1} 项价格（${currency}）`,
+                      })}
                       className="h-9 px-2 text-sm font-medium tabular-nums"
                       value={item.price}
                       onChange={e => {
@@ -922,7 +956,7 @@ export function TransactionForm({
               }
               className="h-9 w-full gap-1 border-dashed text-sm"
             >
-              <Plus className="size-3.5" aria-hidden /> เพิ่มรายการ
+              <Plus className="size-3.5" aria-hidden /> {p({ th: 'เพิ่มรายการ', en: 'Add item', zh: '添加项目' })}
             </Button>
 
             <div className="space-y-2 border-t pt-2">
@@ -943,7 +977,9 @@ export function TransactionForm({
                 </div>
               )}
               <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">ยอดรวมสุทธิ</span>
+                <span className="text-sm font-medium">
+                  {p({ th: 'ยอดรวมสุทธิ', en: 'Net total', zh: '净额合计' })}
+                </span>
                 <span className="text-lg font-semibold tabular-nums">
                   {sym}{receiptNet.toLocaleString(undefined, {
                     minimumFractionDigits: 2,
@@ -953,7 +989,7 @@ export function TransactionForm({
               </div>
               {!isIncome && discountAmount > 0 && receiptTotal > 0 && (
                 <p className="text-xs text-muted-foreground text-right tabular-nums">
-                  รวมสินค้า {sym}{receiptTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} − ส่วนลด {sym}{discountAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  {p({ th: 'รวมสินค้า', en: 'Items', zh: '商品合计' })} {sym}{receiptTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} − {t('tx.discount')} {sym}{discountAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </p>
               )}
               <FormField
@@ -1061,7 +1097,7 @@ export function TransactionForm({
                     onChange={field.onChange}
                     placeholder={t('tx.receivedFromPlaceholder')}
                     allowNone
-                    noneLabel="ไม่ระบุ"
+                    noneLabel={p({ th: 'ไม่ระบุ', en: 'Not specified', zh: '未指定' })}
                     includeMe={false}
                   />
                 </FormControl>
@@ -1198,7 +1234,13 @@ export function TransactionForm({
                     value={discount}
                     onChange={(e) => setDiscount(e.target.value)}
                   />
-                  <p className="text-xs text-muted-foreground">ใส่ยอดที่จ่ายจริงในช่องจำนวนเงิน ส่วนลดใช้แค่แสดงว่าประหยัดไปเท่าไร</p>
+                  <p className="text-xs text-muted-foreground">
+                    {p({
+                      th: 'ใส่ยอดที่จ่ายจริงในช่องจำนวนเงิน ส่วนลดใช้แค่แสดงว่าประหยัดไปเท่าไร',
+                      en: 'Enter what you actually paid as the amount. Discount only shows how much you saved.',
+                      zh: '金额请填写实际支付的数额，折扣仅用于显示节省了多少。',
+                    })}
+                  </p>
                 </div>
               )}
 
@@ -1213,7 +1255,7 @@ export function TransactionForm({
                         onClick={() => setPaymentMethod('normal')}
                         className={segmentClass(paymentMethod === 'normal')}
                       >
-                        จ่ายปกติ
+                        {p({ th: 'จ่ายปกติ', en: 'Regular', zh: '普通支付' })}
                       </button>
                       <button
                         type="button"
@@ -1221,14 +1263,16 @@ export function TransactionForm({
                         onClick={() => setPaymentMethod('paotang')}
                         className={segmentClass(paymentMethod === 'paotang')}
                       >
-                        เป๋าตัง
+                        {p({ th: 'เป๋าตัง', en: 'Paotang', zh: 'Paotang' })}
                       </button>
                     </div>
                   </div>
 
                   {paymentMethod === 'paotang' && !splitEnabled && (
                     <div className="space-y-1.5">
-                      <Label className="text-sm" id="tx-paotang-payer">สแกนโดย</Label>
+                      <Label className="text-sm" id="tx-paotang-payer">
+                        {p({ th: 'สแกนโดย', en: 'Scanned by', zh: '扫码人' })}
+                      </Label>
                       <div role="group" aria-labelledby="tx-paotang-payer" className="inline-grid grid-cols-2 gap-1 rounded-lg bg-muted p-1">
                         <button
                           type="button"
@@ -1239,7 +1283,7 @@ export function TransactionForm({
                           }}
                           className={segmentClass(paotangPayerMode === 'self')}
                         >
-                          ฉันจ่าย
+                          {p({ th: 'ฉันจ่าย', en: 'I paid', zh: '我付款' })}
                         </button>
                         <button
                           type="button"
@@ -1247,7 +1291,7 @@ export function TransactionForm({
                           onClick={() => setPaotangPayerMode('other')}
                           className={segmentClass(paotangPayerMode === 'other')}
                         >
-                          เพื่อนจ่ายให้
+                          {p({ th: 'เพื่อนจ่ายให้', en: 'A friend paid', zh: '朋友代付' })}
                         </button>
                       </div>
                       {paotangPayerMode === 'other' && (
@@ -1260,7 +1304,11 @@ export function TransactionForm({
                                 <ContactSelect
                                   value={field.value || ''}
                                   onChange={field.onChange}
-                                  placeholder="เลือกคนที่จ่ายให้"
+                                  placeholder={p({
+                                    th: 'เลือกคนที่จ่ายให้',
+                                    en: 'Who paid for you?',
+                                    zh: '选择代付的人',
+                                  })}
                                   includeMe={false}
                                   allowCreate
                                 />
@@ -1276,7 +1324,11 @@ export function TransactionForm({
 
                   {paymentMethod === 'paotang' && splitEnabled && (
                     <p className="text-xs text-muted-foreground">
-                      หารกับเพื่อนอยู่ — ใส่ยอดสแกนเต็ม ระบบคิดหนี้จากส่วนที่จ่ายจริง 40%
+                      {p({
+                        th: 'หารกับเพื่อนอยู่ — ใส่ยอดสแกนเต็ม ระบบคิดหนี้จากส่วนที่จ่ายจริง 40%',
+                        en: 'Splitting with friends: enter the full scanned amount. Debts use the 40% actually paid.',
+                        zh: '正在与朋友分账：请输入扫码全额，欠款按实际支付的 40% 计算。',
+                      })}
                     </p>
                   )}
 
@@ -1285,19 +1337,31 @@ export function TransactionForm({
                 <div className="rounded-md border bg-background/80 p-2.5 text-xs space-y-1.5">
                   <p className="text-xs font-medium sm:text-sm">
                     {isOtherPayerPaotang
-                      ? `โควต้า ${watchedPaidBy}`
-                      : 'โควต้าเป๋าตัง'}
+                      ? p({
+                          th: `โควต้า ${watchedPaidBy}`,
+                          en: `${watchedPaidBy}'s quota`,
+                          zh: `${watchedPaidBy} 的额度`,
+                        })
+                      : p({ th: 'โควต้าเป๋าตัง', en: 'Paotang quota', zh: 'Paotang 额度' })}
                   </p>
                   <p className="hidden text-xs text-muted-foreground sm:block">
                     {isOtherPayerPaotang
-                      ? `รัฐจ่ายสูงสุด ฿${PAOTANG_DAILY_GOV_MAX.toLocaleString()}/วัน`
-                      : `รวม ฿${PAOTANG_TOTAL_QUOTA.toLocaleString()} · เดือน ฿${PAOTANG_MONTHLY_QUOTA.toLocaleString()} · วัน ฿${PAOTANG_DAILY_GOV_MAX.toLocaleString()}`}
+                      ? p({
+                          th: `รัฐจ่ายสูงสุด ฿${PAOTANG_DAILY_GOV_MAX.toLocaleString()}/วัน`,
+                          en: `Gov pays up to ฿${PAOTANG_DAILY_GOV_MAX.toLocaleString()}/day`,
+                          zh: `政府每天最多补贴 ฿${PAOTANG_DAILY_GOV_MAX.toLocaleString()}`,
+                        })
+                      : p({
+                          th: `รวม ฿${PAOTANG_TOTAL_QUOTA.toLocaleString()} · เดือน ฿${PAOTANG_MONTHLY_QUOTA.toLocaleString()} · วัน ฿${PAOTANG_DAILY_GOV_MAX.toLocaleString()}`,
+                          en: `Total ฿${PAOTANG_TOTAL_QUOTA.toLocaleString()} · Month ฿${PAOTANG_MONTHLY_QUOTA.toLocaleString()} · Day ฿${PAOTANG_DAILY_GOV_MAX.toLocaleString()}`,
+                          zh: `总计 ฿${PAOTANG_TOTAL_QUOTA.toLocaleString()} · 每月 ฿${PAOTANG_MONTHLY_QUOTA.toLocaleString()} · 每天 ฿${PAOTANG_DAILY_GOV_MAX.toLocaleString()}`,
+                        })}
                   </p>
                   <div className="grid grid-cols-3 gap-1.5">
                     {(isOtherPayerPaotang
                       ? [
                           {
-                            label: 'วันนี้',
+                            label: p({ th: 'วันนี้', en: 'Today', zh: '今天' }),
                             used: paotangUsage.dayUsed,
                             max: PAOTANG_DAILY_GOV_MAX,
                             remaining:
@@ -1307,7 +1371,7 @@ export function TransactionForm({
                         ]
                       : [
                           {
-                            label: 'รวม',
+                            label: p({ th: 'รวม', en: 'Total', zh: '总计' }),
                             used: paotangUsage.totalUsed,
                             max: PAOTANG_TOTAL_QUOTA,
                             remaining:
@@ -1315,7 +1379,7 @@ export function TransactionForm({
                               PAOTANG_TOTAL_QUOTA - paotangUsage.totalUsed,
                           },
                           {
-                            label: 'เดือน',
+                            label: p({ th: 'เดือน', en: 'Month', zh: '本月' }),
                             used: paotangUsage.monthUsed,
                             max: PAOTANG_MONTHLY_QUOTA,
                             remaining:
@@ -1323,7 +1387,7 @@ export function TransactionForm({
                               PAOTANG_MONTHLY_QUOTA - paotangUsage.monthUsed,
                           },
                           {
-                            label: 'วันนี้',
+                            label: p({ th: 'วันนี้', en: 'Today', zh: '今天' }),
                             used: paotangUsage.dayUsed,
                             max: PAOTANG_DAILY_GOV_MAX,
                             remaining:
@@ -1350,11 +1414,15 @@ export function TransactionForm({
                     {isOtherPayerPaotang ? (
                       <>
                         <p className="text-xs text-muted-foreground">
-                          {watchedPaidBy} จ่ายให้ — คุณคืน {PAOTANG_USER_PERCENT}%
+                          {p({
+                            th: `${watchedPaidBy} จ่ายให้ — คุณคืน ${PAOTANG_USER_PERCENT}%`,
+                            en: `${watchedPaidBy} paid — you pay back ${PAOTANG_USER_PERCENT}%`,
+                            zh: `${watchedPaidBy} 代付 — 你需归还 ${PAOTANG_USER_PERCENT}%`,
+                          })}
                         </p>
                         <div className="grid grid-cols-3 gap-1.5">
                           <div>
-                            <p className="text-xs text-muted-foreground">เต็ม</p>
+                            <p className="text-xs text-muted-foreground">{p({ th: 'เต็ม', en: 'Full', zh: '全额' })}</p>
                             <p className="font-semibold tabular-nums text-xs">
                               ฿{totalForPayment.toLocaleString(undefined, {
                                 minimumFractionDigits: 0,
@@ -1363,7 +1431,7 @@ export function TransactionForm({
                             </p>
                           </div>
                           <div>
-                            <p className="text-xs text-muted-foreground">รัฐจ่าย</p>
+                            <p className="text-xs text-muted-foreground">{p({ th: 'รัฐจ่าย', en: 'Gov pays', zh: '政府补贴' })}</p>
                             <p className="font-semibold tabular-nums text-xs text-chart-2">
                               ฿{paotangSplit.subsidy.toLocaleString(undefined, {
                                 minimumFractionDigits: 0,
@@ -1372,7 +1440,7 @@ export function TransactionForm({
                             </p>
                           </div>
                           <div>
-                            <p className="text-xs text-muted-foreground">คุณคืน</p>
+                            <p className="text-xs text-muted-foreground">{p({ th: 'คุณคืน', en: 'You owe', zh: '你需归还' })}</p>
                             <p className="font-semibold tabular-nums text-xs text-destructive">
                               ฿{paotangSplit.oweToPayer?.toLocaleString(undefined, {
                                 minimumFractionDigits: 0,
@@ -1383,18 +1451,22 @@ export function TransactionForm({
                         </div>
                         {paotangSplit.capped && (
                           <p className="text-xs text-warning">
-                            โควต้าวันนี้เต็ม — {getPaotangCapReasonLabel(paotangSplit.capReason)}
+                            {p({ th: 'โควต้าวันนี้เต็ม', en: "Today's quota is used up", zh: '今日额度已用完' })} — {getPaotangCapReasonLabel(paotangSplit.capReason)}
                           </p>
                         )}
                       </>
                     ) : (
                       <>
                         <p className="text-xs text-muted-foreground">
-                          รัฐ {PAOTANG_GOV_PERCENT}% · เรา {PAOTANG_USER_PERCENT}%
+                          {p({
+                            th: `รัฐ ${PAOTANG_GOV_PERCENT}% · เรา ${PAOTANG_USER_PERCENT}%`,
+                            en: `Gov ${PAOTANG_GOV_PERCENT}% · You ${PAOTANG_USER_PERCENT}%`,
+                            zh: `政府 ${PAOTANG_GOV_PERCENT}% · 你 ${PAOTANG_USER_PERCENT}%`,
+                          })}
                         </p>
                         <div className="grid grid-cols-3 gap-1.5">
                           <div>
-                            <p className="text-xs text-muted-foreground">เต็ม</p>
+                            <p className="text-xs text-muted-foreground">{p({ th: 'เต็ม', en: 'Full', zh: '全额' })}</p>
                             <p className="font-semibold tabular-nums text-xs">
                               ฿{totalForPayment.toLocaleString(undefined, {
                                 minimumFractionDigits: 0,
@@ -1403,7 +1475,7 @@ export function TransactionForm({
                             </p>
                           </div>
                           <div>
-                            <p className="text-xs text-muted-foreground">รัฐจ่าย</p>
+                            <p className="text-xs text-muted-foreground">{p({ th: 'รัฐจ่าย', en: 'Gov pays', zh: '政府补贴' })}</p>
                             <p className="font-semibold tabular-nums text-xs text-chart-2">
                               ฿{paotangSplit.subsidy.toLocaleString(undefined, {
                                 minimumFractionDigits: 0,
@@ -1412,7 +1484,7 @@ export function TransactionForm({
                             </p>
                           </div>
                           <div>
-                            <p className="text-xs text-muted-foreground">เราจ่าย</p>
+                            <p className="text-xs text-muted-foreground">{p({ th: 'เราจ่าย', en: 'You pay', zh: '你支付' })}</p>
                             <p className="font-semibold tabular-nums text-xs text-destructive">
                               ฿{paotangSplit.userPaid.toLocaleString(undefined, {
                                 minimumFractionDigits: 0,
@@ -1423,7 +1495,7 @@ export function TransactionForm({
                         </div>
                         {paotangSplit.capped && (
                           <p className="text-xs text-warning">
-                            โควต้าไม่พอ — {getPaotangCapReasonLabel(paotangSplit.capReason)}
+                            {p({ th: 'โควต้าไม่พอ', en: 'Not enough quota', zh: '额度不足' })} — {getPaotangCapReasonLabel(paotangSplit.capReason)}
                           </p>
                         )}
                       </>

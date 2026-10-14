@@ -5,6 +5,7 @@ import { FirebaseError } from 'firebase/app'
 import { auth, storage } from '@/lib/firebase'
 import { compressImageForUpload } from '@/lib/immich/compress-image'
 import { STORAGE_ATTACHMENT_PREFIX, storagePathOf } from '@/lib/attachments/ids'
+import { pickClient } from '@/lib/i18n'
 
 /** Must match the size limit in storage.rules. */
 const MAX_BYTES = 5 * 1024 * 1024
@@ -23,15 +24,43 @@ function newFileId(type: string) {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${ext}`
 }
 
+function signInFirstMessage() {
+  return pickClient({
+    th: 'กรุณาเข้าสู่ระบบก่อนแนบรูป',
+    en: 'Please sign in before attaching photos',
+    zh: '请先登录再附加图片',
+  })
+}
+
 function friendlyStorageError(error: unknown): string {
   const code = error instanceof FirebaseError ? error.code : ''
-  if (code === 'storage/unauthenticated') return 'กรุณาเข้าสู่ระบบก่อนแนบรูป'
-  if (code === 'storage/unauthorized') return 'ไม่มีสิทธิ์เก็บรูปนี้'
-  if (code === 'storage/quota-exceeded') return 'พื้นที่เก็บรูปเต็ม — บันทึกรายการไปก่อนได้'
-  if (code === 'storage/retry-limit-exceeded' || code === 'storage/canceled') {
-    return 'อัปโหลดรูปไม่สำเร็จ ลองใหม่อีกครั้ง'
+  if (code === 'storage/unauthenticated') return signInFirstMessage()
+  if (code === 'storage/unauthorized') {
+    return pickClient({
+      th: 'ไม่มีสิทธิ์เก็บรูปนี้',
+      en: "You don't have permission to store this photo",
+      zh: '没有权限保存此图片',
+    })
   }
-  return 'ระบบเก็บรูปยังไม่พร้อม — บันทึกรายการไปก่อนได้'
+  if (code === 'storage/quota-exceeded') {
+    return pickClient({
+      th: 'พื้นที่เก็บรูปเต็ม — บันทึกรายการไปก่อนได้',
+      en: 'Photo storage is full — you can still save the entry',
+      zh: '图片存储空间已满 — 仍可先保存记录',
+    })
+  }
+  if (code === 'storage/retry-limit-exceeded' || code === 'storage/canceled') {
+    return pickClient({
+      th: 'อัปโหลดรูปไม่สำเร็จ ลองใหม่อีกครั้ง',
+      en: 'Photo upload failed — please try again',
+      zh: '图片上传失败，请重试',
+    })
+  }
+  return pickClient({
+    th: 'ระบบเก็บรูปยังไม่พร้อม — บันทึกรายการไปก่อนได้',
+    en: "Photo storage isn't ready yet — you can still save the entry",
+    zh: '图片存储暂不可用 — 仍可先保存记录',
+  })
 }
 
 async function putImage(path: string, file: File, uid: string) {
@@ -51,10 +80,18 @@ export async function uploadAttachmentToStorage(
   options?: { tripId?: string | null; compress?: boolean }
 ): Promise<{ assetId: string }> {
   const user = auth.currentUser
-  if (!user) throw new Error('กรุณาเข้าสู่ระบบก่อนแนบรูป')
+  if (!user) throw new Error(signInFirstMessage())
 
   const prepared = options?.compress === false ? file : await compressImageForUpload(file)
-  if (prepared.size > MAX_BYTES) throw new Error('รูปใหญ่เกินไป (สูงสุด 5MB)')
+  if (prepared.size > MAX_BYTES) {
+    throw new Error(
+      pickClient({
+        th: 'รูปใหญ่เกินไป (สูงสุด 5MB)',
+        en: 'Photo is too large (max 5MB)',
+        zh: '图片过大（最大 5MB）',
+      })
+    )
+  }
 
   const fileId = newFileId(prepared.type)
   const userPath = `users/${user.uid}/attachments/${fileId}`

@@ -22,11 +22,13 @@ import {
   isSameMonthSelection,
   type MonthSelection,
 } from '@/lib/datetime'
+import { useLocale } from '@/components/locale-provider'
+import { intlLocale } from '@/lib/i18n'
 
-const MONTH_SHORT = [
-  'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.',
-  'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.',
-]
+function monthShortNames(localeTag: string): string[] {
+  const fmt = new Intl.DateTimeFormat(localeTag, { month: 'short' })
+  return Array.from({ length: 12 }, (_, month) => fmt.format(new Date(2000, month, 1)))
+}
 
 function getNextMonthSelection({ year, month }: MonthSelection): MonthSelection {
   if (month === 11) return { year: year + 1, month: 0 }
@@ -39,6 +41,7 @@ export function MonthPicker({
   className,
   size = 'default',
   monthsWithData,
+  locale: localeOverride,
 }: {
   value: MonthSelection
   onChange: (value: MonthSelection) => void
@@ -46,7 +49,12 @@ export function MonthPicker({
   size?: 'default' | 'sm'
   /** When set, only these `YYYY-MM` months are selectable. */
   monthsWithData?: Set<string>
+  /** BCP-47 tag; defaults to the app locale. */
+  locale?: string
 }) {
+  const { locale: appLocale, p } = useLocale()
+  const localeTag = localeOverride ?? intlLocale(appLocale)
+  const monthNames = React.useMemo(() => monthShortNames(localeTag), [localeTag])
   const [open, setOpen] = React.useState(false)
   const [pickerYear, setPickerYear] = React.useState(value.year)
   const [yearDirection, setYearDirection] = React.useState<'prev' | 'next'>('next')
@@ -57,7 +65,7 @@ export function MonthPicker({
     if (open) setPickerYear(value.year)
   }, [open, value.year])
 
-  const label = formatMonthLabel(value)
+  const label = formatMonthLabel(value, localeTag)
   const isCurrent = isCurrentMonthSelection(value)
   const currentMonthHasData =
     !restrictToData || hasMonthData(monthsWithData, getCurrentMonthSelection())
@@ -99,7 +107,7 @@ export function MonthPicker({
         className={cn(size === 'sm' ? 'size-7' : 'size-8')}
         onClick={goToPrevMonth}
         disabled={!prevMonth}
-        aria-label="เดือนก่อนหน้า"
+        aria-label={p({ th: 'เดือนก่อนหน้า', en: 'Previous month', zh: '上个月' })}
       >
         <ChevronLeft className="size-4" />
       </Button>
@@ -124,7 +132,7 @@ export function MonthPicker({
               size="icon"
               className="size-7"
               onClick={goToPrevYear}
-              aria-label="ปีก่อนหน้า"
+              aria-label={p({ th: 'ปีก่อนหน้า', en: 'Previous year', zh: '上一年' })}
             >
               <ChevronLeft className="size-4" />
             </Button>
@@ -135,7 +143,7 @@ export function MonthPicker({
                 yearSlideClass
               )}
             >
-              {new Date(pickerYear, 0, 1).toLocaleDateString('th-TH', { year: 'numeric' })}
+              {new Date(pickerYear, 0, 1).toLocaleDateString(localeTag, { year: 'numeric' })}
             </span>
             <Button
               type="button"
@@ -143,7 +151,7 @@ export function MonthPicker({
               size="icon"
               className="size-7"
               onClick={goToNextYear}
-              aria-label="ปีถัดไป"
+              aria-label={p({ th: 'ปีถัดไป', en: 'Next year', zh: '下一年' })}
             >
               <ChevronRight className="size-4" />
             </Button>
@@ -155,7 +163,7 @@ export function MonthPicker({
               yearDirection === 'prev' ? 'slide-in-from-left-2' : 'slide-in-from-right-2'
             )}
           >
-            {MONTH_SHORT.map((name, month) => {
+            {monthNames.map((name, month) => {
               const selection: MonthSelection = { year: pickerYear, month }
               const selected = isSameMonthSelection(selection, value)
               const isThisMonth = isCurrentMonthSelection(selection)
@@ -179,7 +187,7 @@ export function MonthPicker({
                   aria-label={
                     hasData
                       ? name
-                      : `${name} — ไม่มีข้อมูล`
+                      : `${name} — ${p({ th: 'ไม่มีข้อมูล', en: 'No data', zh: '无数据' })}`
                   }
                   onClick={() => {
                     if (!hasData) return
@@ -203,7 +211,7 @@ export function MonthPicker({
                 setOpen(false)
               }}
             >
-              กลับไปเดือนปัจจุบัน
+              {p({ th: 'กลับไปเดือนปัจจุบัน', en: 'Back to this month', zh: '回到本月' })}
             </Button>
           )}
         </PopoverContent>
@@ -216,7 +224,7 @@ export function MonthPicker({
         className={cn(size === 'sm' ? 'size-7' : 'size-8')}
         onClick={goToNextMonth}
         disabled={!nextMonth}
-        aria-label="เดือนถัดไป"
+        aria-label={p({ th: 'เดือนถัดไป', en: 'Next month', zh: '下个月' })}
       >
         <ChevronRight className="size-4" />
       </Button>

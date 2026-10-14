@@ -15,6 +15,9 @@ import {
   isAppCurrency,
   STATIC_FALLBACK_RATES,
 } from '@/lib/currency'
+import { categoryLabel } from '@/lib/default-categories'
+import { intlLocale, pick } from '@/lib/i18n'
+import type { AppLocale } from '@/lib/locale'
 
 export interface CombinedTransaction {
   id?: string
@@ -507,49 +510,89 @@ export interface DashboardInsight {
   text: string
 }
 
+const ENGLISH_WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+
+function localizedWeekday(englishName: string, locale: AppLocale): string {
+  const idx = ENGLISH_WEEKDAYS.indexOf(englishName)
+  if (idx === -1 || locale === 'en') return englishName
+  // 2023-01-01 was a Sunday.
+  return new Date(2023, 0, 1 + idx).toLocaleDateString(intlLocale(locale), { weekday: 'long' })
+}
+
 export function buildDashboardInsights(
   currentMonth: CombinedTransaction[],
-  habits: ReturnType<typeof getFinancialHabits>
+  habits: ReturnType<typeof getFinancialHabits>,
+  locale: AppLocale = 'en'
 ): DashboardInsight[] {
   const insights: DashboardInsight[] = []
   const { income, expenses, savingsRate } = computeMonthTotals(currentMonth)
 
   if (habits.topCategory !== '-' && habits.topCategoryPct >= 30) {
+    const pct = habits.topCategoryPct
+    const cat = categoryLabel(habits.topCategory, locale)
     insights.push({
       type: 'alert',
-      text: `You spent ${habits.topCategoryPct}% of your expenses on ${habits.topCategory} this month.`,
+      text: pick(locale, {
+        th: `เดือนนี้คุณใช้เงิน ${pct}% ของรายจ่ายไปกับ${cat}`,
+        en: `You spent ${pct}% of your expenses on ${cat} this month.`,
+        zh: `本月你 ${pct}% 的支出花在了${cat}上。`,
+      }),
     })
   }
 
   if (habits.weekendMultiplier >= 1.5) {
+    const mult = habits.weekendMultiplier
     insights.push({
       type: 'pattern',
-      text: `Your weekend spending is typically ${habits.weekendMultiplier}x higher than weekdays.`,
+      text: pick(locale, {
+        th: `วันหยุดสุดสัปดาห์คุณมักใช้เงินมากกว่าวันธรรมดา ${mult} เท่า`,
+        en: `Your weekend spending is typically ${mult}x higher than weekdays.`,
+        zh: `你周末的支出通常是工作日的 ${mult} 倍。`,
+      }),
     })
   } else if (habits.highestDay !== '-') {
+    const day = localizedWeekday(habits.highestDay, locale)
     insights.push({
       type: 'pattern',
-      text: `${habits.highestDay} is your highest spending day this period.`,
+      text: pick(locale, {
+        th: `${day}เป็นวันที่คุณใช้เงินมากที่สุดในช่วงนี้`,
+        en: `${day} is your highest spending day this period.`,
+        zh: `${day}是你这段时间支出最多的一天。`,
+      }),
     })
   }
 
   if (income > 0 && savingsRate < 20) {
-    const target = Math.round(expenses * 0.1)
+    const target = formatMoney(Math.round(expenses * 0.1), 'THB')
     insights.push({
       type: 'tip',
-      text: `Your savings rate is ${savingsRate}%. Reducing expenses by ฿${target.toLocaleString()} could help reach 20%.`,
+      text: pick(locale, {
+        th: `อัตราการออมของคุณอยู่ที่ ${savingsRate}% ลดรายจ่ายลง ${target} จะช่วยให้ใกล้ 20% มากขึ้น`,
+        en: `Your savings rate is ${savingsRate}%. Reducing expenses by ${target} could help reach 20%.`,
+        zh: `你的储蓄率为 ${savingsRate}%。减少 ${target} 的支出有助于达到 20%。`,
+      }),
     })
   } else if (expenses > 0 && habits.avgDaily > 0) {
+    const avg = formatMoney(habits.avgDaily, 'THB')
     insights.push({
       type: 'tip',
-      text: `You average ฿${habits.avgDaily.toLocaleString()} per day in spending over the last 30 days.`,
+      text: pick(locale, {
+        th: `30 วันที่ผ่านมา คุณใช้เงินเฉลี่ยวันละ ${avg}`,
+        en: `You average ${avg} per day in spending over the last 30 days.`,
+        zh: `过去 30 天你平均每天支出 ${avg}。`,
+      }),
     })
   }
 
   if (insights.length === 0 && currentMonth.length > 0) {
+    const count = currentMonth.length
     insights.push({
       type: 'tip',
-      text: `You have ${currentMonth.length} transactions this month. Keep tracking to unlock more insights.`,
+      text: pick(locale, {
+        th: `เดือนนี้คุณมี ${count} รายการ บันทึกต่อไปเพื่อดูข้อสังเกตเพิ่มเติม`,
+        en: `You have ${count} transactions this month. Keep tracking to unlock more insights.`,
+        zh: `本月你有 ${count} 笔交易。继续记录以获得更多洞察。`,
+      }),
     })
   }
 

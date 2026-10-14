@@ -37,7 +37,8 @@ import { useCategories } from '@/hooks/use-categories';
 import { useUserSettings } from '@/hooks/use-user-settings';
 import { useLocale } from '@/components/locale-provider';
 import { Category } from '@/lib/firestore-types';
-import { DEFAULT_CATEGORY_COLORS } from '@/lib/default-categories';
+import { categoryLabel, DEFAULT_CATEGORY_COLORS } from '@/lib/default-categories';
+import type { AppLocale } from '@/lib/locale';
 import { formatMoney } from '@/lib/aggregate-transactions';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -92,11 +93,13 @@ function CategoryRow({
   onEdit,
   onDelete,
   t,
+  locale,
 }: {
   category: Category;
   currency: string;
   onEdit: (category: Category) => void;
   onDelete: (category: Category) => void;
+  locale: AppLocale;
   t: (key: Parameters<ReturnType<typeof useLocale>['t']>[0], vars?: Record<string, string>) => string;
 }) {
   return (
@@ -110,7 +113,7 @@ function CategoryRow({
           {category.icon}
         </div>
         <div className="min-w-0">
-          <p className="font-medium truncate">{category.name}</p>
+          <p className="font-medium truncate">{categoryLabel(category.name, locale)}</p>
           <p className="text-sm text-muted-foreground tabular-nums">
             {category.monthlyBudget != null
               ? t('settings.budgetPerMonth', {
@@ -150,7 +153,7 @@ export function CategoriesSettings() {
   const { categories, expenseCategories, incomeCategories, loading, addCategory, editCategory, removeCategory } =
     useCategories();
   const { currency } = useUserSettings();
-  const { t } = useLocale();
+  const { t, p, locale } = useLocale();
   const [dialogOpen, setDialogOpen] = React.useState(false);
   const [editing, setEditing] = React.useState<Category | null>(null);
   const [deleteTarget, setDeleteTarget] = React.useState<Category | null>(null);
@@ -173,9 +176,13 @@ export function CategoriesSettings() {
   const getErrorMessage = (err: unknown): string => {
     if (err instanceof Error) {
       if (err.message === 'DUPLICATE_CATEGORY') return t('settings.duplicateCategory');
-      return err.message;
+      console.error('Save category failed:', err);
     }
-    return 'Failed to save category';
+    return p({
+      th: 'บันทึกหมวดหมู่ไม่สำเร็จ ลองใหม่อีกครั้ง',
+      en: 'Could not save the category — try again',
+      zh: '保存分类失败，请重试',
+    });
   };
 
   const handleSave = async () => {
@@ -226,7 +233,14 @@ export function CategoriesSettings() {
       toast.success(t('settings.categoryDeleted'));
       setDeleteTarget(null);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to delete category');
+      console.error('Delete category failed:', err);
+      toast.error(
+        p({
+          th: 'ลบหมวดหมู่ไม่สำเร็จ ลองใหม่อีกครั้ง',
+          en: 'Could not delete the category — try again',
+          zh: '删除分类失败，请重试',
+        })
+      );
     } finally {
       setDeleting(false);
     }
@@ -275,6 +289,7 @@ export function CategoriesSettings() {
                 onEdit={openEdit}
                 onDelete={setDeleteTarget}
                 t={t}
+                locale={locale}
               />
             </li>
           ))}
@@ -478,7 +493,7 @@ export function CategoriesSettings() {
             <AlertDialogTitle>{t('settings.deleteCategory')}</AlertDialogTitle>
             <AlertDialogDescription>
               {deleteTarget
-                ? t('settings.deleteCategoryConfirm', { name: deleteTarget.name })
+                ? t('settings.deleteCategoryConfirm', { name: categoryLabel(deleteTarget.name, locale) })
                 : ''}
             </AlertDialogDescription>
           </AlertDialogHeader>

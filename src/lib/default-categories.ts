@@ -50,7 +50,14 @@ const DEFAULT_CATEGORY_LABELS: Record<string, { th: string; zh: string }> = {
   Transfer: { th: 'โอน', zh: '转账' },
 };
 
+/** System categories stored under a Thai name (e.g. auto-created debt payments). */
+const THAI_SYSTEM_CATEGORY_LABELS: Record<string, { en: string; zh: string }> = {
+  'หนี้': { en: 'Debt', zh: '欠款' },
+};
+
 export function categoryLabel(name: string, locale: 'en' | 'th' | 'zh'): string {
+  const thaiSystem = THAI_SYSTEM_CATEGORY_LABELS[name];
+  if (thaiSystem) return locale === 'th' ? name : thaiSystem[locale];
   if (locale === 'en') return name;
   return DEFAULT_CATEGORY_LABELS[name]?.[locale] ?? name;
 }

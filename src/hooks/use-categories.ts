@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { pickClient } from '@/lib/i18n';
 import { useAuth } from '@/hooks/use-auth';
 import { Category } from '@/lib/firestore-types';
 import {
@@ -43,6 +44,10 @@ function findDuplicateCategoryIds(items: Category[]): string[] {
   }
 
   return toDelete;
+}
+
+function notLoggedInMessage(): string {
+  return pickClient({ th: 'ยังไม่ได้เข้าสู่ระบบ', en: 'Not logged in', zh: '尚未登录' });
 }
 
 export function useCategories() {
@@ -101,7 +106,7 @@ export function useCategories() {
 
   const addCategory = useCallback(
     async (data: Omit<Category, 'id' | 'createdAt' | 'userId'>) => {
-      if (!user) throw new Error('Not logged in');
+      if (!user) throw new Error(notLoggedInMessage());
       const key = categoryKey({ name: data.name, type: data.type });
       if (categories.some((c) => categoryKey(c) === key)) {
         throw new Error('DUPLICATE_CATEGORY');

@@ -1,5 +1,6 @@
 import { Timestamp } from 'firebase/firestore';
 import { Debt, Transaction } from './firestore-types';
+import { pickClient } from './i18n';
 
 export const DEBT_PAYMENT_CATEGORY = 'หนี้';
 
@@ -14,7 +15,11 @@ export function formatDebtPaymentDescription(personName: string, amount: number)
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   });
-  return `จ่ายหนี้ให้ ${personName} จำนวนเงิน ${formatted}`;
+  return pickClient({
+    th: `จ่ายหนี้ให้ ${personName} จำนวนเงิน ${formatted}`,
+    en: `Debt payment to ${personName}: ${formatted}`,
+    zh: `还款给 ${personName}，金额 ${formatted}`,
+  });
 }
 
 export function formatDebtReceiptDescription(personName: string, amount: number): string {
@@ -22,7 +27,11 @@ export function formatDebtReceiptDescription(personName: string, amount: number)
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   });
-  return `รับเงินคืนจาก ${personName} จำนวนเงิน ${formatted}`;
+  return pickClient({
+    th: `รับเงินคืนจาก ${personName} จำนวนเงิน ${formatted}`,
+    en: `Repayment from ${personName}: ${formatted}`,
+    zh: `收到 ${personName} 的还款，金额 ${formatted}`,
+  });
 }
 
 /** Record cash-flow impact when a debt is settled (expense when paying, income when receiving). */

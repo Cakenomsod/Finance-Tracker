@@ -3,9 +3,14 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { pickClient } from '@/lib/i18n';
 import { useAuth } from '@/hooks/use-auth';
 import { MoneyPool } from '@/lib/firestore-types';
 import { createMoneyPool, updateMoneyPool, deleteMoneyPool } from '@/lib/firestore';
+
+function notLoggedInMessage(): string {
+  return pickClient({ th: 'ยังไม่ได้เข้าสู่ระบบ', en: 'Not logged in', zh: '尚未登录' });
+}
 
 export function useMoneyPools() {
   const { user } = useAuth();
@@ -38,7 +43,7 @@ export function useMoneyPools() {
 
   const addPool = useCallback(
     async (data: Omit<MoneyPool, 'id' | 'createdAt' | 'userId'>) => {
-      if (!user) throw new Error('Not logged in');
+      if (!user) throw new Error(notLoggedInMessage());
       return createMoneyPool({ ...data, userId: user.uid });
     },
     [user]

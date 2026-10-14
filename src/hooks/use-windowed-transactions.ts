@@ -27,6 +27,7 @@ import {
 } from 'firebase/firestore';
 
 import { db } from '@/lib/firebase';
+import { pickClient } from '@/lib/i18n';
 
 import type { Transaction } from '@/lib/firestore-types';
 
@@ -71,6 +72,10 @@ import {
 import { reverseDebtPaymentOnDelete } from '@/lib/reverse-debt-payment';
 
 const PAGE_SIZE = 50;
+
+function notLoggedInMessage(): string {
+  return pickClient({ th: 'กรุณาเข้าสู่ระบบก่อน', en: 'Please sign in first', zh: '请先登录' });
+}
 
 
 
@@ -434,7 +439,7 @@ export function useWindowedTransactions(userId: string | undefined) {
 
     async (data: Omit<Transaction, 'id' | 'createdAt' | 'userId'>) => {
 
-      if (!user) throw new Error('Must be logged in to add a transaction');
+      if (!user) throw new Error(notLoggedInMessage());
 
       const txData = { ...data, userId: user.uid, currency: data.currency ?? 'THB' };
 
@@ -464,11 +469,11 @@ export function useWindowedTransactions(userId: string | undefined) {
 
     ) => {
 
-      if (!user) throw new Error('Must be logged in to edit a transaction');
+      if (!user) throw new Error(notLoggedInMessage());
 
       const existing = itemsRef.current.find((t) => t.id === id);
 
-      if (!existing) throw new Error('Transaction not found');
+      if (!existing) throw new Error(pickClient({ th: 'ไม่พบรายการนี้', en: 'Transaction not found', zh: '未找到该交易' }));
 
       const resolvedCurrency = data.currency ?? existing.currency ?? 'THB';
       const merged = { ...existing, ...data, currency: resolvedCurrency };
@@ -525,7 +530,7 @@ export function useWindowedTransactions(userId: string | undefined) {
 
     ) => {
 
-      if (!user) throw new Error('Must be logged in to delete a transaction');
+      if (!user) throw new Error(notLoggedInMessage());
 
       const tx = itemsRef.current.find((t) => t.id === id);
 

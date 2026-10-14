@@ -117,7 +117,8 @@ export function PaymentSourcesSettings() {
     reorderSources,
   } = usePaymentSources();
   const { accountsEnabled, saveMoneyFeatures } = useUserSettings();
-  const { t, locale } = useLocale();
+  const { t, p } = useLocale();
+  const failedMessage = p({ th: 'ไม่สำเร็จ ลองใหม่อีกครั้ง', en: 'Something went wrong — try again', zh: '操作失败，请重试' });
   const [dialogOpen, setDialogOpen] = React.useState(false);
   const [editing, setEditing] = React.useState<PaymentSource | null>(null);
   const [deleteTarget, setDeleteTarget] = React.useState<PaymentSource | null>(null);
@@ -136,7 +137,7 @@ export function PaymentSourcesSettings() {
     try {
       await reorderSources(ids);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed');
+      toast.error(err instanceof Error ? err.message : failedMessage);
     }
   };
 
@@ -162,7 +163,7 @@ export function PaymentSourcesSettings() {
           await createPaymentSource({
             userId: user.uid,
             type: 'cash',
-            name: locale === 'th' ? 'เงินสด' : 'Cash',
+            name: p({ th: 'เงินสด', en: 'Cash', zh: '现金' }),
             openingBalance: 0,
             sortOrder: 0,
             icon: '💵',
@@ -172,7 +173,7 @@ export function PaymentSourcesSettings() {
       }
       toast.success(t('settings.saved'));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed');
+      toast.error(err instanceof Error ? err.message : failedMessage);
     } finally {
       setToggling(false);
     }
@@ -215,7 +216,7 @@ export function PaymentSourcesSettings() {
       }
       setDialogOpen(false);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed');
+      toast.error(err instanceof Error ? err.message : failedMessage);
     } finally {
       setSaving(false);
     }
@@ -229,7 +230,7 @@ export function PaymentSourcesSettings() {
       toast.success(t('accounts.sourceArchived'));
       setDeleteTarget(null);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed');
+      toast.error(err instanceof Error ? err.message : failedMessage);
     } finally {
       setDeleting(false);
     }
@@ -509,7 +510,7 @@ export function PaymentSourcesSettings() {
                     id="acct-num"
                     value={form.accountNumber}
                     onChange={(e) => setForm((f) => ({ ...f, accountNumber: e.target.value }))}
-                    placeholder="xxx-x-xxxxx-x"
+                    placeholder={p({ th: 'เช่น 123-4-56789-0', en: 'e.g. 123-4-56789-0', zh: '例如 123-4-56789-0' })}
                   />
                 </div>
               </>

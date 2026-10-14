@@ -41,7 +41,7 @@ import type {
 } from '@/lib/firestore-types'
 import { amountColorClass, cn } from '@/lib/utils'
 import { useLocale } from '@/components/locale-provider'
-import type { LocalizedText } from '@/lib/i18n'
+import { intlLocale, type LocalizedText } from '@/lib/i18n'
 
 const IMPACT_LABEL: Record<AiInsightHighlight['impact'], LocalizedText> = {
   high: { th: 'ผลกระทบสูง', en: 'High impact', zh: '影响大' },
@@ -288,8 +288,8 @@ type AiInsightReportLike = {
 }
 
 export default function InsightsPage() {
-  const { currency, locale } = useUserSettings()
-  const { t, p } = useLocale()
+  const { currency } = useUserSettings()
+  const { t, p, locale } = useLocale()
   const [periodType, setPeriodType] = React.useState<AiInsightPeriodType>('month')
   const [monthSelection, setMonthSelection] = React.useState<MonthSelection>(
     getCurrentMonthSelection
@@ -309,7 +309,7 @@ export default function InsightsPage() {
   )
 
   const busy = loading || generating
-  const displayLocale = locale === 'th' ? 'th-TH' : locale === 'en' ? 'en-US' : undefined
+  const displayLocale = intlLocale(locale)
 
   const handlePeriodTypeChange = (value: string) => {
     if (value === 'week' || value === 'month') {
@@ -393,12 +393,16 @@ export default function InsightsPage() {
 
         <div className="flex justify-start sm:justify-end">
           {periodType === 'month' ? (
-            <MonthPicker value={monthSelection} onChange={setMonthSelection} />
+            <MonthPicker
+              value={monthSelection}
+              onChange={setMonthSelection}
+              locale={displayLocale}
+            />
           ) : (
             <WeekPicker
               value={weekSelection}
               onChange={setWeekSelection}
-              locale={displayLocale || 'th-TH'}
+              locale={displayLocale}
             />
           )}
         </div>

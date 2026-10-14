@@ -15,6 +15,7 @@ import {
   deleteField,
 } from 'firebase/firestore';
 import { db } from './firebase';
+import { pickClient } from './i18n';
 import {
   Transaction, Debt, Trip, Category, RecurringExpense,
   TripExpense, TripSettlement, FriendRequest, CustomFriend,
@@ -199,7 +200,7 @@ export const getUserProfile = async (uid: string) => {
 
 export const createCustomFriend = async (userId: string, name: string) => {
   const trimmed = name.trim();
-  if (!trimmed) throw new Error('กรุณากรอกชื่อ');
+  if (!trimmed) throw new Error(pickClient({ th: 'กรุณากรอกชื่อ', en: 'Please enter a name', zh: '请输入名称' }));
 
   const ref = await addDoc(customFriendsRef, {
     userId,

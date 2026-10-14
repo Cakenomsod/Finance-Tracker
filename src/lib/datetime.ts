@@ -88,17 +88,44 @@ export function getLocalDateKey(date: Date): string {
   return formatLocalDateInput(date)
 }
 
+/**
+ * BCP-47 tag for Intl formatting. Accepts an app locale (`th` | `en` | `zh`)
+ * or a full tag (`th-TH`, `zh-CN`, `en-US`, …).
+ */
+export function toIntlLocaleTag(locale: string): string {
+  if (locale === 'th') return 'th-TH'
+  if (locale === 'zh') return 'zh-CN'
+  if (locale === 'en') return 'en-US'
+  return locale
+}
+
+type LabelLanguage = 'th' | 'zh' | 'en'
+
+function labelLanguage(locale: string): LabelLanguage {
+  const lower = locale.toLowerCase()
+  if (lower.startsWith('th')) return 'th'
+  if (lower.startsWith('zh')) return 'zh'
+  return 'en'
+}
+
+const RELATIVE_DAY_LABELS: Record<LabelLanguage, { today: string; yesterday: string; unknown: string }> = {
+  th: { today: 'วันนี้', yesterday: 'เมื่อวาน', unknown: 'ไม่ระบุวันที่' },
+  en: { today: 'Today', yesterday: 'Yesterday', unknown: 'No date' },
+  zh: { today: '今天', yesterday: '昨天', unknown: '未注明日期' },
+}
+
 /** Human-readable section label for date-grouped lists. */
 export function formatDateGroupLabel(date: Date, locale = 'th-TH'): string {
+  const labels = RELATIVE_DAY_LABELS[labelLanguage(locale)]
   const today = new Date()
   const yesterday = new Date(today)
   yesterday.setDate(yesterday.getDate() - 1)
 
   const key = getLocalDateKey(date)
-  if (key === getLocalDateKey(today)) return 'วันนี้'
-  if (key === getLocalDateKey(yesterday)) return 'เมื่อวาน'
+  if (key === getLocalDateKey(today)) return labels.today
+  if (key === getLocalDateKey(yesterday)) return labels.yesterday
 
-  return date.toLocaleDateString(locale, {
+  return date.toLocaleDateString(toIntlLocaleTag(locale), {
     weekday: 'long',
     day: 'numeric',
     month: 'long',
@@ -203,12 +230,15 @@ export function hasMonthData(
   return monthsWithData.has(monthSelectionToKey(selection))
 }
 
-/** Human-readable month label, e.g. "มิถุนายน 2026". */
+/**
+ * Human-readable month label, e.g. "มิถุนายน 2569", "June 2026", "2026年6月".
+ * `locale` may be an app locale (`th` | `en` | `zh`) or a BCP-47 tag.
+ */
 export function formatMonthLabel(
   { year, month }: MonthSelection,
   locale = 'th-TH'
 ): string {
-  return new Date(year, month, 1).toLocaleDateString(locale, {
+  return new Date(year, month, 1).toLocaleDateString(toIntlLocaleTag(locale), {
     month: 'long',
     year: 'numeric',
   })
@@ -281,7 +311,9 @@ export function groupItemsByDate<T>(
     groups.push({
       dateKey,
       date: date ?? new Date(0),
-      label: date ? formatDateGroupLabel(date, locale) : 'ไม่ระบุวันที่',
+      label: date
+        ? formatDateGroupLabel(date, locale)
+        : RELATIVE_DAY_LABELS[labelLanguage(locale)].unknown,
       items: [item],
     })
   }

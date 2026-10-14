@@ -11,6 +11,11 @@ import type {
   AiInsightReport,
 } from '@/lib/firestore-types'
 import { useAuth } from '@/hooks/use-auth'
+import { pickClient } from '@/lib/i18n'
+
+function generateFailedMessage(): string {
+  return pickClient({ th: 'สร้างรายงานไม่สำเร็จ', en: 'Failed to generate report', zh: '报告生成失败' })
+}
 
 export interface UseAiInsightResult {
   report: AiInsightReport | null
@@ -46,7 +51,11 @@ export function useAiInsight(
       setReport(next)
     } catch (err) {
       setReport(null)
-      setError(err instanceof Error ? err.message : 'โหลดรายงานไม่สำเร็จ')
+      setError(
+        err instanceof Error
+          ? err.message
+          : pickClient({ th: 'โหลดรายงานไม่สำเร็จ', en: 'Failed to load report', zh: '报告加载失败' })
+      )
     } finally {
       setLoading(false)
     }
@@ -70,10 +79,10 @@ export function useAiInsight(
         })
         setReport(next)
         if (next.status === 'failed') {
-          setError(next.errorMessage || 'สร้างรายงานไม่สำเร็จ')
+          setError(next.errorMessage || generateFailedMessage())
         }
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'สร้างรายงานไม่สำเร็จ')
+        setError(err instanceof Error ? err.message : generateFailedMessage())
       } finally {
         setGenerating(false)
       }
