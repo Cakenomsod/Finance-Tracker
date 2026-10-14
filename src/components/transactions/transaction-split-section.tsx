@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import { useFriends, type Contact } from '@/hooks/use-friends'
+import { AddContactInline } from '@/components/friends/add-contact-inline'
 import { TripExpensePayer, TripExpenseShare } from '@/lib/firestore-types'
 import {
   ME_PERSON_ID,
@@ -35,6 +36,8 @@ export interface TransactionSplitSectionProps {
   initialSplitMode?: TransactionSplitMode
   /** When set, use these members instead of friends contacts (e.g. trip members) */
   members?: SplitMember[]
+  /** Split among every member by default (trips); otherwise only the payers start included */
+  defaultIncludeAll?: boolean
   /** Currency symbol for amount labels (default ฿) */
   currencySymbol?: string
   /** Person id used for debt preview filter (default Me) */
@@ -102,12 +105,19 @@ function defaultPayerFromMembers(
   return { personId: mePersonId || ME_PERSON_ID, displayName: 'Me', amount: '' }
 }
 
+const SPLIT_MODES: { value: TransactionSplitMode; label: string }[] = [
+  { value: 'equal', label: 'หารเท่ากัน' },
+  { value: 'custom', label: 'กำหนดเอง' },
+  { value: 'solo', label: 'ไม่หาร' },
+]
+
 export function TransactionSplitSection({
   total,
   initialPayers,
   initialShares,
   initialSplitMode,
   members: membersProp,
+  defaultIncludeAll = false,
   currencySymbol = '฿',
   previewPersonId = ME_PERSON_ID,
   hideSplitOptions = false,
@@ -127,9 +137,10 @@ export function TransactionSplitSection({
       const personId = contactPersonId(c)
       if (seen.has(personId)) continue
       seen.add(personId)
-      list.push({ personId, displayName: c.displayName })
+      list.push({ personId, displayName: c.isSelf ? 'ฉัน' : c.displayName })
     }
     return list
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [contactKey])
 
   const members = React.useMemo(() => {
@@ -149,6 +160,7 @@ export function TransactionSplitSection({
   }, [membersProp, membersFromFriends, initialPayers, initialShares, mePersonId])
 
   const loading = membersProp ? false : friendsLoading
+  const hasInitialShares = Boolean(initialShares?.length)
 
   const [splitMode, setSplitMode] = React.useState<TransactionSplitMode>(
     initialSplitMode || 'equal'
@@ -175,14 +187,18 @@ export function TransactionSplitSection({
     return [defaultPayerFromMembers(memberList, mePersonId)]
   })
 
-  const [equalIncluded, setEqualIncluded] = React.useState<Set<string>>(() => {
+  /** People who share the cost — independent of who paid. */
+  const [included, setIncluded] = React.useState<Set<string>>(() => {
     const memberList = membersProp ?? []
-    if (initialShares?.length && (initialSplitMode === 'equal' || !initialSplitMode)) {
+    if (initialShares?.length && initialSplitMode !== 'solo') {
       return new Set(
         initialShares.map((s) =>
           resolveMemberPersonId(s.userId, s.displayName, memberList, mePersonId)
         )
       )
+    }
+    if (defaultIncludeAll && memberList.length > 0) {
+      return new Set(memberList.map((m) => m.personId))
     }
     if (initialPayers?.length) {
       return new Set(
@@ -191,9 +207,9 @@ export function TransactionSplitSection({
         )
       )
     }
-    const fallback = defaultPayerFromMembers(memberList, mePersonId)
-    return new Set([fallback.personId])
+    return new Set([defaultPayerFromMembers(memberList, mePersonId).personId])
   })
+  const includedTouchedRef = React.useRef(hasInitialShares)
 
   const [customShares, setCustomShares] = React.useState<Record<string, string>>(() => {
     if (initialShares?.length && initialSplitMode === 'custom') {
@@ -226,7 +242,12 @@ export function TransactionSplitSection({
       })
       return changed ? next : prev
     })
-    setEqualIncluded((prev) => {
+    setIncluded((prev) => {
+      if (defaultIncludeAll && !includedTouchedRef.current) {
+        const all = new Set(members.map((m) => m.personId))
+        const same = all.size === prev.size && [...all].every((id) => prev.has(id))
+        return same ? prev : all
+      }
       let changed = false
       const next = new Set<string>()
       for (const id of prev) {
@@ -240,72 +261,33 @@ export function TransactionSplitSection({
       }
       return changed ? next : prev
     })
-  }, [members, mePersonId])
+  }, [members, mePersonId, defaultIncludeAll])
 
-  const payerParticipants = React.useMemo(() => {
-    const seen = new Set<string>()
-    return payers.filter((p) => {
-      if (!p.personId || seen.has(p.personId)) return false
-      seen.add(p.personId)
-      return true
-    })
-  }, [payers])
+  const payerIdsKey = payers.map((p) => p.personId).join('|')
+  const seenPayerIdsRef = React.useRef<Set<string>>(new Set(payers.map((p) => p.personId)))
 
-  const payerIdsKey = payerParticipants.map((p) => p.personId).join('|')
-
+  // A newly added payer usually shares the cost too; removing a payer never removes a sharer.
   React.useEffect(() => {
-    setEqualIncluded((prev) => {
-      const payerIds = new Set(payerParticipants.map((p) => p.personId))
-      const next = new Set<string>()
-      let changed = false
-
-      for (const id of prev) {
-        if (payerIds.has(id)) next.add(id)
-        else changed = true
-      }
-
-      for (const p of payerParticipants) {
-        if (!next.has(p.personId)) {
-          next.add(p.personId)
-          changed = true
-        }
-      }
-
-      return changed ? next : prev
+    const fresh = payers.map((p) => p.personId).filter((id) => id && !seenPayerIdsRef.current.has(id))
+    for (const id of payers.map((p) => p.personId)) seenPayerIdsRef.current.add(id)
+    if (fresh.length === 0) return
+    setIncluded((prev) => {
+      const next = new Set(prev)
+      for (const id of fresh) next.add(id)
+      return next
     })
-  }, [payerIdsKey, payerParticipants])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [payerIdsKey])
 
-  React.useEffect(() => {
-    if (splitMode !== 'custom') return
-
-    setCustomShares((prev) => {
-      const payerIds = new Set(payerParticipants.map((p) => p.personId))
-      const next: Record<string, string> = {}
-      let changed = false
-
-      for (const p of payerParticipants) {
-        if (prev[p.personId] !== undefined) {
-          next[p.personId] = prev[p.personId]
-        } else {
-          next[p.personId] = ''
-          changed = true
-        }
-      }
-
-      for (const id of Object.keys(prev)) {
-        if (!payerIds.has(id)) {
-          changed = true
-          break
-        }
-      }
-
-      if (!changed && Object.keys(prev).length !== Object.keys(next).length) {
-        changed = true
-      }
-
-      return changed ? next : prev
-    })
-  }, [splitMode, payerIdsKey, payerParticipants])
+  const participants = React.useMemo(() => {
+    const list: SplitMember[] = members.filter((m) => included.has(m.personId))
+    for (const id of included) {
+      if (list.some((m) => m.personId === id)) continue
+      const payer = payers.find((p) => p.personId === id)
+      list.push({ personId: id, displayName: payer?.displayName || id })
+    }
+    return list
+  }, [members, included, payers])
 
   const initialSplitKey = React.useMemo(
     () =>
@@ -332,27 +314,35 @@ export function TransactionSplitSection({
       )
     }
     if (initialSplitMode) setSplitMode(initialSplitMode)
-    if (initialShares?.length) {
+    if (initialShares?.length && initialSplitMode !== 'solo') {
+      const ids = initialShares.map((s) =>
+        resolveMemberPersonId(s.userId, s.displayName, members, mePersonId)
+      )
+      setIncluded(new Set(ids))
       if (initialSplitMode === 'custom') {
         setCustomShares(
           Object.fromEntries(
-            initialShares.map((s) => [
-              resolveMemberPersonId(s.userId, s.displayName, members, mePersonId),
-              String(s.amount),
-            ])
-          )
-        )
-      } else if (initialSplitMode === 'equal' || !initialSplitMode) {
-        setEqualIncluded(
-          new Set(
-            initialShares.map((s) =>
-              resolveMemberPersonId(s.userId, s.displayName, members, mePersonId)
-            )
+            initialShares.map((s, i) => [ids[i], String(s.amount)])
           )
         )
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialSplitKey, members, mePersonId])
+
+  const toggleIncluded = (personId: string) => {
+    includedTouchedRef.current = true
+    setIncluded((prev) => {
+      const next = new Set(prev)
+      if (next.has(personId)) {
+        if (next.size === 1) return prev
+        next.delete(personId)
+      } else {
+        next.add(personId)
+      }
+      return next
+    })
+  }
 
   const addPayer = () => {
     const used = new Set(payers.map((p) => p.personId))
@@ -378,9 +368,11 @@ export function TransactionSplitSection({
 
   const totalPaid = payers.slice(0, -1).reduce((s, p) => s + (parseFloat(p.amount) || 0), 0)
   const lastPayerSuggestion = Math.max(0, total - totalPaid)
-  const equalShareAmount =
-    equalIncluded.size > 0 ? total / equalIncluded.size : 0
-  const customTotal = Object.values(customShares).reduce((s, v) => s + (parseFloat(v) || 0), 0)
+  const equalShareAmount = participants.length > 0 ? total / participants.length : 0
+  const customTotal = participants.reduce(
+    (s, p) => s + (parseFloat(customShares[p.personId] ?? '') || 0),
+    0
+  )
 
   const buildResult = React.useMemo((): {
     payers: TripExpensePayer[]
@@ -407,32 +399,33 @@ export function TransactionSplitSection({
 
     let finalShares: TripExpenseShare[] = []
 
-    if (splitMode === 'solo') {
+    if (splitMode === 'solo' || hideSplitOptions) {
       finalShares = finalPayers.map((p) => ({
         userId: p.userId,
         displayName: p.displayName,
         amount: p.amount,
       }))
     } else if (splitMode === 'equal') {
-      if (equalIncluded.size === 0) {
-        errs.push('กรุณาเลือกอย่างน้อย 1 คน')
-        finalShares = []
+      if (participants.length === 0) {
+        errs.push('เลือกคนที่หารอย่างน้อย 1 คน')
       } else {
-        const share = parseFloat((total / equalIncluded.size).toFixed(2))
-        finalShares = payerParticipants
-          .filter((p) => equalIncluded.has(p.personId))
-          .map((p) => ({ userId: p.personId, displayName: p.displayName, amount: share }))
+        const share = parseFloat((total / participants.length).toFixed(2))
+        finalShares = participants.map((p) => ({
+          userId: p.personId,
+          displayName: p.displayName,
+          amount: share,
+        }))
       }
     } else {
-      finalShares = payerParticipants
-        .filter((p) => customShares[p.personId] && parseFloat(customShares[p.personId]) > 0)
+      finalShares = participants
+        .filter((p) => parseFloat(customShares[p.personId] ?? '') > 0)
         .map((p) => ({
           userId: p.personId,
           displayName: p.displayName,
           amount: parseFloat(customShares[p.personId]),
         }))
       if (Math.abs(customTotal - total) > 1) {
-        errs.push(`ยอดแบ่ง (${currencySymbol}${customTotal.toFixed(0)}) ไม่ตรงกับยอดรวม (${currencySymbol}${total.toFixed(0)})`)
+        errs.push(`ยอดที่แต่ละคนออก (${currencySymbol}${customTotal.toFixed(0)}) ไม่ตรงกับยอดรวม (${currencySymbol}${total.toFixed(0)})`)
       }
     }
 
@@ -442,8 +435,8 @@ export function TransactionSplitSection({
     payers,
     lastPayerSuggestion,
     splitMode,
-    equalIncluded,
-    payerParticipants,
+    hideSplitOptions,
+    participants,
     customShares,
     customTotal,
     currencySymbol,
@@ -483,30 +476,35 @@ export function TransactionSplitSection({
   }, [buildResult, total, previewPersonId, useEffectivePayerAmounts])
 
   if (loading) {
-    return <p className="text-sm text-muted-foreground">กำลังโหลดรายชื่อ...</p>
+    return <p className="text-sm text-muted-foreground">กำลังโหลดรายชื่อ…</p>
   }
+
+  const nameOf = (personId: string) =>
+    personId === previewPersonId
+      ? 'คุณ'
+      : members.find((m) => m.personId === personId)?.displayName || personId
+
+  const onlyMe = !membersProp && members.length <= 1
 
   return (
     <div
       className={cn(
-        embedded ? 'space-y-3' : 'space-y-3 rounded-lg border bg-muted/20 p-3 sm:p-4'
+        embedded ? 'space-y-4' : 'space-y-4 rounded-lg border bg-muted/20 p-3 sm:p-4'
       )}
     >
-      {!embedded && <p className="text-sm font-medium">แบ่งจ่าย / หนี้</p>}
-
       <div className="space-y-2">
         <div className="flex items-center justify-between gap-2">
-          <Label className="text-xs sm:text-sm">ใครจ่าย?</Label>
+          <Label className="text-sm">ใครจ่ายไปก่อน</Label>
           {payers.length < members.length && (
             <Button
               type="button"
-              variant="outline"
+              variant="ghost"
               size="sm"
               onClick={addPayer}
               disabled={disabled}
-              className="h-7 shrink-0 gap-1 px-2 text-xs"
+              className="h-9 shrink-0 gap-1 px-2 text-xs"
             >
-              <Plus className="size-3" /> เพิ่ม
+              <Plus className="size-3.5" aria-hidden /> เพิ่มคนจ่าย
             </Button>
           )}
         </div>
@@ -517,13 +515,13 @@ export function TransactionSplitSection({
               : members[0]?.personId
             return (
             <div key={`${payer.personId}-${idx}`} className="space-y-0.5">
-              <div className="grid grid-cols-[1fr_5.25rem_2rem] items-center gap-1.5 sm:grid-cols-[1fr_6rem_2rem] sm:gap-2">
+              <div className="grid grid-cols-[1fr_6rem_2.25rem] items-center gap-1.5 sm:gap-2">
                 <Select
                   value={selectValue || undefined}
                   onValueChange={(v) => updatePayerPerson(idx, v)}
                   disabled={disabled || !selectValue}
                 >
-                  <SelectTrigger className="h-8 min-w-0 text-xs">
+                  <SelectTrigger className="h-9 min-w-0 text-sm" aria-label={`คนจ่ายคนที่ ${idx + 1}`}>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -539,14 +537,16 @@ export function TransactionSplitSection({
                   </SelectContent>
                 </Select>
                 <div className="relative">
-                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                  <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
                     {currencySymbol}
                   </span>
                   <Input
                     type="number"
+                    inputMode="decimal"
                     step="0.01"
-                    className="h-8 pl-5 text-xs"
+                    className="h-9 pl-6 text-sm tabular-nums"
                     disabled={disabled}
+                    aria-label={`ยอดที่ ${payer.displayName} จ่าย`}
                     placeholder={idx === payers.length - 1 ? String(lastPayerSuggestion.toFixed(0)) : '0'}
                     value={payer.amount}
                     onChange={(e) => updatePayerAmount(idx, e.target.value)}
@@ -557,18 +557,19 @@ export function TransactionSplitSection({
                     type="button"
                     variant="ghost"
                     size="icon"
-                    className="size-8 shrink-0"
+                    className="size-9 shrink-0"
                     disabled={disabled}
+                    aria-label={`เอา ${payer.displayName} ออกจากคนจ่าย`}
                     onClick={() => removePayer(idx)}
                   >
-                    <Minus className="size-3.5" />
+                    <Minus className="size-3.5" aria-hidden />
                   </Button>
                 ) : (
-                  <div className="size-8 shrink-0" />
+                  <div className="size-9 shrink-0" />
                 )}
               </div>
               {useEffectivePayerAmounts && parseFloat(payer.amount) > 0 && (
-                <p className="text-[10px] text-muted-foreground tabular-nums pl-0.5">
+                <p className="text-xs text-muted-foreground tabular-nums pl-0.5">
                   จ่ายจริง {currencySymbol}
                   {toPaotangEffectivePayerAmount(parseFloat(payer.amount) || 0).toLocaleString(undefined, {
                     minimumFractionDigits: 0,
@@ -584,20 +585,17 @@ export function TransactionSplitSection({
 
       {!hideSplitOptions && (
       <div className="space-y-2">
-        <Label className="text-xs sm:text-sm">แบ่งจ่ายแบบไหน?</Label>
-        <div className="grid grid-cols-3 gap-1.5">
-          {[
-            { value: 'equal' as const, label: '⚖️ เฉลี่ย' },
-            { value: 'custom' as const, label: '✏️ กำหนด' },
-            { value: 'solo' as const, label: '🙋 เดียว' },
-          ].map((opt) => (
+        <Label className="text-sm" id="split-mode-label">หารยังไง</Label>
+        <div role="group" aria-labelledby="split-mode-label" className="grid grid-cols-3 gap-1.5">
+          {SPLIT_MODES.map((opt) => (
             <button
               key={opt.value}
               type="button"
               disabled={disabled}
+              aria-pressed={splitMode === opt.value}
               onClick={() => setSplitMode(opt.value)}
               className={cn(
-                'rounded-lg border px-1.5 py-1.5 text-[11px] font-medium transition-all sm:px-2 sm:py-2 sm:text-xs',
+                'h-9 rounded-lg border px-2 text-xs font-medium transition-colors sm:text-sm',
                 splitMode === opt.value
                   ? 'border-primary bg-primary text-primary-foreground'
                   : 'border-border hover:border-primary/50'
@@ -608,102 +606,107 @@ export function TransactionSplitSection({
           ))}
         </div>
 
-        {splitMode === 'equal' && (
-          <div className="space-y-1.5">
-            <p className="text-xs text-muted-foreground">
-              เลือกจากผู้จ่ายเท่านั้น ({equalIncluded.size} คน → คนละ {currencySymbol}
-              {equalShareAmount.toFixed(0)})
+        {splitMode !== 'solo' && (
+          <div className="space-y-2 pt-1">
+            <p className="text-xs text-muted-foreground" id="split-with-label">
+              {splitMode === 'equal'
+                ? `หารกับใคร · ${participants.length} คน คนละ ${currencySymbol}${equalShareAmount.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+                : 'หารกับใคร · แตะชื่อเพื่อเลือก แล้วใส่ยอดของแต่ละคน'}
             </p>
-            {payerParticipants.length === 0 ? (
-              <p className="text-xs text-muted-foreground">เพิ่มผู้จ่ายก่อน</p>
-            ) : (
-            <div className="flex flex-wrap gap-2">
-              {payerParticipants.map((p) => {
-                const on = equalIncluded.has(p.personId)
-                const isLastSelected = on && equalIncluded.size === 1
+            <div role="group" aria-labelledby="split-with-label" className="flex flex-wrap gap-1.5">
+              {members.map((m) => {
+                const on = included.has(m.personId)
+                const isLastSelected = on && included.size === 1
                 return (
                   <button
-                    key={p.personId}
+                    key={m.personId}
                     type="button"
+                    aria-pressed={on}
                     disabled={disabled || isLastSelected}
-                    onClick={() => {
-                      const next = new Set(equalIncluded)
-                      if (on) next.delete(p.personId)
-                      else next.add(p.personId)
-                      setEqualIncluded(next)
-                    }}
+                    onClick={() => toggleIncluded(m.personId)}
                     className={cn(
-                      'rounded-full border px-3 py-1 text-xs font-medium transition-all',
+                      'min-h-9 rounded-full border px-3 text-sm font-medium transition-colors',
                       on
                         ? 'border-primary bg-primary text-primary-foreground'
-                        : 'border-border hover:border-primary/50',
-                      isLastSelected && 'opacity-90'
+                        : 'border-border text-muted-foreground hover:border-primary/50 hover:text-foreground'
                     )}
                   >
-                    {p.displayName}
+                    {m.displayName}
                   </button>
                 )
               })}
             </div>
+            {!membersProp && (
+              <AddContactInline
+                disabled={disabled}
+                label={onlyMe ? 'ยังไม่มีรายชื่อเพื่อน — เพิ่มคนที่หารด้วย' : 'เพิ่มรายชื่อใหม่'}
+                onAdded={({ key }) => {
+                  includedTouchedRef.current = true
+                  setIncluded((prev) => new Set(prev).add(key))
+                }}
+              />
+            )}
+
+            {splitMode === 'custom' && (
+              <div className="space-y-2 pt-1">
+                {participants.map((p) => (
+                  <div key={p.personId} className="grid grid-cols-[1fr_6rem] items-center gap-2">
+                    <Label htmlFor={`share-${p.personId}`} className="min-w-0 truncate text-sm font-normal">
+                      {p.displayName}
+                    </Label>
+                    <div className="relative">
+                      <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                        {currencySymbol}
+                      </span>
+                      <Input
+                        id={`share-${p.personId}`}
+                        type="number"
+                        inputMode="decimal"
+                        step="0.01"
+                        className="h-9 pl-6 text-sm tabular-nums"
+                        disabled={disabled}
+                        placeholder="0"
+                        value={customShares[p.personId] || ''}
+                        onChange={(e) =>
+                          setCustomShares({ ...customShares, [p.personId]: e.target.value })
+                        }
+                      />
+                    </div>
+                  </div>
+                ))}
+                <p className="text-xs text-muted-foreground tabular-nums">
+                  รวม {currencySymbol}{customTotal.toLocaleString()} / {currencySymbol}{total.toLocaleString()}
+                </p>
+              </div>
             )}
           </div>
         )}
 
-        {splitMode === 'custom' && (
-          <div className="space-y-2">
-            <p className="text-xs text-muted-foreground">
-              กรอกจำนวนของแต่ละคนที่จ่าย (รวม: {currencySymbol}{customTotal.toFixed(0)} / {currencySymbol}{total.toFixed(0)})
-            </p>
-            {payerParticipants.map((p) => (
-              <div key={p.personId} className="grid grid-cols-[1fr_5.25rem] items-center gap-1.5 sm:gap-2">
-                <span className="min-w-0 truncate text-xs sm:text-sm">{p.displayName}</span>
-                <div className="relative">
-                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
-                    {currencySymbol}
-                  </span>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    className="h-8 pl-5 text-xs"
-                    disabled={disabled}
-                    placeholder="0"
-                    value={customShares[p.personId] || ''}
-                    onChange={(e) =>
-                      setCustomShares({ ...customShares, [p.personId]: e.target.value })
-                    }
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
         {splitMode === 'solo' && (
-          <p className="text-xs text-muted-foreground">คนที่จ่ายรับผิดชอบทั้งหมด ไม่หารกับใคร</p>
+          <p className="text-xs text-muted-foreground">คนที่จ่ายออกเองทั้งหมด ไม่มีใครติดใคร</p>
         )}
       </div>
       )}
 
       {errors.length > 0 && (
-        <div className="space-y-1 rounded-md bg-destructive/10 p-3 text-xs text-destructive">
+        <div role="alert" className="space-y-1 rounded-md bg-destructive/10 p-3 text-xs text-destructive">
           {errors.map((e, i) => (
-            <p key={i}>• {e}</p>
+            <p key={i}>{e}</p>
           ))}
         </div>
       )}
 
       {preview && preview.length > 0 && total > 0 && (
-        <div className="space-y-1 rounded-lg bg-muted p-3 text-xs text-muted-foreground">
-          <p className="font-medium text-foreground">สรุปหนี้ที่เกี่ยวกับคุณ</p>
-          {preview.map((t, i) => {
-            const fromName = t.from === previewPersonId ? 'คุณ' : members.find(m => m.personId === t.from)?.displayName || t.from
-            const toName = t.to === previewPersonId ? 'คุณ' : members.find(m => m.personId === t.to)?.displayName || t.to
-            return (
-              <p key={i}>
-                {fromName} คืน {toName} {currencySymbol}{t.amount.toLocaleString()}
-              </p>
-            )
-          })}
+        <div className="space-y-1 rounded-lg bg-muted p-3 text-sm">
+          <p className="font-medium">ผลลัพธ์</p>
+          {preview.map((t, i) => (
+            <p key={i} className="text-muted-foreground">
+              {nameOf(t.from)} ต้องคืน {nameOf(t.to)}{' '}
+              <span className="font-medium text-foreground tabular-nums">
+                {currencySymbol}{t.amount.toLocaleString()}
+              </span>
+            </p>
+          ))}
         </div>
       )}
     </div>
@@ -723,7 +726,7 @@ export function validateTransactionSplit(
     errs.push(`ยอดที่จ่ายไม่ตรงกับยอดรวม`)
   }
   if (Math.abs(shareTotal - total) > 1) {
-    errs.push(`ยอดแบ่งไม่ตรงกับยอดรวม`)
+    errs.push(`ยอดที่หารไม่ตรงกับยอดรวม`)
   }
   return errs
 }

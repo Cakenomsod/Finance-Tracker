@@ -265,7 +265,9 @@ export function useFriends() {
       throw new Error('มีชื่อนี้ในรายชื่อเพื่อนแล้ว');
     }
     const id = await createCustomFriend(user.uid, trimmed);
-    await appendContactKey(contactKeyForCustom(id));
+    const key = contactKeyForCustom(id);
+    await appendContactKey(key);
+    return { key, displayName: trimmed };
   };
 
   const removeCustomFriendById = async (id: string) => {

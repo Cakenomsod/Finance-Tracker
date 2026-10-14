@@ -20,6 +20,7 @@ import { parseTripLocalDateTime } from '@/lib/trip-currency';
 import { loadUserAccountsForAi } from '@/lib/ai/load-user-accounts';
 import type { AiAccount } from '@/lib/ai/account-hint';
 import { resolveDraftTarget, type DraftCurrencySource } from '@/lib/ai/draft-resolve';
+import { deleteSlips, saveSlipForUser } from '@/lib/attachments/server';
 
 type Client = messagingApi.MessagingApiClient;
 
@@ -31,6 +32,8 @@ type StoredDraft = ReceiptParseResult & {
   transferToAccountId?: string;
   currencySource?: DraftCurrencySource;
   timeZone?: string;
+  /** `fs:` slip photo ids saved to Firebase Storage; copied onto the transaction. */
+  attachmentIds?: string[];
 };
 
 const HELP_RE = /^(help|\?|วิธีใช้|ช่วยด้วย|เมนู|menu)$/i;
@@ -184,25 +187,40 @@ export async function handleLineEvent(event: webhook.Event) {
             : undefined,
       };
 
-      const drafts =
-        message.type === 'text'
-          ? await parseExpenseTextWithProvider(
+      const imageBuffer =
+        message.type === 'image' ? await downloadMessageContent(message.id) : null;
+      // Keep the slip alongside the parse; a storage failure must not block the entry itself.
+      const slipUpload = imageBuffer
+        ? saveSlipForUser(userId, imageBuffer, { source: 'line' }).catch((error) => {
+            console.error('[LINE] slip upload failed:', error);
+            return null;
+          })
+        : Promise.resolve(null);
+
+      let drafts: ReceiptParseResult[];
+      try {
+        drafts = imageBuffer
+          ? [
+              await parseReceiptImageWithProvider(imageBuffer, 'image/jpeg', providerConfig, {
+                currency,
+              }),
+            ]
+          : await parseExpenseTextWithProvider(
               incomingText,
               providerConfig,
               { currency },
               undefined,
               accounts
-            )
-          : [
-              await parseReceiptImageWithProvider(
-                await downloadMessageContent(message.id),
-                'image/jpeg',
-                providerConfig,
-                { currency }
-              ),
-            ];
+            );
+      } catch (error) {
+        const orphan = await slipUpload;
+        if (orphan) await deleteSlips([orphan]);
+        throw error;
+      }
+      const slipId = await slipUpload;
 
       if (drafts.length === 0) {
+        if (slipId) await deleteSlips([slipId]);
         await reply(client, replyToken, [
           text('ยังอ่านรายการไม่ออกครับ ลองพิมพ์แบบ "ชื่อรายการ จำนวนเงิน" เช่น ข้าวมันไก่ 60 (พิมพ์ help ดูตัวอย่าง)'),
         ]);
@@ -215,6 +233,7 @@ export async function handleLineEvent(event: webhook.Event) {
         timeZone,
         accounts,
         accountsEnabled: userData.accountsEnabled === true,
+        attachmentIds: slipId ? [slipId] : [],
       });
       return;
     }
@@ -235,7 +254,10 @@ export async function handleLineEvent(event: webhook.Event) {
       } else if (action === 'cancel' && draftId) {
         const draftRef = adminDb().collection('line_drafts').doc(draftId);
         const snap = await draftRef.get();
-        if (snap.exists && snap.data()?.userId === userId) await draftRef.delete();
+        if (snap.exists && snap.data()?.userId === userId) {
+          await draftRef.delete();
+          await deleteSlips((snap.data() as StoredDraft).attachmentIds);
+        }
         await reply(client, replyToken, [text('ยกเลิกรายการเรียบร้อยแล้วครับ')]);
       } else if (action === 'save_all' && batchId) {
         const result = await saveBatchTransactions(batchId, userId, currency, timeZone);
@@ -253,6 +275,9 @@ export async function handleLineEvent(event: webhook.Event) {
         const batch = adminDb().batch();
         snap.docs.forEach((doc) => batch.delete(doc.ref));
         await batch.commit();
+        await deleteSlips([
+          ...new Set(snap.docs.flatMap((doc) => (doc.data() as StoredDraft).attachmentIds ?? [])),
+        ]);
         await reply(client, replyToken, [text(`ยกเลิก ${snap.size} รายการเรียบร้อยแล้วครับ`)]);
       }
     }
@@ -325,6 +350,7 @@ function buildTransaction(draft: StoredDraft, userId: string, fallbackCurrency: 
     discount: draft.discount && draft.discount > 0 ? draft.discount : undefined,
     baseAmount: draft.baseAmount,
     taxAmount: draft.taxAmount,
+    immichAssetIds: draft.attachmentIds?.length ? draft.attachmentIds : undefined,
   });
   // Sentinels/Timestamps are added after stripUndefined (JSON would mangle them).
   return {
@@ -401,6 +427,7 @@ async function sendReviewMessages(
     timeZone: string;
     accounts: AiAccount[];
     accountsEnabled: boolean;
+    attachmentIds: string[];
   }
 ) {
   const db = adminDb();
@@ -422,6 +449,7 @@ async function sendReviewMessages(
       timeZone: ctx.timeZone,
       userId: ctx.userId,
       batchId,
+      attachmentIds: ctx.attachmentIds,
     };
     writes.set(ref, { ...stripUndefined(stored), createdAt: FieldValue.serverTimestamp() });
 

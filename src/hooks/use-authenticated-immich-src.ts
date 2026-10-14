@@ -2,10 +2,16 @@
 
 import * as React from 'react'
 import { authFetch } from '@/lib/api-auth-client'
+import { isStorageAttachment } from '@/lib/attachments/ids'
+import { getAttachmentUrl } from '@/lib/attachments/storage'
+import { IMMICH_ENABLED } from '@/lib/immich/feature'
 
 export type ImmichImageQuality = 'thumbnail' | 'preview' | 'original'
 
-/** Load Immich proxy images with Bearer auth (img src alone only sends cookies). */
+/**
+ * Resolve an attachment to an <img> src. Firebase Storage photos use a download URL
+ * (single size); legacy Immich assets go through the Bearer-auth proxy.
+ */
 export function useAuthenticatedImmichSrc(
   assetId: string | null,
   type: ImmichImageQuality
@@ -28,6 +34,28 @@ export function useAuthenticatedImmichSrc(
     setLoading(true)
     setError(false)
     setSrc(null)
+
+    if (isStorageAttachment(assetId)) {
+      getAttachmentUrl(assetId).then(
+        (url) => {
+          if (!cancelled) setSrc(url)
+        },
+        () => {
+          if (!cancelled) setError(true)
+        }
+      ).finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+      return () => {
+        cancelled = true
+      }
+    }
+
+    if (!IMMICH_ENABLED) {
+      setLoading(false)
+      setError(true)
+      return
+    }
 
     void (async () => {
       try {

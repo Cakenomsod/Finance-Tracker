@@ -8,8 +8,7 @@ import './globals.css'
 
 export const metadata: Metadata = {
   title: 'Finance Tracker',
-  description: 'Personal finance operating system - Track expenses, manage debts, and gain AI-powered insights',
-  generator: 'v0.app',
+  description: 'จดรายรับรายจ่าย หารค่าใช้จ่ายกับเพื่อน และเคลียร์หนี้ทริปในที่เดียว',
   icons: {
     icon: [
       {
@@ -21,7 +20,10 @@ export const metadata: Metadata = {
 }
 
 export const viewport: Viewport = {
-  themeColor: '#0B1020',
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#f7f9fb' },
+    { media: '(prefers-color-scheme: dark)', color: '#0b1020' },
+  ],
   width: 'device-width',
   initialScale: 1,
 }
@@ -32,7 +34,7 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="th" suppressHydrationWarning>
       <body className="font-sans antialiased">
         <ThemeProvider
           attribute="class"

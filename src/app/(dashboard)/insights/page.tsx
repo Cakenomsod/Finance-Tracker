@@ -40,35 +40,43 @@ import type {
   AiInsightTip,
 } from '@/lib/firestore-types'
 import { amountColorClass, cn } from '@/lib/utils'
+import { useLocale } from '@/components/locale-provider'
+import type { LocalizedText } from '@/lib/i18n'
 
-const IMPACT_LABEL: Record<AiInsightHighlight['impact'], string> = {
-  high: 'High impact',
-  medium: 'Medium impact',
-  low: 'Low impact',
+const IMPACT_LABEL: Record<AiInsightHighlight['impact'], LocalizedText> = {
+  high: { th: 'ผลกระทบสูง', en: 'High impact', zh: '影响大' },
+  medium: { th: 'ผลกระทบปานกลาง', en: 'Medium impact', zh: '影响中等' },
+  low: { th: 'ผลกระทบน้อย', en: 'Low impact', zh: '影响小' },
 }
 
-const SEVERITY_LABEL: Record<AiInsightAnomaly['severity'], string> = {
-  high: 'High',
-  medium: 'Medium',
-  low: 'Low',
+const SEVERITY_LABEL: Record<AiInsightAnomaly['severity'], LocalizedText> = {
+  high: { th: 'สูง', en: 'High', zh: '高' },
+  medium: { th: 'ปานกลาง', en: 'Medium', zh: '中' },
+  low: { th: 'ต่ำ', en: 'Low', zh: '低' },
 }
 
-function highlightTone(type: AiInsightHighlight['type']) {
+const DIFFICULTY_LABEL: Record<AiInsightTip['difficulty'], LocalizedText> = {
+  Easy: { th: 'ทำง่าย', en: 'Easy', zh: '容易' },
+  Medium: { th: 'ปานกลาง', en: 'Medium', zh: '中等' },
+  Hard: { th: 'ทำยาก', en: 'Hard', zh: '困难' },
+}
+
+function highlightTone(type: AiInsightHighlight['type']): { icon: React.ReactNode; label: LocalizedText } {
   switch (type) {
     case 'warning':
       return {
         icon: <AlertTriangle className="size-4 text-warning" aria-hidden />,
-        label: 'Warning',
+        label: { th: 'ควรระวัง', en: 'Warning', zh: '注意' },
       }
     case 'positive':
       return {
         icon: <TrendingUp className="size-4 text-primary" aria-hidden />,
-        label: 'Positive',
+        label: { th: 'เรื่องดี', en: 'Positive', zh: '积极' },
       }
     default:
       return {
         icon: <Lightbulb className="size-4 text-muted-foreground" aria-hidden />,
-        label: 'Insight',
+        label: { th: 'ข้อสังเกต', en: 'Insight', zh: '洞察' },
       }
   }
 }
@@ -84,6 +92,7 @@ function InsightCard({
   className?: string
   style?: React.CSSProperties
 }) {
+  const { p } = useLocale()
   const tone = highlightTone(highlight.type)
 
   return (
@@ -95,7 +104,7 @@ function InsightCard({
               {tone.icon}
             </span>
             <div className="min-w-0">
-              <p className="text-xs font-medium text-muted-foreground">{tone.label}</p>
+              <p className="text-xs font-medium text-muted-foreground">{p(tone.label)}</p>
               <h3 className="text-sm font-semibold text-balance leading-snug">{highlight.title}</h3>
             </div>
           </div>
@@ -108,7 +117,7 @@ function InsightCard({
               highlight.impact === 'low' && 'bg-primary/15 text-primary'
             )}
           >
-            {IMPACT_LABEL[highlight.impact]}
+            {IMPACT_LABEL[highlight.impact] ? p(IMPACT_LABEL[highlight.impact]) : highlight.impact}
           </Badge>
         </div>
 
@@ -134,6 +143,7 @@ function InsightCard({
 }
 
 function TipRow({ tip, currency }: { tip: AiInsightTip; currency: string }) {
+  const { p } = useLocale()
   return (
     <div className="flex flex-col gap-3 py-4 first:pt-0 last:pb-0 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
       <div className="min-w-0 flex-1 space-y-1.5">
@@ -146,16 +156,20 @@ function TipRow({ tip, currency }: { tip: AiInsightTip; currency: string }) {
       <div className="flex shrink-0 items-center justify-between gap-3 pl-6 sm:flex-col sm:items-end sm:pl-0">
         {tip.potentialSavings != null && tip.potentialSavings > 0 ? (
           <div className="text-left sm:text-right">
-            <p className="text-xs text-muted-foreground">Potential savings</p>
+            <p className="text-xs text-muted-foreground">
+              {p({ th: 'อาจประหยัดได้', en: 'Potential savings', zh: '可能节省' })}
+            </p>
             <p className="font-semibold text-primary tabular-nums">
               {formatMoney(tip.potentialSavings, currency)}
             </p>
           </div>
         ) : (
-          <span className="text-xs text-muted-foreground">Suggestion</span>
+          <span className="text-xs text-muted-foreground">
+            {p({ th: 'คำแนะนำ', en: 'Suggestion', zh: '建议' })}
+          </span>
         )}
         <Badge variant="secondary" className="capitalize">
-          {tip.difficulty}
+          {DIFFICULTY_LABEL[tip.difficulty] ? p(DIFFICULTY_LABEL[tip.difficulty]) : tip.difficulty}
         </Badge>
       </div>
     </div>
@@ -163,6 +177,7 @@ function TipRow({ tip, currency }: { tip: AiInsightTip; currency: string }) {
 }
 
 function AnomalyRow({ anomaly }: { anomaly: AiInsightAnomaly }) {
+  const { p } = useLocale()
   return (
     <div className="flex items-start justify-between gap-4 py-4 first:pt-0 last:pb-0">
       <div className="min-w-0 flex-1 space-y-1">
@@ -188,15 +203,20 @@ function AnomalyRow({ anomaly }: { anomaly: AiInsightAnomaly }) {
           anomaly.severity === 'medium' && 'bg-warning/15 text-warning'
         )}
       >
-        {SEVERITY_LABEL[anomaly.severity]}
+        {SEVERITY_LABEL[anomaly.severity] ? p(SEVERITY_LABEL[anomaly.severity]) : anomaly.severity}
       </Badge>
     </div>
   )
 }
 
 function InsightsSkeleton({ status }: { status?: string }) {
+  const { p } = useLocale()
   return (
-    <div className="flex flex-col gap-6" aria-busy="true" aria-label={status || 'Loading insights'}>
+    <div
+      className="flex flex-col gap-6"
+      aria-busy="true"
+      aria-label={status || p({ th: 'กำลังโหลดบทวิเคราะห์', en: 'Loading insights', zh: '正在加载分析' })}
+    >
       {status && (
         <p className="flex items-center gap-2 text-sm text-muted-foreground" role="status">
           <RefreshCw className="size-4 animate-spin motion-reduce:animate-none" aria-hidden />
@@ -269,6 +289,7 @@ type AiInsightReportLike = {
 
 export default function InsightsPage() {
   const { currency, locale } = useUserSettings()
+  const { t, p } = useLocale()
   const [periodType, setPeriodType] = React.useState<AiInsightPeriodType>('month')
   const [monthSelection, setMonthSelection] = React.useState<MonthSelection>(
     getCurrentMonthSelection
@@ -320,9 +341,13 @@ export default function InsightsPage() {
     <div className="flex flex-col gap-6 p-4 sm:p-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex flex-col gap-1">
-          <h1 className="text-2xl font-semibold tracking-tight text-balance">Insights</h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-balance">{t('nav.insights')}</h1>
           <p className="text-muted-foreground text-pretty">
-            Period analysis of your income, spending, and unusual activity
+            {p({
+              th: 'สรุปรายรับ รายจ่าย และการใช้เงินที่ผิดปกติในแต่ละช่วง',
+              en: 'Period analysis of your income, spending, and unusual activity',
+              zh: '按时段分析你的收入、支出和异常活动',
+            })}
           </p>
         </div>
         <Button
@@ -339,13 +364,15 @@ export default function InsightsPage() {
             )}
             aria-hidden
           />
-          {generating ? 'Refreshing…' : 'Refresh'}
+          {generating
+            ? p({ th: 'กำลังรีเฟรช…', en: 'Refreshing…', zh: '正在刷新…' })
+            : p({ th: 'รีเฟรช', en: 'Refresh', zh: '刷新' })}
         </Button>
       </div>
 
       <div
         role="group"
-        aria-label="Insight period"
+        aria-label={p({ th: 'ช่วงเวลาที่วิเคราะห์', en: 'Insight period', zh: '分析时段' })}
         className="flex flex-col gap-3 rounded-xl border bg-card p-3 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:px-4 sm:py-3"
       >
         <ToggleGroup
@@ -354,13 +381,13 @@ export default function InsightsPage() {
           value={periodType}
           onValueChange={handlePeriodTypeChange}
           className="justify-start"
-          aria-label="Period type"
+          aria-label={p({ th: 'ประเภทช่วงเวลา', en: 'Period type', zh: '时段类型' })}
         >
-          <ToggleGroupItem value="week" aria-label="Week" className="min-w-16">
-            Week
+          <ToggleGroupItem value="week" aria-label={p({ th: 'รายสัปดาห์', en: 'Week', zh: '周' })} className="min-w-16">
+            {p({ th: 'สัปดาห์', en: 'Week', zh: '周' })}
           </ToggleGroupItem>
-          <ToggleGroupItem value="month" aria-label="Month" className="min-w-16">
-            Month
+          <ToggleGroupItem value="month" aria-label={p({ th: 'รายเดือน', en: 'Month', zh: '月' })} className="min-w-16">
+            {p({ th: 'เดือน', en: 'Month', zh: '月' })}
           </ToggleGroupItem>
         </ToggleGroup>
 
@@ -379,22 +406,24 @@ export default function InsightsPage() {
 
       <div aria-live="polite" aria-atomic="true" className="sr-only">
         {showGenerating
-          ? 'Generating insights'
+          ? p({ th: 'กำลังสร้างบทวิเคราะห์', en: 'Generating insights', zh: '正在生成分析' })
           : showFailed
-            ? 'Insights failed to load'
+            ? p({ th: 'โหลดบทวิเคราะห์ไม่สำเร็จ', en: 'Insights failed to load', zh: '分析加载失败' })
             : showReady
-              ? 'Insights ready'
+              ? p({ th: 'บทวิเคราะห์พร้อมแล้ว', en: 'Insights ready', zh: '分析已就绪' })
               : showEmpty
-                ? 'No insights for this period'
+                ? p({ th: 'ยังไม่มีบทวิเคราะห์ของช่วงนี้', en: 'No insights for this period', zh: '此时段暂无分析' })
                 : loading
-                  ? 'Loading insights'
+                  ? p({ th: 'กำลังโหลดบทวิเคราะห์', en: 'Loading insights', zh: '正在加载分析' })
                   : ''}
       </div>
 
       {loading && <InsightsSkeleton />}
 
       {!loading && showGenerating && (
-        <InsightsSkeleton status="Generating insights…" />
+        <InsightsSkeleton
+          status={p({ th: 'กำลังสร้างบทวิเคราะห์…', en: 'Generating insights…', zh: '正在生成分析…' })}
+        />
       )}
 
       {showFailed && (
@@ -404,9 +433,13 @@ export default function InsightsPage() {
               <AlertTriangle className="size-6 text-destructive" aria-hidden />
             </div>
             <div className="max-w-md space-y-1">
-              <h2 className="text-base font-semibold">Couldn&apos;t load insights</h2>
+              <h2 className="text-base font-semibold">
+                {p({ th: 'โหลดบทวิเคราะห์ไม่สำเร็จ', en: "Couldn't load insights", zh: '无法加载分析' })}
+              </h2>
               <p className="text-sm text-muted-foreground text-pretty">
-                {report?.errorMessage || error || 'Something went wrong. Please try again.'}
+                {report?.errorMessage ||
+                  error ||
+                  p({ th: 'มีบางอย่างผิดพลาด ลองใหม่อีกครั้ง', en: 'Something went wrong. Please try again.', zh: '出了点问题，请重试。' })}
               </p>
             </div>
             <Button onClick={handleGenerate} disabled={generating} aria-busy={generating}>
@@ -417,7 +450,7 @@ export default function InsightsPage() {
                 )}
                 aria-hidden
               />
-              Retry
+              {p({ th: 'ลองใหม่', en: 'Retry', zh: '重试' })}
             </Button>
           </CardContent>
         </Card>
@@ -430,15 +463,28 @@ export default function InsightsPage() {
               <Sparkles className="size-6 text-muted-foreground" aria-hidden />
             </div>
             <div className="max-w-md space-y-1">
-              <h2 className="text-base font-semibold">No insights for this period</h2>
+              <h2 className="text-base font-semibold">
+                {p({ th: 'ยังไม่มีบทวิเคราะห์ของช่วงนี้', en: 'No insights for this period', zh: '此时段暂无分析' })}
+              </h2>
               <p className="text-sm text-muted-foreground text-pretty">
-                Generate a summary of your income, spending, and unusual activity for the selected{' '}
-                {periodType}. Add a few transactions first if this period looks empty.
+                {periodType === 'month'
+                  ? p({
+                      th: 'กดสร้างสรุปรายรับ รายจ่าย และการใช้เงินที่ผิดปกติของเดือนที่เลือก ถ้าเดือนนี้ยังว่าง ลองเพิ่มรายการก่อนสักหน่อย',
+                      en: 'Generate a summary of your income, spending, and unusual activity for the selected month. Add a few transactions first if this period looks empty.',
+                      zh: '为所选月份生成收入、支出和异常活动的总结。如果此时段没有数据，请先添加几笔交易。',
+                    })
+                  : p({
+                      th: 'กดสร้างสรุปรายรับ รายจ่าย และการใช้เงินที่ผิดปกติของสัปดาห์ที่เลือก ถ้าสัปดาห์นี้ยังว่าง ลองเพิ่มรายการก่อนสักหน่อย',
+                      en: 'Generate a summary of your income, spending, and unusual activity for the selected week. Add a few transactions first if this period looks empty.',
+                      zh: '为所选周生成收入、支出和异常活动的总结。如果此时段没有数据，请先添加几笔交易。',
+                    })}
               </p>
             </div>
             <Button onClick={handleGenerate} disabled={generating} aria-busy={generating}>
               <Zap className="mr-2 size-4" aria-hidden />
-              {generating ? 'Generating…' : 'Generate insights'}
+              {generating
+                ? p({ th: 'กำลังสร้าง…', en: 'Generating…', zh: '正在生成…' })
+                : p({ th: 'สร้างบทวิเคราะห์', en: 'Generate insights', zh: '生成分析' })}
             </Button>
           </CardContent>
         </Card>
@@ -449,36 +495,49 @@ export default function InsightsPage() {
           <Card className="shadow-sm">
             <CardContent className="grid gap-0 p-0 sm:grid-cols-2 lg:grid-cols-4">
               <StatCell
-                label="Income"
+                label={p({ th: 'รายรับ', en: 'Income', zh: '收入' })}
                 value={formatMoney(report.stats.totalIncome, currency)}
                 icon={<ArrowUpRight className="size-3.5 text-primary" aria-hidden />}
                 valueClassName="text-primary"
               />
               <StatCell
-                label="Expenses"
+                label={p({ th: 'รายจ่าย', en: 'Expenses', zh: '支出' })}
                 value={formatMoney(report.stats.totalExpense, currency)}
                 icon={<ArrowDownRight className="size-3.5 text-destructive" aria-hidden />}
                 valueClassName="text-destructive"
                 className="border-t sm:border-t-0 sm:border-l"
               />
               <StatCell
-                label="Net"
+                label={p({ th: 'คงเหลือสุทธิ', en: 'Net', zh: '净额' })}
                 value={formatMoney(report.stats.net, currency, true)}
                 icon={<Wallet className="size-3.5 text-muted-foreground" aria-hidden />}
                 valueClassName={amountColorClass(report.stats.net, 'text-foreground')}
                 className="border-t lg:border-t-0 lg:border-l"
               />
               <StatCell
-                label="Transactions"
+                label={p({ th: 'จำนวนรายการ', en: 'Transactions', zh: '交易笔数' })}
                 value={String(report.stats.transactionCount)}
                 icon={<Hash className="size-3.5 text-muted-foreground" aria-hidden />}
-                hint={
-                  report.stats.vsPriorExpenseChangePercent != null
-                    ? `Expenses ${report.stats.vsPriorExpenseChangePercent > 0 ? '+' : ''}${Math.round(report.stats.vsPriorExpenseChangePercent)}% vs prior`
-                    : report.stats.savingsRate != null
-                      ? `Savings rate ${Math.round(report.stats.savingsRate)}%`
-                      : undefined
-                }
+                hint={(() => {
+                  const change = report.stats.vsPriorExpenseChangePercent
+                  if (change != null) {
+                    const changeText = `${change > 0 ? '+' : ''}${Math.round(change)}%`
+                    return p({
+                      th: `รายจ่าย ${changeText} เทียบกับช่วงก่อน`,
+                      en: `Expenses ${changeText} vs prior`,
+                      zh: `支出较上期 ${changeText}`,
+                    })
+                  }
+                  if (report.stats.savingsRate != null) {
+                    const rate = Math.round(report.stats.savingsRate)
+                    return p({
+                      th: `เก็บออมได้ ${rate}%`,
+                      en: `Savings rate ${rate}%`,
+                      zh: `储蓄率 ${rate}%`,
+                    })
+                  }
+                  return undefined
+                })()}
                 className="border-t sm:border-l lg:border-t-0"
               />
             </CardContent>
@@ -487,10 +546,14 @@ export default function InsightsPage() {
           <Card className="shadow-sm">
             <CardHeader className="gap-1.5">
               <CardTitle className="text-base">
-                {periodType === 'month' ? 'Monthly summary' : 'Weekly summary'}
+                {periodType === 'month'
+                  ? p({ th: 'สรุปรายเดือน', en: 'Monthly summary', zh: '月度总结' })
+                  : p({ th: 'สรุปรายสัปดาห์', en: 'Weekly summary', zh: '每周总结' })}
               </CardTitle>
               <CardDescription>
-                Plain-language read of this {periodType}&apos;s activity
+                {periodType === 'month'
+                  ? p({ th: 'สรุปภาษาง่าย ๆ ว่าเดือนนี้เงินไปไหนบ้าง', en: "Plain-language read of this month's activity", zh: '用通俗语言解读本月的收支' })
+                  : p({ th: 'สรุปภาษาง่าย ๆ ว่าสัปดาห์นี้เงินไปไหนบ้าง', en: "Plain-language read of this week's activity", zh: '用通俗语言解读本周的收支' })}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -503,19 +566,19 @@ export default function InsightsPage() {
           <Tabs defaultValue="highlights" className="w-full gap-4">
             <TabsList
               className="grid h-auto w-full grid-cols-3 gap-1 p-1 sm:inline-flex sm:w-fit"
-              aria-label="Insight sections"
+              aria-label={p({ th: 'หัวข้อบทวิเคราะห์', en: 'Insight sections', zh: '分析板块' })}
             >
               <TabsTrigger value="highlights" className="gap-1.5 px-2 py-2 text-xs sm:text-sm">
                 <Lightbulb className="size-3.5 sm:size-4" aria-hidden />
-                <span className="truncate">Highlights</span>
+                <span className="truncate">{p({ th: 'จุดเด่น', en: 'Highlights', zh: '要点' })}</span>
               </TabsTrigger>
               <TabsTrigger value="tips" className="gap-1.5 px-2 py-2 text-xs sm:text-sm">
                 <TrendingUp className="size-3.5 sm:size-4" aria-hidden />
-                <span className="truncate">Tips</span>
+                <span className="truncate">{p({ th: 'คำแนะนำ', en: 'Tips', zh: '建议' })}</span>
               </TabsTrigger>
               <TabsTrigger value="unusual" className="gap-1.5 px-2 py-2 text-xs sm:text-sm">
                 <AlertTriangle className="size-3.5 sm:size-4" aria-hidden />
-                <span className="truncate">Unusual</span>
+                <span className="truncate">{p({ th: 'ผิดปกติ', en: 'Unusual', zh: '异常' })}</span>
               </TabsTrigger>
             </TabsList>
 
@@ -525,8 +588,12 @@ export default function InsightsPage() {
             >
               {report.highlights.length === 0 ? (
                 <EmptyTab
-                  title="No highlights yet"
-                  message="Nothing stood out for this period. Try another week or month, or generate again after logging more transactions."
+                  title={p({ th: 'ยังไม่มีจุดเด่น', en: 'No highlights yet', zh: '暂无要点' })}
+                  message={p({
+                    th: 'ช่วงนี้ยังไม่มีอะไรโดดเด่น ลองเลือกสัปดาห์หรือเดือนอื่น หรือสร้างใหม่หลังจากบันทึกรายการเพิ่ม',
+                    en: 'Nothing stood out for this period. Try another week or month, or generate again after logging more transactions.',
+                    zh: '此时段没有突出的内容。试试其他周或月，或在记录更多交易后重新生成。',
+                  })}
                 />
               ) : (
                 <div className="grid gap-3 md:grid-cols-2">
@@ -553,15 +620,21 @@ export default function InsightsPage() {
             >
               {report.tips.length === 0 ? (
                 <EmptyTab
-                  title="No tips for this period"
-                  message="Tips appear when there are clear ways to trim spending or improve cash flow. Check back after more activity."
+                  title={p({ th: 'ยังไม่มีคำแนะนำในช่วงนี้', en: 'No tips for this period', zh: '此时段暂无建议' })}
+                  message={p({
+                    th: 'คำแนะนำจะแสดงเมื่อเห็นทางลดรายจ่ายหรือจัดการเงินให้ดีขึ้นได้ชัด ๆ ลองกลับมาดูหลังมีรายการเพิ่ม',
+                    en: 'Tips appear when there are clear ways to trim spending or improve cash flow. Check back after more activity.',
+                    zh: '当有明确的节省开支或改善现金流的方法时会显示建议。有更多活动后再来看看。',
+                  })}
                 />
               ) : (
                 <Card className="shadow-sm">
                   <CardHeader className="gap-1.5">
-                    <CardTitle className="text-base">Suggestions</CardTitle>
+                    <CardTitle className="text-base">{p({ th: 'คำแนะนำ', en: 'Suggestions', zh: '建议' })}</CardTitle>
                     <CardDescription>
-                      Practical next steps based on this {periodType}&apos;s pattern
+                      {periodType === 'month'
+                        ? p({ th: 'สิ่งที่ลองทำได้จากรูปแบบการใช้เงินเดือนนี้', en: "Practical next steps based on this month's pattern", zh: '根据本月的消费模式给出的实用建议' })
+                        : p({ th: 'สิ่งที่ลองทำได้จากรูปแบบการใช้เงินสัปดาห์นี้', en: "Practical next steps based on this week's pattern", zh: '根据本周的消费模式给出的实用建议' })}
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="divide-y pt-0">
@@ -579,16 +652,25 @@ export default function InsightsPage() {
             >
               <Card className="shadow-sm">
                 <CardHeader className="gap-1.5">
-                  <CardTitle className="text-base">Unusual activity</CardTitle>
+                  <CardTitle className="text-base">
+                    {p({ th: 'การใช้เงินที่ผิดปกติ', en: 'Unusual activity', zh: '异常活动' })}
+                  </CardTitle>
                   <CardDescription>
-                    Patterns and transactions that differ from your usual habits
+                    {p({
+                      th: 'รายการหรือรูปแบบที่ต่างจากที่คุณใช้เงินตามปกติ',
+                      en: 'Patterns and transactions that differ from your usual habits',
+                      zh: '与你平时习惯不同的模式和交易',
+                    })}
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
                   {report.anomalies.length === 0 ? (
                     <p className="text-sm text-muted-foreground text-pretty">
-                      No unusual activity flagged for this period — spending looks consistent with
-                      your recent habits.
+                      {p({
+                        th: 'ช่วงนี้ไม่พบอะไรผิดปกติ การใช้เงินใกล้เคียงกับที่ผ่านมา',
+                        en: 'No unusual activity flagged for this period — spending looks consistent with your recent habits.',
+                        zh: '此时段没有发现异常，支出与近期习惯一致。',
+                      })}
                     </p>
                   ) : (
                     <div className="divide-y">
@@ -605,7 +687,13 @@ export default function InsightsPage() {
           {generatedLabel && (
             <p className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
               <Clock className="size-3.5" aria-hidden />
-              <span>Last updated {generatedLabel}</span>
+              <span>
+                {p({
+                  th: `อัปเดตล่าสุด ${generatedLabel}`,
+                  en: `Last updated ${generatedLabel}`,
+                  zh: `最后更新于 ${generatedLabel}`,
+                })}
+              </span>
             </p>
           )}
         </div>

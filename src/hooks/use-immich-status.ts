@@ -3,6 +3,7 @@
 import * as React from 'react'
 import { auth } from '@/lib/firebase'
 import { useAuth } from '@/hooks/use-auth'
+import { IMMICH_ENABLED } from '@/lib/immich/feature'
 
 export type ImmichStatus = {
   configured: boolean
@@ -29,6 +30,11 @@ export function useImmichStatus() {
   const [error, setError] = React.useState<string | null>(null)
 
   const refresh = React.useCallback(async () => {
+    if (!IMMICH_ENABLED) {
+      setStatus(INITIAL)
+      setLoading(false)
+      return
+    }
     setLoading(true)
     setError(null)
     try {

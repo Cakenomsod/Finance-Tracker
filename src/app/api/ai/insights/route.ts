@@ -3,6 +3,7 @@ import { verifySession } from '@/lib/api-auth'
 import type { AiInsightPeriodType } from '@/lib/firestore-types'
 import { getAiInsight } from '@/lib/ai/insights-store'
 import { parseMonthKey, parseWeekKey } from '@/lib/insight-periods'
+import { formatAiParseError } from '@/lib/ai/format-error'
 
 export async function GET(request: NextRequest) {
   const session = await verifySession()
@@ -46,7 +47,6 @@ export async function GET(request: NextRequest) {
       message: error instanceof Error ? error.message : String(error),
       stack: error instanceof Error ? error.stack : undefined,
     })
-    const errMessage = error instanceof Error ? error.message : 'Failed to load insight'
-    return NextResponse.json({ error: errMessage }, { status: 500 })
+    return NextResponse.json({ error: formatAiParseError(error) }, { status: 500 })
   }
 }

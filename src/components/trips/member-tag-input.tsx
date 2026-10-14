@@ -92,7 +92,7 @@ export function MemberTagInput({
             onClick={() => addMember('Me')}
             className="h-7 text-xs text-muted-foreground"
           >
-            + เพิ่ม "Me" (ฉัน)
+            + เพิ่มตัวเอง (ฉัน)
           </Button>
         )}
       </div>

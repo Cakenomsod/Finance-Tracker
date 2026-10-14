@@ -59,7 +59,7 @@ export function MobileBottomNav() {
   const pathname = usePathname()
   const { openQuickAdd } = useQuickAdd()
   const { pendingReceived } = useFriends()
-  const { t } = useLocale()
+  const { t, p } = useLocale()
   const pendingCount = pendingReceived.length
   const [moreOpen, setMoreOpen] = React.useState(false)
 
@@ -75,24 +75,24 @@ export function MobileBottomNav() {
               key={item.href}
               href={item.href}
               className={cn(
-                'flex flex-1 flex-col items-center justify-center gap-0.5 text-[10px] font-medium transition-colors',
+                'flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 px-0.5 text-xs font-medium leading-tight transition-colors',
                 active ? 'text-primary' : 'text-muted-foreground'
               )}
             >
               <item.icon className={cn('size-5', active && 'text-primary')} />
-              <span>{t(item.titleKey)}</span>
+              <span className="max-w-full truncate">{t(item.titleKey)}</span>
             </Link>
           )
         })}
 
         <button
           type="button"
-          onClick={openQuickAdd}
+          onClick={() => openQuickAdd()}
           className="flex flex-1 flex-col items-center justify-center"
-          aria-label={t('nav.transactions')}
+          aria-label={p({ th: 'จดรายการใหม่', en: 'Add entry', zh: '添加记录' })}
         >
-          <span className="flex size-11 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-md">
-            <Plus className="size-5" />
+          <span className="flex size-12 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-md">
+            <Plus className="size-6" aria-hidden />
           </span>
         </button>
 
@@ -103,12 +103,12 @@ export function MobileBottomNav() {
               key={item.href}
               href={item.href}
               className={cn(
-                'flex flex-1 flex-col items-center justify-center gap-0.5 text-[10px] font-medium transition-colors',
+                'flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 px-0.5 text-xs font-medium leading-tight transition-colors',
                 active ? 'text-primary' : 'text-muted-foreground'
               )}
             >
               <item.icon className={cn('size-5', active && 'text-primary')} />
-              <span>{t(item.titleKey)}</span>
+              <span className="max-w-full truncate">{t(item.titleKey)}</span>
             </Link>
           )
         })}
@@ -118,12 +118,29 @@ export function MobileBottomNav() {
             <button
               type="button"
               className={cn(
-                'flex flex-1 flex-col items-center justify-center gap-0.5 text-[10px] font-medium transition-colors',
+                'flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 px-0.5 text-xs font-medium leading-tight transition-colors',
                 moreIsActive ? 'text-primary' : 'text-muted-foreground'
               )}
             >
-              <MoreHorizontal className={cn('size-5', moreIsActive && 'text-primary')} />
-              <span>{t('nav.more')}</span>
+              <span className="relative">
+                <MoreHorizontal className={cn('size-5', moreIsActive && 'text-primary')} aria-hidden />
+                {pendingCount > 0 && (
+                  <span
+                    className="absolute -right-1.5 -top-1 size-2.5 rounded-full bg-destructive ring-2 ring-background"
+                    aria-hidden
+                  />
+                )}
+              </span>
+              <span className="max-w-full truncate">{t('nav.more')}</span>
+              {pendingCount > 0 && (
+                <span className="sr-only">
+                  {p({
+                    th: `มีคำขอเป็นเพื่อน ${pendingCount} รายการ`,
+                    en: `${pendingCount} friend requests`,
+                    zh: `${pendingCount} 个好友请求`,
+                  })}
+                </span>
+              )}
             </button>
           </SheetTrigger>
           <SheetContent side="bottom" className="pb-[env(safe-area-inset-bottom)]">
@@ -144,7 +161,7 @@ export function MobileBottomNav() {
                   <item.icon className="size-5" />
                   <span className="flex-1">{t(item.titleKey)}</span>
                   {item.badge === 'friends' && pendingCount > 0 && (
-                    <Badge className="h-5 min-w-5 rounded-full bg-destructive text-destructive-foreground text-[10px] px-1">
+                    <Badge className="h-5 min-w-5 rounded-full bg-destructive px-1 text-xs text-destructive-foreground">
                       {pendingCount}
                     </Badge>
                   )}

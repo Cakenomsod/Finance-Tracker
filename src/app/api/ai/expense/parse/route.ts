@@ -7,6 +7,7 @@ import { AiTextProvider } from '@/lib/firestore-types';
 import { loadUserContactsForAi, mergeTripMembersIntoContacts } from '@/lib/ai/load-user-contacts';
 import { loadUserAccountsForAi } from '@/lib/ai/load-user-accounts';
 import type { ExpenseTextAiContext } from '@/lib/ai/receipt-schema';
+import { formatAiParseError } from '@/lib/ai/format-error';
 
 export async function POST(request: NextRequest) {
   const session = await verifySession();
@@ -26,8 +27,9 @@ export async function POST(request: NextRequest) {
     const provider: AiTextProvider = resolveRequestedAiProvider(requestedProvider, savedProvider);
 
     if (provider === 'gemma' && !getGoogleAiApiKey()) {
+      console.error('[API] /api/ai/expense/parse: GOOGLE_AI_API_KEY is not set');
       return NextResponse.json(
-        { error: 'GOOGLE_AI_API_KEY ยังไม่ได้ตั้งค่าในเซิร์ฟเวอร์' },
+        { error: 'ตอนนี้ AI ยังใช้ไม่ได้ — จดเองด้วยปุ่ม + ไปก่อนได้' },
         { status: 503 }
       );
     }
@@ -36,9 +38,10 @@ export async function POST(request: NextRequest) {
     if (provider === 'local') {
       sharedLocalAiUrl = (await resolveLocalAiBaseUrl()) || '';
       if (!sharedLocalAiUrl) {
+        console.error('[API] /api/ai/expense/parse: local AI provider selected but no base URL configured');
         return NextResponse.json(
-          { error: 'คอมบ้านเชื่อมต่อท่อสำเร็จ แต่ยังไม่ได้เปิดใช้งานโหมด Local AI บนเครื่องบ้าน' },
-          { status: 400 }
+          { error: 'ตอนนี้ AI ยังใช้ไม่ได้ — จดเองด้วยปุ่ม + ไปก่อนได้' },
+          { status: 503 }
         );
       }
     }
@@ -93,7 +96,6 @@ export async function POST(request: NextRequest) {
       message: error instanceof Error ? error.message : String(error),
       stack: error instanceof Error ? error.stack : undefined,
     });
-    const errMessage = error instanceof Error ? error.message : 'Parse failed';
-    return NextResponse.json({ error: errMessage }, { status: 500 });
+    return NextResponse.json({ error: formatAiParseError(error) }, { status: 500 });
   }
 }

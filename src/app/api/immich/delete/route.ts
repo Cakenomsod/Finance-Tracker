@@ -2,11 +2,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifySession, getUserImmichSettings } from '@/lib/api-auth';
 import { deleteImmichAssets } from '@/lib/immich/client';
 import { photoDb } from '@/lib/photo-firebase-admin';
+import { IMMICH_ENABLED, IMMICH_MAINTENANCE_MESSAGE } from '@/lib/immich/feature';
 
 export async function POST(request: NextRequest) {
   const session = await verifySession();
   if (!session) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  if (!IMMICH_ENABLED) {
+    return NextResponse.json({ error: IMMICH_MAINTENANCE_MESSAGE }, { status: 503 });
   }
 
   let body: unknown;

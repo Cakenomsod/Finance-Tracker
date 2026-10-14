@@ -29,6 +29,7 @@ import { cn } from '@/lib/utils'
 import { useTheme } from 'next-themes'
 import { useUserSettings } from '@/hooks/use-user-settings'
 import { useImmichStatus } from '@/hooks/use-immich-status'
+import { IMMICH_ENABLED, IMMICH_MAINTENANCE_MESSAGE } from '@/lib/immich/feature'
 import { useLocale } from '@/components/locale-provider'
 import { ProfileSettings } from '@/components/settings/profile-settings'
 import { CategoriesSettings } from '@/components/settings/categories-settings'
@@ -101,17 +102,22 @@ function SettingsPageInner() {
       ? tabParam
       : 'account'
   const {
+    profile,
     aiInsightsWeekly,
     aiInsightsMonthly,
     saveAiInsightsSettings,
   } = useUserSettings()
+  const lineLinked = Boolean(profile?.lineUserId)
+  // Connection tests are for whoever runs the server, not everyday users.
+  const showDiagnostics =
+    process.env.NEXT_PUBLIC_SHOW_DIAGNOSTICS === '1' || searchParams.get('debug') === '1'
   const {
     configured: immichConfigured,
     host: immichHost,
     loading: immichStatusLoading,
     refresh: refreshImmichStatus,
   } = useImmichStatus()
-  const { t } = useLocale()
+  const { t, p } = useLocale()
   const [mounted, setMounted] = React.useState(false)
   const [savingInsights, setSavingInsights] = React.useState<'weekly' | 'monthly' | null>(null)
   const [testingImmich, setTestingImmich] = React.useState(false)
@@ -355,6 +361,7 @@ function SettingsPageInner() {
             </CardContent>
           </Card>
 
+          {showDiagnostics && (
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-xl tracking-tight">
@@ -365,7 +372,9 @@ function SettingsPageInner() {
             </CardHeader>
             <CardContent className="space-y-4">
               <p className="text-sm text-muted-foreground text-pretty">
-                {immichStatusLoading
+                {!IMMICH_ENABLED
+                  ? `${IMMICH_MAINTENANCE_MESSAGE} (เปิดกลับด้วย NEXT_PUBLIC_IMMICH_ENABLED=1)`
+                  : immichStatusLoading
                   ? t('settings.immichChecking')
                   : immichConfigured
                     ? immichHost
@@ -378,7 +387,7 @@ function SettingsPageInner() {
                   type="button"
                   variant="outline"
                   onClick={handleTestImmich}
-                  disabled={testingImmich || immichStatusLoading}
+                  disabled={!IMMICH_ENABLED || testingImmich || immichStatusLoading}
                   className="transition-opacity duration-200 motion-reduce:transition-none"
                 >
                   {testingImmich ? t('settings.testing') : t('settings.testImmich')}
@@ -395,6 +404,7 @@ function SettingsPageInner() {
               </div>
             </CardContent>
           </Card>
+          )}
 
           <Card>
             <CardHeader>
@@ -410,8 +420,15 @@ function SettingsPageInner() {
                   {t('settings.lineManageHint')}
                 </p>
                 <div className="flex items-center gap-2 shrink-0">
-                  <Badge variant="secondary">{t('settings.comingSoon')}</Badge>
-                  <Button variant="outline" size="sm" className="gap-2" asChild>
+                  <Badge
+                    variant="secondary"
+                    className={cn(lineLinked && 'bg-primary/10 text-primary')}
+                  >
+                    {lineLinked
+                      ? p({ th: 'เชื่อมแล้ว', en: 'Connected', zh: '已连接' })
+                      : p({ th: 'ยังไม่เชื่อม', en: 'Not connected', zh: '未连接' })}
+                  </Badge>
+                  <Button variant="outline" size="sm" className="h-9 gap-2" asChild>
                     <Link href="/line">
                       {t('settings.lineManage')}
                       <ChevronRight className="size-4" aria-hidden />

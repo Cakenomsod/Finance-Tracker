@@ -22,7 +22,7 @@ import { toast } from 'sonner';
 
 export function RecurringDueCard() {
   const { expenses, loading, confirmPayment, skipCycle } = useRecurringExpenses();
-  const { currency, profile } = useUserSettings();
+  const { currency } = useUserSettings();
   const { locale, t } = useLocale();
   const [actionId, setActionId] = React.useState<string | null>(null);
   const [snoozeTick, setSnoozeTick] = React.useState(0);
@@ -59,10 +59,11 @@ export function RecurringDueCard() {
     if (!expense.id) return;
     setActionId(expense.id);
     try {
-      await confirmPayment(expense, profile?.displayName || 'Me');
+      await confirmPayment(expense, 'Me', currency);
       toast.success(t('dashboard.recurringConfirmed'));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to confirm payment');
+      console.error('Confirm recurring payment failed:', err);
+      toast.error(locale === 'th' ? 'บันทึกไม่สำเร็จ ลองใหม่อีกครั้ง' : 'Could not save the payment — try again');
     } finally {
       setActionId(null);
     }
@@ -101,7 +102,7 @@ export function RecurringDueCard() {
           </CardDescription>
         </div>
         <Button variant="ghost" size="sm" className="shrink-0" asChild>
-          <Link href="/settings">{t('dashboard.viewRecurring')}</Link>
+          <Link href="/settings?tab=money">{t('dashboard.viewRecurring')}</Link>
         </Button>
       </CardHeader>
       <CardContent className="space-y-0 px-4 sm:px-6">

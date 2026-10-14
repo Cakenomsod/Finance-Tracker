@@ -7,6 +7,7 @@ import {
   deleteTransaction,
 } from '@/lib/firestore';
 import { collectImmichAssetIds } from '@/lib/immich/asset-ids';
+import { legacyReceiptUrl } from '@/lib/attachments/ids';
 import { ExpenseSource, TripExpense, Transaction } from '@/lib/firestore-types';
 import { deleteField } from 'firebase/firestore';
 
@@ -51,7 +52,7 @@ function mapExpenseToTransaction(
     paidBy: primaryPayer?.displayName || 'Me',
     splitWith: expense.splitMode === 'solo' ? null : otherShare?.userId || null,
     tripId: expense.tripId,
-    receiptUrl: primary ? `/api/immich/asset/${primary}` : null,
+    receiptUrl: legacyReceiptUrl(primary),
     source: txSource,
     items: expense.items,
     baseAmount: expense.baseAmount,
@@ -149,7 +150,7 @@ export async function updateTripExpenseWithTransaction(
   if (touchImmich) {
     txUpdate.immichAssetId = primary;
     txUpdate.immichAssetIds = ids.length ? ids : undefined;
-    txUpdate.receiptUrl = primary ? `/api/immich/asset/${primary}` : null;
+    txUpdate.receiptUrl = legacyReceiptUrl(primary);
   }
 
   if (Object.keys(txUpdate).length > 0) {

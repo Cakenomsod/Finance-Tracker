@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { Loader2, CheckCircle2, AlertCircle, X, Upload } from 'lucide-react'
-import { uploadImmichImage } from '@/lib/immich/upload-client'
+import { uploadAttachmentImage } from '@/lib/immich/upload-client'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 
@@ -134,7 +134,7 @@ export function ImmichUploadProvider({ children }: { children: React.ReactNode }
 
       void (async () => {
         try {
-          const { assetId } = await uploadImmichImage(file, { tripId })
+          const { assetId } = await uploadAttachmentImage(file, { tripId })
           deliver(deliveryKey, assetId)
           setJobs((prev) =>
             prev.map((j) =>
@@ -299,7 +299,7 @@ export function useImmichUploadDelivery(
     ) => {
       if (!upload) {
         // Fallback: direct upload without background panel
-        void uploadImmichImage(file, { tripId: options?.tripId }).then(
+        void uploadAttachmentImage(file, { tripId: options?.tripId }).then(
           ({ assetId }) => onAssetRef.current(assetId),
           (err) =>
             toast.error(err instanceof Error ? err.message : 'อัปโหลดไม่สำเร็จ')

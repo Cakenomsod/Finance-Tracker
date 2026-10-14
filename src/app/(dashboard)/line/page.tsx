@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
 import { Check, Copy, ExternalLink, Loader2, RefreshCw, Unplug, UserPlus } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -205,7 +206,11 @@ export default function LinePage() {
             <h2 className="text-sm font-semibold">ลองพิมพ์ในแชท</h2>
             <ExampleList />
             <p className="text-xs text-muted-foreground text-pretty">
-              ไม่พิมพ์สกุลเงิน → ใช้สกุลของบัญชีนั้น (ตั้งได้ที่ ตั้งค่า › บัญชี) ถ้าไม่มีจะใช้สกุลเงินหลัก · พิมพ์{' '}
+              ไม่พิมพ์สกุลเงิน → ใช้สกุลของบัญชีนั้น (ตั้งได้ที่{' '}
+              <Link href="/settings?tab=money" className="underline underline-offset-2">
+                ตั้งค่า › เงิน
+              </Link>
+              ) ถ้าไม่มีจะใช้สกุลเงินหลัก · พิมพ์{' '}
               <span className="font-mono">help</span> ในแชทเพื่อดูตัวอย่างอีกครั้ง
             </p>
           </CardContent>

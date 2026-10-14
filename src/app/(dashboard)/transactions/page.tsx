@@ -4,11 +4,11 @@ import * as React from 'react'
 import {
   Search,
   Filter,
-  Plus,
   MoreHorizontal,
   Edit2,
   Trash2,
   Loader2,
+  ExternalLink,
 } from 'lucide-react'
 
 import { Card, CardContent } from '@/components/ui/card'
@@ -36,7 +36,6 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog'
 import {
   Select,
@@ -85,6 +84,7 @@ import { TransactionTableSkeleton } from '@/components/transactions/transaction-
 import { TransactionDetailDialog } from '@/components/transactions/transaction-detail-dialog'
 import { TripExpenseDialog } from '@/components/trips/trip-expense-dialog'
 import { RecurringDueCard } from '@/components/dashboard/recurring-due-card'
+import { FirstRunChecklist } from '@/components/onboarding/first-run-checklist'
 import { useTrips } from '@/hooks/use-trips'
 import { Transaction, TripExpense } from '@/lib/firestore-types'
 import {
@@ -97,8 +97,15 @@ import {
 } from '@/lib/datetime'
 import { shouldIgnoreRowClick } from '@/lib/row-click'
 import { MoneyAmount } from '@/components/money-amount'
+import { TX_SEARCH_ID, useQuickAdd } from '@/components/quick-add-context'
+import { useUndoableDelete } from '@/hooks/use-undoable-delete'
+import { IMMICH_ENABLED } from '@/lib/immich/feature'
+import { collectImmichAssetIds } from '@/lib/immich/asset-ids'
+import { isStorageAttachment } from '@/lib/attachments/ids'
+import { useLocale } from '@/components/locale-provider'
+import { categoryLabel } from '@/lib/default-categories'
 
-const ALL_CATEGORIES = 'ทุกหมวดหมู่'
+const ALL_CATEGORIES = '__all__'
 
 type TransactionsPageRow = {
   id: string | undefined
@@ -126,7 +133,6 @@ export default function TransactionsPage() {
   const {
     items: transactions,
     loading: txLoading,
-    addTransaction,
     editTransaction,
     removeTransaction,
     loadOlder: loadOlderTransactions,
@@ -147,6 +153,9 @@ export default function TransactionsPage() {
   const { accountsEnabled, currency: preferenceCurrency } = useUserSettings()
   const { rates } = useExchangeRates()
   const { activeSources } = usePaymentSources()
+  const { openQuickAdd } = useQuickAdd()
+  const { pendingIds, scheduleDelete } = useUndoableDelete()
+  const { locale, p, t } = useLocale()
 
   const sourcesById = React.useMemo(() => {
     const map = new Map<string, PaymentSource>()
@@ -219,7 +228,7 @@ export default function TransactionsPage() {
 
   const [searchQuery, setSearchQuery] = React.useState('')
   const [selectedCategory, setSelectedCategory] = React.useState(ALL_CATEGORIES)
-  const [isAddDialogOpen, setIsAddDialogOpen] = React.useState(false)
+  const [isEditDialogOpen, setIsEditDialogOpen] = React.useState(false)
   const [editingTransaction, setEditingTransaction] = React.useState<Transaction | null>(null)
   const [isDetailOpen, setIsDetailOpen] = React.useState(false)
   const [detailTransaction, setDetailTransaction] = React.useState<Transaction | null>(null)
@@ -234,8 +243,6 @@ export default function TransactionsPage() {
         : null,
     [trips, viewingTripExpense]
   )
-  const [ocrDraft, setOcrDraft] = React.useState<Omit<Transaction, 'id' | 'createdAt' | 'userId'> | null>(null)
-  const [pendingImmichAssetIds, setPendingImmichAssetIds] = React.useState<string[]>([])
   const transactionAiPanelRef = React.useRef<TransactionAiPanelHandle>(null)
 
   const prefCurrency = isAppCurrency(preferenceCurrency) ? preferenceCurrency : 'THB'
@@ -305,14 +312,38 @@ export default function TransactionsPage() {
       }]
     })
 
-    const combined = [...legacy, ...newExps]
+    const combined = [...legacy, ...newExps].filter((row) => !row.id || !pendingIds.has(row.id))
     combined.sort((a, b) => {
       const dateA = a.date?.seconds || 0
       const dateB = b.date?.seconds || 0
       return dateB - dateA
     })
     return combined
-  }, [transactions, allTripExpenses, user?.uid, prefCurrency, effectiveRates])
+  }, [transactions, allTripExpenses, user?.uid, prefCurrency, effectiveRates, pendingIds])
+
+  const handleDelete = React.useCallback(
+    (id: string, tx: Transaction | null) => {
+      const name = tx?.description?.trim() || p({ th: 'รายการ', en: 'Entry', zh: '记录' })
+      const linked = [
+        tx &&
+          collectImmichAssetIds(tx).some((id) => IMMICH_ENABLED || isStorageAttachment(id)) &&
+          p({ th: 'รูปที่แนบ', en: 'attached photos', zh: '附件图片' }),
+        (tx?.splitMode && tx.splitMode !== 'solo') &&
+          p({ th: 'หนี้ที่เกี่ยวข้อง', en: 'linked debts', zh: '相关债务' }),
+      ].filter(Boolean)
+      scheduleDelete(id, () => removeTransaction(id, tx), {
+        message: linked.length
+          ? p({
+              th: `ลบ "${name}" แล้ว (รวม${linked.join(' และ ')})`,
+              en: `Deleted "${name}" (with ${linked.join(' and ')})`,
+              zh: `已删除「${name}」（含${linked.join('和')}）`,
+            })
+          : p({ th: `ลบ "${name}" แล้ว`, en: `Deleted "${name}"`, zh: `已删除「${name}」` }),
+        undoLabel: t('common.undo'),
+      })
+    },
+    [p, t, removeTransaction, scheduleDelete]
+  )
 
   const summaryCombined = React.useMemo(
     () => mergeTransactions(allTransactions, fullTripExpenses, user?.uid, prefCurrency, effectiveRates),
@@ -457,23 +488,32 @@ export default function TransactionsPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6 p-6">
+    <div className="flex flex-col gap-6 p-4 sm:p-6">
       <div className="flex flex-col gap-1">
-        <h1 className="text-balance text-2xl font-semibold tracking-tight">ธุรกรรม</h1>
+        <h1 className="text-balance text-2xl font-semibold tracking-tight">
+          {t('nav.transactions')}
+        </h1>
         <p className="text-sm text-muted-foreground">
-          ดูและจัดการรายการเงินทั้งหมดของคุณ
+          {p({
+            th: 'รายรับรายจ่ายทั้งหมด กด + เพื่อจดรายการใหม่',
+            en: 'All your income and spending. Tap + to log a new entry.',
+            zh: '所有收支记录，点 + 添加新记录',
+          })}
         </p>
       </div>
+
+      <FirstRunChecklist hasEntries={summaryCombined.length > 0} />
 
       <RecurringDueCard />
 
       <TransactionAiPanel
         ref={transactionAiPanelRef}
         onOpenDraftForm={(draft, immichIds) => {
-          setOcrDraft(draft)
-          setPendingImmichAssetIds(immichIds || [])
-          setEditingTransaction(null)
-          setIsAddDialogOpen(true)
+          openQuickAdd({
+            draft,
+            immichAssetIds: immichIds,
+            onSaved: () => transactionAiPanelRef.current?.completeActiveJob(),
+          })
         }}
       />
 
@@ -482,22 +522,29 @@ export default function TransactionsPage() {
           <div className="relative min-w-0 flex-1 sm:max-w-sm">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
             <Input
-              placeholder="ค้นหาธุรกรรม..."
+              id={TX_SEARCH_ID}
+              type="search"
+              placeholder={p({ th: 'ค้นหารายการ...', en: 'Search entries...', zh: '搜索记录...' })}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-9"
-              aria-label="ค้นหาธุรกรรม"
+              aria-label={p({ th: 'ค้นหารายการ', en: 'Search entries', zh: '搜索记录' })}
             />
           </div>
           <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-            <SelectTrigger className="w-full sm:w-[180px]" aria-label="กรองตามหมวดหมู่">
+            <SelectTrigger
+              className="w-full sm:w-[180px]"
+              aria-label={p({ th: 'กรองตามหมวดหมู่', en: 'Filter by category', zh: '按类别筛选' })}
+            >
               <Filter className="mr-2 size-4 shrink-0" aria-hidden />
-              <SelectValue placeholder="หมวดหมู่" />
+              <SelectValue placeholder={t('tx.category')} />
             </SelectTrigger>
             <SelectContent>
               {filterCategories.map((category) => (
                 <SelectItem key={category} value={category}>
-                  {category}
+                  {category === ALL_CATEGORIES
+                    ? p({ th: 'ทุกหมวดหมู่', en: 'All categories', zh: '全部类别' })
+                    : categoryLabel(category, locale)}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -510,76 +557,53 @@ export default function TransactionsPage() {
               className="text-muted-foreground"
               onClick={handleClearFilters}
             >
-              ล้างตัวกรอง
+              {p({ th: 'ล้างตัวกรอง', en: 'Clear filters', zh: '清除筛选' })}
             </Button>
           )}
         </div>
-        <div className="flex items-center gap-2">
-          <Dialog open={isAddDialogOpen} onOpenChange={(open) => {
-            setIsAddDialogOpen(open)
-            if (!open) {
-              setEditingTransaction(null)
-              setOcrDraft(null)
-              setPendingImmichAssetIds([])
-            }
-          }}>
-            <DialogTrigger asChild>
-              <Button size="sm" className="hidden gap-2 md:inline-flex">
-                <Plus className="size-4" aria-hidden />
-                เพิ่มธุรกรรม
-              </Button>
-            </DialogTrigger>
-            <DialogContent
-              className="max-h-[min(90vh,90dvh)] w-[calc(100vw-1rem)] overflow-y-auto overflow-x-hidden p-4 max-sm:top-[4vh] max-sm:translate-y-0 sm:max-w-[680px] sm:p-6"
-            >
-              <DialogHeader>
-                <DialogTitle>
-                  {editingTransaction ? 'แก้ไขธุรกรรม' : ocrDraft ? 'ตรวจสอบธุรกรรมจาก AI' : 'เพิ่มธุรกรรม'}
-                </DialogTitle>
-                <DialogDescription>
-                  {ocrDraft
-                    ? 'ข้อมูลจาก Gemini — แก้ไขได้ก่อนกดบันทึก'
-                    : 'กรอกรายละเอียดธุรกรรมของคุณ'}
-                </DialogDescription>
-              </DialogHeader>
-              <TransactionForm
-                key={
-                  editingTransaction?.id ||
-                  (ocrDraft
-                    ? `ocr-${ocrDraft.description}-${ocrDraft.date?.seconds ?? ''}-${ocrDraft.amount}-${ocrDraft.accountId ?? ''}`
-                    : 'new')
-                }
-                initialData={editingTransaction || (ocrDraft as Transaction | null)}
-                pendingImmichAssetIds={pendingImmichAssetIds}
-                currency={preferenceCurrency}
-                onSubmit={async (data) => {
-                  if (editingTransaction) {
-                    await editTransaction(editingTransaction.id!, data)
-                  } else {
-                    await addTransaction({ ...data, source: data.source || (ocrDraft ? 'ai' : 'manual') })
-                  }
-                  if (ocrDraft && !editingTransaction) {
-                    transactionAiPanelRef.current?.completeActiveJob()
-                  }
-                  setIsAddDialogOpen(false)
-                  setEditingTransaction(null)
-                  setOcrDraft(null)
-                  setPendingImmichAssetIds([])
-                }}
-                onCancel={() => {
-                  setIsAddDialogOpen(false)
-                  setEditingTransaction(null)
-                  setOcrDraft(null)
-                  setPendingImmichAssetIds([])
-                }}
-              />
-            </DialogContent>
-          </Dialog>
-        </div>
       </div>
 
+      <Dialog
+        open={isEditDialogOpen}
+        onOpenChange={(open) => {
+          setIsEditDialogOpen(open)
+          if (!open) setEditingTransaction(null)
+        }}
+      >
+        <DialogContent
+          className="max-h-[min(90vh,90dvh)] w-[calc(100vw-1rem)] overflow-y-auto overflow-x-hidden p-4 max-sm:top-[4vh] max-sm:translate-y-0 sm:max-w-[560px] sm:p-6"
+        >
+          <DialogHeader>
+            <DialogTitle>{p({ th: 'แก้ไขรายการ', en: 'Edit entry', zh: '编辑记录' })}</DialogTitle>
+            <DialogDescription>
+              {p({
+                th: 'แก้แล้วกดบันทึก หนี้ที่เกี่ยวข้องจะอัปเดตตาม',
+                en: 'Save to apply — linked debts update automatically',
+                zh: '保存后相关债务会自动更新',
+              })}
+            </DialogDescription>
+          </DialogHeader>
+          {editingTransaction && (
+            <TransactionForm
+              key={editingTransaction.id}
+              initialData={editingTransaction}
+              currency={preferenceCurrency}
+              onSubmit={async (data) => {
+                await editTransaction(editingTransaction.id!, data)
+                setIsEditDialogOpen(false)
+                setEditingTransaction(null)
+              }}
+              onCancel={() => {
+                setIsEditDialogOpen(false)
+                setEditingTransaction(null)
+              }}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
       {/* Sticky month summary — single card, hairline cell dividers, no nested metric cards */}
-      <div className="sticky top-0 z-20 -mx-6 border-b bg-background/95 px-6 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+      <div className="sticky top-0 z-20 -mx-4 border-b bg-background/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:-mx-6 sm:px-6">
         <div className="mb-3 flex justify-center border-b border-border pb-3">
           <MonthPicker
             value={selectedMonth}
@@ -641,7 +665,7 @@ export default function TransactionsPage() {
                   >
                     {formatMoney(cumulativeBalance, prefCurrency)}
                   </MonthAnimatedValue>
-                  <p className="text-[11px] leading-tight text-muted-foreground">
+                  <p className="text-xs leading-tight text-muted-foreground">
                     {accountsEnabled
                       ? 'ยอดรวมทุกบัญชี · เงินเริ่มต้น + รายการที่ระบุบัญชี'
                       : 'สะสมถึงสิ้นเดือนนี้ · จากทุกรายการ'}
@@ -678,10 +702,10 @@ export default function TransactionsPage() {
         onView={handleViewTransaction}
         onEdit={(tx) => {
           setEditingTransaction(tx)
-          setIsAddDialogOpen(true)
+          setIsEditDialogOpen(true)
         }}
-        onDelete={(id, tx) => removeTransaction(id, tx)}
-        onAddClick={() => setIsAddDialogOpen(true)}
+        onDelete={handleDelete}
+        onAddClick={() => openQuickAdd()}
         onClearFilters={handleClearFilters}
       />
 
@@ -709,7 +733,7 @@ export default function TransactionsPage() {
                   <TableCell colSpan={6}>
                     <TransactionEmptyState
                       variant={emptyVariant}
-                      onAddClick={() => setIsAddDialogOpen(true)}
+                      onAddClick={() => openQuickAdd()}
                       onClearFilters={hasActiveFilters ? handleClearFilters : undefined}
                     />
                   </TableCell>
@@ -742,12 +766,12 @@ export default function TransactionsPage() {
                       <p className="font-medium leading-snug">
                         {transaction.description}
                         {transaction.isPaotang && (
-                          <Badge variant="outline" className="ml-2 align-middle text-[10px] border-chart-2/40 text-chart-2">
+                          <Badge variant="outline" className="ml-2 align-middle text-xs border-chart-2/40 text-chart-2">
                             เป๋าตัง
                           </Badge>
                         )}
                         {!transaction.isLegacy && (
-                          <Badge variant="outline" className="ml-2 align-middle text-[10px]">
+                          <Badge variant="outline" className="ml-2 align-middle text-xs">
                             {transaction.isTripDebtPending ? 'ค้างจ่ายทริป' : 'รายจ่ายทริป'}
                           </Badge>
                         )}
@@ -773,7 +797,7 @@ export default function TransactionsPage() {
                           }
                         >
                           {cat?.icon ? `${cat.icon} ` : ''}
-                          {transaction.category}
+                          {categoryLabel(transaction.category, locale)}
                         </Badge>
                       )
                     })()}
@@ -808,23 +832,23 @@ export default function TransactionsPage() {
                             className="block"
                           />
                           {transaction.isPaotang && Math.abs(fullAmount) !== Math.abs(displayAmount) && (
-                            <span className="block text-[10px] font-normal text-muted-foreground">
+                            <span className="block text-xs font-normal text-muted-foreground">
                               เต็ม {fullAmount > 0 ? '+' : ''}{recordedCurrency === 'JPY' ? '¥' : '฿'}{Math.abs(fullAmount).toLocaleString()}
                               {' · '}รัฐ {PAOTANG_GOV_PERCENT}% (ตามโควต้า)
                             </span>
                           )}
                           {!transaction.isLegacy && Math.abs(fullAmount) !== Math.abs(displayAmount) && (
-                            <span className="block text-[10px] font-normal text-muted-foreground">
+                            <span className="block text-xs font-normal text-muted-foreground">
                               เต็ม {recordedCurrency === 'JPY' ? '¥' : '฿'}{Math.abs(fullAmount).toLocaleString()}
                             </span>
                           )}
                           {transaction.isPaotang && transaction.paotangQuotaCapped && (
-                            <span className="block text-[10px] font-normal text-warning">
+                            <span className="block text-xs font-normal text-warning">
                               โควต้าจำกัด — {getPaotangCapReasonLabel(transaction.paotangCapReason)}
                             </span>
                           )}
                           {transaction.isTripDebtPending && (
-                            <span className="block text-[10px] font-normal text-muted-foreground">
+                            <span className="block text-xs font-normal text-muted-foreground">
                               ยังไม่นับในรายจ่าย — จ่ายคืนในหน้าทริป
                             </span>
                           )}
@@ -849,20 +873,21 @@ export default function TransactionsPage() {
                           <>
                             <DropdownMenuItem onClick={() => {
                               setEditingTransaction(transaction.rawTx!)
-                              setIsAddDialogOpen(true)
+                              setIsEditDialogOpen(true)
                             }}>
                               <Edit2 className="mr-2 size-4" aria-hidden />
-                              แก้ไข
+                              {p({ th: 'แก้ไข', en: 'Edit', zh: '编辑' })}
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
-                            <DropdownMenuItem className="text-destructive" onClick={() => removeTransaction(transaction.id!, transaction.rawTx)}>
+                            <DropdownMenuItem className="text-destructive" onClick={() => handleDelete(transaction.id!, transaction.rawTx)}>
                               <Trash2 className="mr-2 size-4" aria-hidden />
-                              ลบ
+                              {t('common.delete')}
                             </DropdownMenuItem>
                           </>
                         ) : (
-                          <DropdownMenuItem disabled>
-                            ไปที่หน้าทริปเพื่อแก้ไข
+                          <DropdownMenuItem onClick={() => handleViewTransaction(transaction)}>
+                            <ExternalLink className="mr-2 size-4" aria-hidden />
+                            {p({ th: 'เปิดรายการทริป', en: 'Open trip expense', zh: '打开旅行支出' })}
                           </DropdownMenuItem>
                         )}
                       </DropdownMenuContent>
@@ -919,16 +944,6 @@ export default function TransactionsPage() {
         trip={tripForViewingExpense}
         myUserId={user?.uid || ''}
       />
-
-      {/* Floating Add Button (Mobile) — above bottom nav */}
-      <Button
-        size="lg"
-        onClick={() => setIsAddDialogOpen(true)}
-        className="fixed right-4 z-40 size-14 rounded-full shadow-lg transition-opacity duration-150 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] motion-reduce:transition-none md:hidden"
-        aria-label="เพิ่มธุรกรรม"
-      >
-        <Plus className="size-6" aria-hidden />
-      </Button>
     </div>
   )
 }

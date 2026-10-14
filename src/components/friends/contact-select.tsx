@@ -9,6 +9,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useFriends, type Contact } from '@/hooks/use-friends'
+import { AddContactInline } from '@/components/friends/add-contact-inline'
 
 const NONE_VALUE = '__none__'
 const ME_VALUE = 'me'
@@ -23,6 +24,9 @@ interface ContactSelectProps {
   noneLabel?: string
   /** Hide "Me" option (e.g. for Split With) */
   includeMe?: boolean
+  /** Offer an inline "add new person" control under the picker */
+  allowCreate?: boolean
+  id?: string
 }
 
 type SelectOption = {
@@ -53,6 +57,8 @@ export function ContactSelect({
   allowNone = false,
   noneLabel = 'ไม่แบ่ง',
   includeMe = true,
+  allowCreate = false,
+  id,
 }: ContactSelectProps) {
   const { contacts, loading } = useFriends()
   // Track user-opened menu so remount clears to ไม่ระบุ are ignored.
@@ -116,7 +122,7 @@ export function ContactSelect({
     (value === 'Me' || value === ME_VALUE) &&
     !allOptions.some((c) => c.isSelf)
 
-  return (
+  const select = (
     <Select
       value={selectValue}
       onValueChange={handleChange}
@@ -125,8 +131,8 @@ export function ContactSelect({
       }}
       disabled={loading && allOptions.length === 0 && !value}
     >
-      <SelectTrigger aria-busy={loading} aria-label={placeholder}>
-        <SelectValue placeholder={loading ? 'กำลังโหลด...' : placeholder} />
+      <SelectTrigger id={id} aria-busy={loading} aria-label={id ? undefined : placeholder} className="h-10 w-full">
+        <SelectValue placeholder={loading ? 'กำลังโหลด…' : placeholder} />
       </SelectTrigger>
       <SelectContent>
         {allowNone && (
@@ -145,5 +151,14 @@ export function ContactSelect({
         ))}
       </SelectContent>
     </Select>
+  )
+
+  if (!allowCreate) return select
+
+  return (
+    <div className="space-y-1">
+      {select}
+      <AddContactInline onAdded={({ displayName }) => onChange(displayName)} />
+    </div>
   )
 }

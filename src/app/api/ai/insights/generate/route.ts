@@ -3,6 +3,7 @@ import { verifySession } from '@/lib/api-auth'
 import { generateInsightReportForUser } from '@/lib/ai/generate-insight-report'
 import type { AiInsightPeriodType } from '@/lib/firestore-types'
 import { parseMonthKey, parseWeekKey } from '@/lib/insight-periods'
+import { formatAiParseError } from '@/lib/ai/format-error'
 
 export async function POST(request: NextRequest) {
   const session = await verifySession()
@@ -52,7 +53,6 @@ export async function POST(request: NextRequest) {
       message: error instanceof Error ? error.message : String(error),
       stack: error instanceof Error ? error.stack : undefined,
     })
-    const errMessage = error instanceof Error ? error.message : 'Insight generation failed'
-    return NextResponse.json({ error: errMessage }, { status: 500 })
+    return NextResponse.json({ error: formatAiParseError(error) }, { status: 500 })
   }
 }

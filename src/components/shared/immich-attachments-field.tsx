@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { ImagePlus, X, Maximize2, Loader2 } from 'lucide-react'
+import { ImagePlus, X, Maximize2, Loader2, Wrench } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -11,6 +11,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { requestDeleteImmichAssets } from '@/lib/immich/delete-from-browser'
+import { IMMICH_ENABLED, IMMICH_MAINTENANCE_MESSAGE } from '@/lib/immich/feature'
+import { isStorageAttachment } from '@/lib/attachments/ids'
 import { useImmichUploadDelivery } from '@/providers/immich-upload-context'
 import { useAuthenticatedImmichSrc } from '@/hooks/use-authenticated-immich-src'
 import { cn } from '@/lib/utils'
@@ -43,6 +45,19 @@ function ImmichThumb({
   onRemove: () => void
 }) {
   const { src, loading } = useAuthenticatedImmichSrc(assetId, 'thumbnail')
+  const legacyPaused = !IMMICH_ENABLED && !isStorageAttachment(assetId)
+
+  if (legacyPaused) {
+    return (
+      <div
+        className="flex w-20 h-20 shrink-0 flex-col items-center justify-center gap-1 rounded-md border border-dashed bg-muted/40 p-1 text-center"
+        title={IMMICH_MAINTENANCE_MESSAGE}
+      >
+        <Wrench className="size-4 text-muted-foreground" aria-hidden />
+        <span className="text-xs leading-tight text-muted-foreground">รูปเก่า · ปรับปรุง</span>
+      </div>
+    )
+  }
 
   return (
     <div className="relative group w-20 h-20 rounded-md border bg-muted overflow-hidden shrink-0">
@@ -191,7 +206,7 @@ export function ImmichAttachmentsField({
       <div className={cn('rounded-lg border bg-muted/40 p-3 space-y-3', className)}>
         <div className="flex items-center justify-between gap-2">
           <p className="text-xs font-medium text-muted-foreground">
-            รูปโน้ต (Immich)
+            รูปแนบ
             {uploadingCount > 0 ? ` · กำลังอัปโหลด ${uploadingCount}` : ''}
           </p>
           <input
@@ -216,7 +231,7 @@ export function ImmichAttachmentsField({
           </Button>
         </div>
         {showEmpty ? (
-          <p className="text-[11px] text-muted-foreground">{emptyHint}</p>
+          <p className="text-xs text-muted-foreground">{emptyHint}</p>
         ) : (
           <div className="flex flex-wrap gap-2">
             {localPreviews.map((p) => (
@@ -285,7 +300,9 @@ export function ImmichAttachmentsField({
             </div>
           )}
           <DialogFooter className="gap-2 sm:justify-between">
-            {lightboxQuality === 'preview' ? (
+            {lightboxAssetId && isStorageAttachment(lightboxAssetId) ? (
+              <span />
+            ) : lightboxQuality === 'preview' ? (
               <Button
                 type="button"
                 variant="outline"

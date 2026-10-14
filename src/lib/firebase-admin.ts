@@ -30,3 +30,7 @@ function getMainApp(): admin.app.App {
 // ท่านี้จะการันตีว่าแอปหลักจะถูกเช็กความพร้อม "ทุกครั้ง" ก่อนใช้งาน ไม่มีการลัดคิวพังอีกต่อไป
 export const adminAuth = () => admin.auth(getMainApp());
 export const adminDb = () => admin.firestore(getMainApp());
+export const adminStorageBucket = () =>
+  admin
+    .storage(getMainApp())
+    .bucket(process.env.FIREBASE_STORAGE_BUCKET || process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET);

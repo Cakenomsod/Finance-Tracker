@@ -5,6 +5,7 @@ import {
   type ImmichAssetType,
 } from '@/lib/immich/client';
 import { photoDb } from '@/lib/photo-firebase-admin';
+import { IMMICH_ENABLED, IMMICH_MAINTENANCE_MESSAGE } from '@/lib/immich/feature';
 
 function parseAssetType(raw: string | null): ImmichAssetType {
   if (raw === 'original' || raw === 'preview' || raw === 'thumbnail') {
@@ -40,6 +41,9 @@ export async function GET(
   const session = await verifySession();
   if (!session) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  if (!IMMICH_ENABLED) {
+    return NextResponse.json({ error: IMMICH_MAINTENANCE_MESSAGE }, { status: 503 });
   }
 
   const { id } = await params;

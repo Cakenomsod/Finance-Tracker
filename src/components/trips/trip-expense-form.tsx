@@ -5,6 +5,7 @@ import { Plus, Minus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -33,6 +34,8 @@ import {
   parseTripLocalDateTime,
 } from '@/lib/trip-currency'
 import { toDateFromFirestore } from '@/lib/datetime'
+import { categoryLabel } from '@/lib/default-categories'
+import { useLocale } from '@/components/locale-provider'
 
 export interface TripFormDefaults {
   countryCode?: string | null
@@ -113,6 +116,7 @@ export function TripExpenseFormV2({
   onSubmit,
   onCancel,
 }: TripExpenseFormV2Props) {
+  const { locale } = useLocale()
   const countryCode = tripDefaults?.countryCode ?? null
   const countryConfig = getCountryConfig(countryCode)
   const hasAutoTax = !!countryConfig
@@ -138,7 +142,10 @@ export function TripExpenseFormV2({
   const [note, setNote] = React.useState(initialData?.note || '')
 
   const [splitEnabled, setSplitEnabled] = React.useState(() => {
-    if (!initialData) return false
+    if (!initialData) return tripMembers.length > 1
+    if (!initialData.id && !initialData.splitMode && !initialData.payers?.length) {
+      return tripMembers.length > 1
+    }
     if (initialData.splitMode === 'item') return true
     if (initialData.splitMode && initialData.splitMode !== 'solo') return true
     if ((initialData.payers?.length ?? 0) > 1) return true
@@ -252,7 +259,7 @@ export function TripExpenseFormV2({
     if (auto) return auto
 
     let p = 0
-    let t = 0
+    const t = 0
     let itemTotal = 0
     if (receiptTaxMode === 'exclusive') {
       p = rawVal
@@ -494,7 +501,7 @@ export function TripExpenseFormV2({
         }
       />
       {/* Input Mode Selector */}
-      <div className="flex gap-1 rounded-lg bg-muted p-1" role="tablist" aria-label="Expense input mode">
+      <div className="flex gap-1 rounded-lg bg-muted p-1" role="tablist" aria-label="รูปแบบการกรอก">
         <button
           type="button"
           role="tab"
@@ -508,7 +515,7 @@ export function TripExpenseFormV2({
             inputMode === 'standard' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
           )}
         >
-          Standard
+          ยอดเดียว
         </button>
         <button
           type="button"
@@ -523,21 +530,22 @@ export function TripExpenseFormV2({
             inputMode === 'receipt' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
           )}
         >
-          Receipt
+          แยกตามใบเสร็จ
         </button>
       </div>
 
       {/* Currency Selector */}
       <div className="space-y-1.5">
-        <Label>สกุลเงิน (Currency)</Label>
+        <p className="text-sm font-medium" id="trip-expense-currency-label">สกุลเงิน</p>
         {tripDefaults?.tripCurrency && (
           <p className="text-xs text-muted-foreground">
             ค่าเริ่มต้นจากทริป: {formatCurrencySymbol(tripDefaults.tripCurrency)} ({tripDefaults.tripCurrency})
           </p>
         )}
-        <div className="flex gap-2">
+        <div className="flex gap-2" role="group" aria-labelledby="trip-expense-currency-label">
           <Button
             type="button"
+            aria-pressed={currency === 'THB'}
             variant={currency === 'THB' ? 'default' : 'outline'}
             className="flex-1 text-xs gap-1 h-9 font-medium"
             onClick={() => setCurrency('THB')}
@@ -546,6 +554,7 @@ export function TripExpenseFormV2({
           </Button>
           <Button
             type="button"
+            aria-pressed={currency === 'JPY'}
             variant={currency === 'JPY' ? 'default' : 'outline'}
             className="flex-1 text-xs gap-1 h-9 font-medium"
             onClick={() => setCurrency('JPY')}
@@ -557,8 +566,8 @@ export function TripExpenseFormV2({
 
       {/* Description */}
       <div className="space-y-1.5">
-        <Label>รายละเอียด</Label>
-        <Textarea placeholder="เช่น อาหารมื้อเย็น, ค่าแท็กซี่..." className="resize-none"
+        <Label htmlFor="trip-expense-description">รายละเอียด</Label>
+        <Textarea id="trip-expense-description" placeholder="เช่น อาหารมื้อเย็น, ค่าแท็กซี่..." className="resize-none"
           value={description} onChange={e => setDescription(e.target.value)} />
       </div>
 
@@ -567,8 +576,10 @@ export function TripExpenseFormV2({
         <div className="space-y-2">
           <div className="grid grid-cols-2 gap-3 border p-3 rounded-lg bg-muted/20 sm:grid-cols-4">
             <div className="space-y-1.5">
-              <Label className="text-xs">ราคาสินค้า ({curSymbol})</Label>
-              <Input 
+              <Label htmlFor="trip-expense-subtotal" className="text-xs">ราคาสินค้า ({curSymbol})</Label>
+              <Input
+                id="trip-expense-subtotal"
+                inputMode="decimal"
                 type="number" 
                 step="0.01" 
                 placeholder="0.00"
@@ -582,8 +593,10 @@ export function TripExpenseFormV2({
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">ภาษี ({curSymbol})</Label>
-              <Input 
+              <Label htmlFor="trip-expense-tax" className="text-xs">ภาษี ({curSymbol})</Label>
+              <Input
+                id="trip-expense-tax"
+                inputMode="decimal"
                 type="number" 
                 step="0.01" 
                 placeholder="0.00"
@@ -597,8 +610,10 @@ export function TripExpenseFormV2({
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">ส่วนลด ({curSymbol})</Label>
-              <Input 
+              <Label htmlFor="trip-expense-discount" className="text-xs">ส่วนลด ({curSymbol})</Label>
+              <Input
+                id="trip-expense-discount"
+                inputMode="decimal"
                 type="number" 
                 step="0.01"
                 min="0"
@@ -613,8 +628,10 @@ export function TripExpenseFormV2({
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-primary">ยอดรวม ({curSymbol})</Label>
-              <Input 
+              <Label htmlFor="trip-expense-total" className="text-xs font-semibold text-primary">ยอดรวม ({curSymbol})</Label>
+              <Input
+                id="trip-expense-total"
+                inputMode="decimal"
                 type="number" 
                 step="0.01" 
                 placeholder="0.00"
@@ -629,7 +646,7 @@ export function TripExpenseFormV2({
             </div>
           </div>
           {discountAmount > 0 && manualGross > 0 && (
-            <p className="text-[10px] text-muted-foreground tabular-nums px-1">
+            <p className="text-xs text-muted-foreground tabular-nums px-1">
               ยอดก่อนหักส่วนลด {curSymbol}
               {(
                 (parseFloat(subtotal) || 0) > 0 || (parseFloat(tax) || 0) > 0
@@ -646,35 +663,35 @@ export function TripExpenseFormV2({
       <div className="grid grid-cols-2 gap-3">
         {inputMode === 'receipt' && (
           <div className="space-y-1.5">
-            <Label>ยอดรวม ({curSymbol})</Label>
-            <Input type="number" step="0.01" placeholder="0.00"
+            <Label htmlFor="trip-expense-receipt-total">ยอดรวม ({curSymbol})</Label>
+            <Input id="trip-expense-receipt-total" type="number" step="0.01" placeholder="0.00"
               disabled={true}
               value={receiptNet.toFixed(2)} />
           </div>
         )}
         <div className={cn("space-y-1.5", inputMode === 'standard' && "col-span-2")}>
-          <Label>หมวดหมู่</Label>
+          <Label htmlFor="trip-expense-category">หมวดหมู่</Label>
           <Select value={category || undefined} onValueChange={setCategory}>
-            <SelectTrigger><SelectValue placeholder="เลือก..." /></SelectTrigger>
+            <SelectTrigger id="trip-expense-category" className="w-full"><SelectValue placeholder="เลือก..." /></SelectTrigger>
             <SelectContent>
-              {categoryOptions.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+              {categoryOptions.map(c => <SelectItem key={c} value={c}>{categoryLabel(c, locale)}</SelectItem>)}
             </SelectContent>
           </Select>
         </div>
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">
-          <Label>วันที่</Label>
-          <Input type="date" value={date} onChange={e => setDate(e.target.value)} />
+          <Label htmlFor="trip-expense-date">วันที่</Label>
+          <Input id="trip-expense-date" type="date" value={date} onChange={e => setDate(e.target.value)} />
         </div>
         <div className="space-y-1.5">
           <div className="flex items-center justify-between">
-            <Label>เวลา</Label>
+            <Label htmlFor="trip-expense-time">เวลา</Label>
             {tripTimeZone && (
-              <span className="text-[11px] text-muted-foreground">{tripTimeZoneLabel}</span>
+              <span className="text-xs text-muted-foreground">{tripTimeZoneLabel}</span>
             )}
           </div>
-          <Input type="time" value={time} onChange={e => setTime(e.target.value)} />
+          <Input id="trip-expense-time" type="time" value={time} onChange={e => setTime(e.target.value)} />
         </div>
       </div>
 
@@ -683,8 +700,8 @@ export function TripExpenseFormV2({
         <div className="space-y-4 border rounded-lg p-3 bg-muted/20 overflow-hidden">
           <div className="flex flex-col gap-2 pb-1 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-              <h4 className="text-xs font-semibold text-muted-foreground">Receipt items</h4>
-              <div className="inline-flex w-full rounded-lg border p-0.5 bg-muted/60 text-[10px] select-none sm:w-auto">
+              <h4 className="text-xs font-semibold text-muted-foreground">รายการในใบเสร็จ</h4>
+              <div className="inline-flex w-full rounded-lg border p-0.5 bg-muted/60 text-xs select-none sm:w-auto">
                 <button
                   type="button"
                   onClick={() => setReceiptTaxMode('exclusive')}
@@ -765,7 +782,7 @@ export function TripExpenseFormV2({
                     </Select>
 
                     <div className="relative">
-                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-[10px]">
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">
                         {curSymbol}
                       </span>
                       <Input
@@ -796,7 +813,7 @@ export function TripExpenseFormV2({
                           setReceiptItems(next)
                         }}
                       >
-                        <SelectTrigger className="h-8 w-full text-[10px] sm:w-24">
+                        <SelectTrigger className="h-8 w-full text-xs sm:w-24">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -812,14 +829,14 @@ export function TripExpenseFormV2({
                     <span className="text-xs font-semibold text-muted-foreground tabular-nums">
                       ={curSymbol}{itemTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       {hasAutoTax && t > 0 && (
-                        <span className="ml-1 text-[10px] font-normal text-muted-foreground/80">
+                        <span className="ml-1 text-xs font-normal text-muted-foreground/80">
                           (ภาษี {curSymbol}{t.toFixed(0)})
                         </span>
                       )}
                     </span>
 
                     <div className="flex flex-1 flex-wrap items-center gap-1 sm:justify-end">
-                      <span className="text-[10px] text-muted-foreground">หาร:</span>
+                      <span className="text-xs text-muted-foreground">หาร:</span>
                       {tripMembers.map(m => {
                         const included = (item.splitWith || []).includes(m.key)
                         const initials = m.displayName.split(' ').map((w) => w[0]).join('').toUpperCase().substring(0, 2)
@@ -839,7 +856,7 @@ export function TripExpenseFormV2({
                               setReceiptItems(next)
                             }}
                             className={cn(
-                              "size-6 rounded-full text-[9px] font-bold border transition-all shrink-0 flex items-center justify-center",
+                              "size-6 rounded-full text-xs font-bold border transition-all shrink-0 flex items-center justify-center",
                               included
                                 ? "bg-primary text-primary-foreground border-primary"
                                 : "bg-background text-muted-foreground border-muted-foreground/30 hover:bg-muted"
@@ -881,7 +898,7 @@ export function TripExpenseFormV2({
           {/* Receipt Level Summary & Tax Breakdown */}
           <div className="grid grid-cols-1 gap-3 border-t pt-4 mt-2 sm:grid-cols-2 lg:grid-cols-4">
             <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">ราคาสินค้ารวม (Subtotal)</Label>
+              <Label className="text-xs text-muted-foreground">ราคาสินค้ารวม</Label>
               <div className="relative">
                 <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">
                   {curSymbol}
@@ -914,7 +931,7 @@ export function TripExpenseFormV2({
               </div>
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">ส่วนลด (Discount)</Label>
+              <Label className="text-xs text-muted-foreground">ส่วนลด</Label>
               <div className="relative">
                 <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">
                   {curSymbol}
@@ -931,7 +948,7 @@ export function TripExpenseFormV2({
               </div>
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground font-bold text-foreground">ยอดรวมสุทธิ (Total)</Label>
+              <Label className="text-xs text-muted-foreground font-bold text-foreground">ยอดรวมสุทธิ</Label>
               <div className="relative">
                 <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">
                   {curSymbol}
@@ -944,13 +961,13 @@ export function TripExpenseFormV2({
                 />
               </div>
               {discountAmount > 0 && receiptGross > 0 && (
-                <p className="text-[10px] text-muted-foreground tabular-nums">
+                <p className="text-xs text-muted-foreground tabular-nums">
                   รวม {curSymbol}{receiptGross.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   {' '}− ส่วนลด {curSymbol}{discountAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </p>
               )}
               {homeHint(receiptNet) && (
-                <p className="text-[10px] text-muted-foreground">≈ {homeHint(receiptNet)}</p>
+                <p className="text-xs text-muted-foreground">≈ {homeHint(receiptNet)}</p>
               )}
             </div>
           </div>
@@ -959,51 +976,52 @@ export function TripExpenseFormV2({
 
       {/* Split payment — same UX as Transactions */}
       <div className="space-y-3">
-        <div className="flex items-center justify-between gap-2">
-          <Label>แบ่งค่าใช้จ่ายกับเพื่อน</Label>
-          <button
-            type="button"
-            onClick={() => {
-              const next = !splitEnabled
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <Label htmlFor="trip-expense-split">หารกับเพื่อนในทริป</Label>
+            <p className="text-xs text-muted-foreground">
+              {splitEnabled
+                ? `หารกับ ${tripMembers.length} คนเป็นค่าเริ่มต้น — เปลี่ยนได้ด้านล่าง`
+                : 'ปิดไว้ = คุณออกเองทั้งหมด'}
+            </p>
+          </div>
+          <Switch
+            id="trip-expense-split"
+            checked={splitEnabled}
+            onCheckedChange={(next) => {
               setSplitEnabled(next)
               if (!next) setSplitData(null)
             }}
-            className={cn(
-              'rounded-lg border px-3 py-1.5 text-xs font-medium transition-all',
-              splitEnabled
-                ? 'border-primary bg-primary text-primary-foreground'
-                : 'border-border hover:border-primary/50'
-            )}
-          >
-            {splitEnabled ? 'เปิดอยู่' : 'ปิด'}
-          </button>
+          />
         </div>
 
         {splitEnabled && inputMode === 'receipt' && (
-          <div className="flex flex-wrap gap-2">
+          <div role="group" aria-label="วิธีหารใบเสร็จ" className="grid grid-cols-2 gap-2">
             <button
               type="button"
+              aria-pressed={useItemSplit}
               onClick={() => setUseItemSplit(true)}
               className={cn(
-                'flex-1 rounded-lg border px-2 py-2 text-xs font-medium transition-all sm:min-w-[80px]',
+                'h-9 rounded-lg border px-2 text-xs font-medium transition-colors sm:text-sm',
                 useItemSplit
                   ? 'border-primary bg-primary text-primary-foreground'
                   : 'border-border hover:border-primary/50'
               )}
             >
-              🧾 หารแยกสินค้า
+              หารตามรายการสินค้า
             </button>
             <button
               type="button"
+              aria-pressed={!useItemSplit}
               onClick={() => setUseItemSplit(false)}
               className={cn(
-                'flex-1 rounded-lg border px-2 py-2 text-xs font-medium transition-all sm:min-w-[80px]',
+                'h-9 rounded-lg border px-2 text-xs font-medium transition-colors sm:text-sm',
                 !useItemSplit
                   ? 'border-primary bg-primary text-primary-foreground'
                   : 'border-border hover:border-primary/50'
               )}
             >
-              ⚖️ หารแบบทั่วไป
+              หารทั้งบิล
             </button>
           </div>
         )}
@@ -1016,6 +1034,7 @@ export function TripExpenseFormV2({
               currencySymbol={curSymbol}
               previewPersonId={myUserId}
               hideSplitOptions={useItemSplit && inputMode === 'receipt'}
+              defaultIncludeAll
               initialPayers={splitData?.payers ?? initialData?.payers}
               initialShares={useItemSplit ? undefined : (splitData?.shares ?? initialData?.shares)}
               initialSplitMode={useItemSplit ? 'equal' : (splitData?.splitMode ?? (initialData?.splitMode === 'item' ? 'equal' : initialData?.splitMode as TransactionSplitMode))}

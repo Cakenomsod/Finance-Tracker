@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { Plus, Minus } from 'lucide-react'
+import { Plus, Minus, ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useForm } from 'react-hook-form'
@@ -24,9 +24,11 @@ import {
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
 import { OptionalNoteField } from '@/components/shared/optional-note-field'
 import { ImmichAttachmentsField } from '@/components/shared/immich-attachments-field'
 import { collectImmichAssetIds } from '@/lib/immich/asset-ids'
+import { legacyReceiptUrl } from '@/lib/attachments/ids'
 import { Transaction } from '@/lib/firestore-types'
 import { Timestamp } from 'firebase/firestore'
 import { useTrips } from '@/hooks/use-trips'
@@ -70,38 +72,35 @@ import { MoneyPoolSelect } from '@/components/accounts/money-pool-select'
 import { useLocale } from '@/components/locale-provider'
 import { CurrencySelect } from '@/components/shared/currency-select'
 import { currencySymbol, isAppCurrency, type AppCurrency } from '@/lib/currency'
+import { useAuth } from '@/hooks/use-auth'
+import { readLastUsed, writeLastUsed } from '@/lib/form-memory'
+import { categoryLabel, PREFERRED_FIRST_EXPENSE_CATEGORY } from '@/lib/default-categories'
+import type { MessageKey } from '@/lib/i18n'
 
-const formSchema = z
-  .object({
-    amount: z.string().min(1, 'Amount is required'),
-    type: z.enum(['income', 'expense', 'transfer']),
-    category: z.string(),
-    description: z.string(),
-    date: z.string(),
-    time: z.string().min(1, 'Time is required'),
-    paidBy: z.string().optional(),
-    tripId: z.string().optional(),
-  })
-  .superRefine((values, ctx) => {
-    if (values.type !== 'transfer') {
-      if (!values.category.trim()) {
+function buildFormSchema(t: (key: MessageKey) => string) {
+  return z
+    .object({
+      amount: z.string().min(1, t('tx.errAmount')),
+      type: z.enum(['income', 'expense', 'transfer']),
+      category: z.string(),
+      description: z.string(),
+      date: z.string(),
+      time: z.string().min(1, t('tx.errTime')),
+      paidBy: z.string().optional(),
+      tripId: z.string().optional(),
+    })
+    .superRefine((values, ctx) => {
+      if (values.type !== 'transfer' && !values.category.trim()) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: 'Please select a category',
+          message: t('tx.errCategory'),
           path: ['category'],
         })
       }
-      if (!values.description.trim()) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'Description is required',
-          path: ['description'],
-        })
-      }
-    }
-  })
+    })
+}
 
-type TransactionFormValues = z.infer<typeof formSchema>
+type TransactionFormValues = z.infer<ReturnType<typeof buildFormSchema>>
 
 interface TransactionFormProps {
   initialData?: Transaction | null;
@@ -132,7 +131,11 @@ export function TransactionForm({
   const saveCurrency = currencyProp ?? settingsCurrency ?? 'THB'
   const { activeSources, defaultSource } = usePaymentSources()
   const { activePools } = useMoneyPools()
-  const { t } = useLocale()
+  const { t, locale } = useLocale()
+  const { user } = useAuth()
+  const uid = user?.uid
+  const formSchema = React.useMemo(() => buildFormSchema(t), [t])
+  const isNew = !initialData?.id
 
   const [accountId, setAccountId] = React.useState(initialData?.accountId ?? '')
   const [moneyPoolId, setMoneyPoolId] = React.useState(initialData?.moneyPoolId ?? '')
@@ -159,15 +162,14 @@ export function TransactionForm({
   React.useEffect(() => {
     // Do not override an AI/manual account with the default (e.g. always Kplus).
     // Only auto-pick default when the form has no account yet and the draft didn't set one.
-    if (
-      !accountId &&
-      defaultSource?.id &&
-      accountsEnabled &&
-      !initialData?.accountId
-    ) {
-      setAccountId(defaultSource.id)
+    if (accountId || !accountsEnabled || initialData?.accountId) return
+    const remembered = readLastUsed(uid, 'account')
+    if (remembered && activeSources.some((s) => s.id === remembered)) {
+      setAccountId(remembered)
+      return
     }
-  }, [accountId, defaultSource?.id, accountsEnabled, initialData?.accountId])
+    if (defaultSource?.id) setAccountId(defaultSource.id)
+  }, [accountId, defaultSource?.id, accountsEnabled, initialData?.accountId, uid, activeSources])
 
   const expenseCategoryNames = React.useMemo(
     () => expenseCategories.map((c) => c.name),
@@ -264,38 +266,45 @@ export function TransactionForm({
   const isIncome = txType === 'income'
   const isTransfer = txType === 'transfer'
 
+  const preferredCategory = React.useCallback(
+    (type: 'income' | 'expense'): string | undefined => {
+      const names = type === 'income' ? incomeCategoryNames : expenseCategoryNames
+      const remembered = readLastUsed(uid, type === 'income' ? 'category:income' : 'category:expense')
+      if (remembered && names.includes(remembered)) return remembered
+      if (type === 'expense' && names.includes(PREFERRED_FIRST_EXPENSE_CATEGORY)) {
+        return PREFERRED_FIRST_EXPENSE_CATEGORY
+      }
+      return names[0]
+    },
+    [uid, incomeCategoryNames, expenseCategoryNames]
+  )
+
   React.useEffect(() => {
     if (categoriesLoading || initialData?.category) return
     const type = form.getValues('type')
-    const fallback =
-      type === 'income' ? incomeCategoryNames[0] : expenseCategoryNames[0]
+    if (type === 'transfer') return
+    const fallback = preferredCategory(type)
     if (fallback && !form.getValues('category')) {
       form.setValue('category', fallback)
     }
-  }, [
-    categoriesLoading,
-    expenseCategoryNames,
-    incomeCategoryNames,
-    initialData?.category,
-    form,
-  ])
+  }, [categoriesLoading, initialData?.category, form, preferredCategory])
 
   React.useEffect(() => {
-    if (categoriesLoading || !expenseCategoryNames[0]) return
+    if (categoriesLoading) return
+    const fallback = preferredCategory('expense')
+    if (!fallback) return
     setReceiptItems((items) => {
       if (!items.some((item) => !item.category)) return items
-      return items.map((item) =>
-        item.category ? item : { ...item, category: expenseCategoryNames[0] }
-      )
+      return items.map((item) => (item.category ? item : { ...item, category: fallback }))
     })
-  }, [categoriesLoading, expenseCategoryNames])
+  }, [categoriesLoading, preferredCategory])
 
   React.useEffect(() => {
     if (txType === 'income' && selectedCategory && !incomeNameSet.has(selectedCategory)) {
-      const fallback = incomeCategoryNames[0]
+      const fallback = preferredCategory('income')
       if (fallback) form.setValue('category', fallback)
     }
-  }, [txType, selectedCategory, incomeNameSet, incomeCategoryNames, form])
+  }, [txType, selectedCategory, incomeNameSet, preferredCategory, form])
 
   React.useEffect(() => {
     if (selectedCategory && incomeNameSet.has(selectedCategory) && txType !== 'income') {
@@ -430,13 +439,13 @@ export function TransactionForm({
       if (isTransfer) {
         const rawAmount = parseFloat(values.amount) || 0
         if (isNaN(rawAmount) || rawAmount <= 0) {
-          form.setError('amount', { message: 'Amount must be a positive number' })
+          form.setError('amount', { message: t('tx.errAmount') })
           return
         }
         const hasAccountTransfer = accountId && transferToAccountId && accountId !== transferToAccountId
         const hasPoolTransfer = moneyPoolId && transferToPoolId && moneyPoolId !== transferToPoolId
         const hasAccountToPool = accountId && transferToPoolId && !transferToAccountId
-        const hasPoolToAccount = moneyPoolId && transferToAccountId && !transferToAccountId
+        const hasPoolToAccount = moneyPoolId && transferToAccountId && !transferToPoolId
         if (!hasAccountTransfer && !hasPoolTransfer && !hasAccountToPool && !hasPoolToAccount) {
           form.setError('amount', { message: t('accounts.transferDesc') })
           return
@@ -478,7 +487,7 @@ export function TransactionForm({
         form.setError('amount', {
           message: isReceiptMode
             ? 'กรุณาเพิ่มรายการใบเสร็จและระบุราคา'
-            : 'Amount must be a positive number',
+            : t('tx.errAmount'),
         })
         return
       }
@@ -505,7 +514,7 @@ export function TransactionForm({
         paotangPayerMode === 'other' &&
         !values.paidBy
       ) {
-        form.setError('paidBy', { message: 'กรุณาเลือกผู้จ่าย' })
+        form.setError('paidBy', { message: t('tx.errPayer') })
         return
       }
 
@@ -537,11 +546,14 @@ export function TransactionForm({
       const uniqueAttachmentIds = [...new Set(attachmentIds)]
       const primaryAttachment = uniqueAttachmentIds[0] ?? null
 
+      const description =
+        values.description.trim() || categoryLabel(values.category, locale)
+
       const transactionData: Omit<Transaction, 'id' | 'createdAt' | 'userId'> = {
         amount: finalAmount,
         type: values.type,
         category: values.category,
-        description: values.description,
+        description,
         date: Timestamp.fromDate(parseLocalDateTime(values.date, values.time)),
         paidBy,
         splitWith,
@@ -549,7 +561,7 @@ export function TransactionForm({
         shares,
         splitMode,
         tripId: values.tripId && values.tripId !== 'none' ? values.tripId : null,
-        receiptUrl: primaryAttachment ? `/api/immich/asset/${primaryAttachment}` : null,
+        receiptUrl: legacyReceiptUrl(primaryAttachment),
         source: initialData?.source || 'manual',
         currency,
         note: note.trim() || undefined,
@@ -612,6 +624,8 @@ export function TransactionForm({
       }
 
       await onSubmit(transactionData)
+      writeLastUsed(uid, isIncome ? 'category:income' : 'category:expense', values.category)
+      if (transactionData.accountId) writeLastUsed(uid, 'account', transactionData.accountId)
     } finally {
       setIsSubmitting(false)
     }
@@ -629,221 +643,191 @@ export function TransactionForm({
     [categories]
   )
 
+  const typeOptions: { value: 'expense' | 'income' | 'transfer'; label: string }[] = [
+    { value: 'expense', label: t('tx.type.expense') },
+    { value: 'income', label: t('tx.type.income') },
+    ...(accountsEnabled || moneyPoolsEnabled
+      ? [{ value: 'transfer' as const, label: t('accounts.transfer') }]
+      : []),
+  ]
+
+  const handleTypeChange = (val: 'expense' | 'income' | 'transfer') => {
+    form.setValue('type', val)
+    if (val === 'transfer') {
+      form.setValue('category', 'Transfer')
+      return
+    }
+    const current = form.getValues('category')
+    if (val === 'expense' && (incomeNameSet.has(current) || current === 'Transfer' || !current)) {
+      const fallback = preferredCategory('expense')
+      if (fallback) form.setValue('category', fallback)
+    }
+    if (val === 'income' && (current === 'Transfer' || !current)) {
+      const fallback = preferredCategory('income')
+      if (fallback) form.setValue('category', fallback)
+    }
+  }
+
+  const [showMore, setShowMore] = React.useState(() =>
+    Boolean(
+      initialData &&
+        (initialData.discount ||
+          initialData.paymentMethod === 'paotang' ||
+          initialData.tripId ||
+          initialData.note ||
+          initialData.items?.length ||
+          initialData.immichAssetId ||
+          initialData.immichAssetIds?.length)
+    ) || Boolean(pendingImmichAssetIds?.length)
+  )
+
+  const activeTripName =
+    selectedTripId && selectedTripId !== 'none'
+      ? activeTrips.find((trip) => trip.id === selectedTripId)?.name
+      : undefined
+  const moreSummary = [
+    isReceiptMode ? t('tx.inputReceipt') : null,
+    discountAmount > 0 ? `${t('tx.discount')} ${sym}${discountAmount.toLocaleString()}` : null,
+    paymentMethod === 'paotang' ? 'เป๋าตัง' : null,
+    activeTripName ?? null,
+    attachmentIds.length > 0 ? `${attachmentIds.length} รูป` : null,
+    note.trim() ? 'หมายเหตุ' : null,
+  ].filter(Boolean).join(' · ')
+
+  const segmentClass = (on: boolean) =>
+    cn(
+      'h-9 rounded-md px-3 text-sm font-medium transition-colors',
+      on ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+    )
+
+  const debtToggle = (
+    <div className="space-y-1 border-t pt-3">
+      <div className="flex items-center justify-between gap-3">
+        <Label htmlFor="tx-debt-tracking" className="text-sm">{t('tx.debtTracking')}</Label>
+        <Switch id="tx-debt-tracking" checked={debtTracking} onCheckedChange={setDebtTracking} />
+      </div>
+      <p className="text-xs text-muted-foreground text-pretty">
+        {debtTracking ? t('tx.debtOn') : t('tx.debtOff')}
+      </p>
+    </div>
+  )
+
+  const categoryField = (
+    <FormField
+      control={form.control}
+      name="category"
+      render={({ field }) => (
+        <FormItem>
+          <FormLabel className="text-sm">{t('tx.category')}</FormLabel>
+          <Select
+            onValueChange={(v) => {
+              // Radix can emit empty when SelectItems remount while categories load.
+              if (!v) return
+              field.onChange(v)
+            }}
+            value={field.value || undefined}
+          >
+            <FormControl>
+              <SelectTrigger className="h-10 w-full">
+                <SelectValue placeholder={categoriesLoading ? t('tx.loading') : t('tx.category')} />
+              </SelectTrigger>
+            </FormControl>
+            <SelectContent>
+              {visibleCategories.map((c) => {
+                const cat = categoryByName.get(c)
+                const label = categoryLabel(c, locale)
+                return (
+                  <SelectItem key={c} value={c}>
+                    {cat ? `${cat.icon} ${label}` : label}
+                  </SelectItem>
+                )
+              })}
+            </SelectContent>
+          </Select>
+          <FormMessage />
+        </FormItem>
+      )}
+    />
+  )
+
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-3 py-2 sm:space-y-4 sm:py-4">
-        <ImmichAttachmentsField
-          value={attachmentIds}
-          onChange={setAttachmentIds}
-          tripId={selectedTripId}
-          deliveryKey={
-            initialData?.id
-              ? `attachments:transaction:${initialData.id}`
-              : 'attachments:transaction:new'
-          }
-        />
-        {!isTransfer && (
-        <div className="flex gap-1 p-1 bg-muted rounded-lg">
-          <button
-            type="button"
-            onClick={() => setInputMode('standard')}
-            className={cn(
-              "flex-1 py-1.5 text-xs font-medium rounded-md transition-all",
-              inputMode === 'standard' ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            Standard Input
-          </button>
-          <button
-            type="button"
-            onClick={() => setInputMode('receipt')}
-            className={cn(
-              "flex-1 py-1.5 text-xs font-medium rounded-md transition-all",
-              inputMode === 'receipt' ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            🧾 Receipt Input
-          </button>
+      <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4 py-2 sm:py-3">
+        <div
+          role="group"
+          aria-label={t('tx.typeLabel')}
+          className={cn(
+            'grid gap-1 rounded-lg bg-muted p-1',
+            typeOptions.length === 3 ? 'grid-cols-3' : 'grid-cols-2'
+          )}
+        >
+          {typeOptions.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              aria-pressed={txType === opt.value}
+              onClick={() => handleTypeChange(opt.value)}
+              className={segmentClass(txType === opt.value)}
+            >
+              {opt.label}
+            </button>
+          ))}
         </div>
-        )}
 
-        <div className="grid grid-cols-2 gap-3">
+        {!isReceiptMode && (
           <FormField
             control={form.control}
-            name="type"
+            name="amount"
             render={({ field }) => (
               <FormItem>
-                <FormLabel className="text-xs sm:text-sm">Type</FormLabel>
-                <Select
-                  onValueChange={(val) => {
-                    field.onChange(val)
-                    if (val === 'transfer') {
-                      form.setValue('category', 'Transfer')
-                    } else if (val === 'expense' && incomeNameSet.has(form.getValues('category'))) {
-                      const fallback = expenseCategoryNames[0]
-                      if (fallback) form.setValue('category', fallback)
-                    }
-                  }}
-                  value={field.value}
-                >
+                <FormLabel className="text-sm">
+                  {paymentMethod === 'paotang' && !isIncome && !isTransfer
+                    ? t('tx.netAmount')
+                    : t('tx.amount')}
+                </FormLabel>
+                <div className="flex gap-2">
+                  <CurrencySelect
+                    compact
+                    value={currency}
+                    onChange={setPickedCurrency}
+                    aria-label={t('settings.currency')}
+                    className="h-12 shrink-0"
+                  />
                   <FormControl>
-                    <SelectTrigger className="h-9">
-                      <SelectValue placeholder="Select type" />
-                    </SelectTrigger>
+                    <Input
+                      type="number"
+                      inputMode="decimal"
+                      step="0.01"
+                      min="0"
+                      placeholder="0.00"
+                      autoFocus={isNew}
+                      className="h-12 min-w-0 text-2xl font-semibold tabular-nums md:text-2xl"
+                      {...field}
+                    />
                   </FormControl>
-                  <SelectContent>
-                    <SelectItem value="expense">Expense</SelectItem>
-                    <SelectItem value="income">Income</SelectItem>
-                    {(accountsEnabled || moneyPoolsEnabled) && (
-                      <SelectItem value="transfer">{t('accounts.transfer')}</SelectItem>
-                    )}
-                  </SelectContent>
-                </Select>
+                </div>
+                {!isIncome && discountAmount > 0 && (parseFloat(watchedAmount) || 0) > 0 && (
+                  <p className="text-xs text-muted-foreground tabular-nums">
+                    ยอดก่อนหักส่วนลด {sym}{((parseFloat(watchedAmount) || 0) + discountAmount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} − ส่วนลด {sym}{discountAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
+                )}
                 <FormMessage />
               </FormItem>
             )}
           />
-
-          <FormField
-            control={form.control}
-            name="category"
-            render={({ field }) => (
-              <FormItem className={isTransfer ? 'hidden' : undefined}>
-                <FormLabel className="text-xs sm:text-sm">Category</FormLabel>
-                <Select
-                  onValueChange={(v) => {
-                    // Radix can emit empty when SelectItems remount while categories load.
-                    if (!v) return
-                    field.onChange(v)
-                  }}
-                  value={field.value || undefined}
-                >
-                  <FormControl>
-                    <SelectTrigger className="h-9">
-                      <SelectValue placeholder={categoriesLoading ? 'กำลังโหลด...' : 'Select category'} />
-                    </SelectTrigger>
-                  </FormControl>
-                  <SelectContent>
-                    {visibleCategories.map((c) => {
-                      const cat = categoryByName.get(c)
-                      return (
-                        <SelectItem key={c} value={c}>
-                          {cat ? `${cat.icon} ${c}` : c}
-                        </SelectItem>
-                      )
-                    })}
-                  </SelectContent>
-                </Select>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        </div>
-
-        {isTransfer ? (
-          <div className="space-y-3 rounded-lg border border-dashed p-3">
-            <p className="text-xs text-muted-foreground">{t('accounts.transferDesc')}</p>
-            {accountsEnabled && (
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <Label className="text-xs">{t('accounts.fromAccount')}</Label>
-                  <PaymentSourceSelect sources={activeSources} value={accountId} onChange={setAccountId} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs">{t('accounts.toAccount')}</Label>
-                  <PaymentSourceSelect sources={activeSources} value={transferToAccountId} onChange={setTransferToAccountId} />
-                </div>
-              </div>
-            )}
-            {moneyPoolsEnabled && (
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <Label className="text-xs">{t('accounts.fromPool')}</Label>
-                  <MoneyPoolSelect pools={activePools} value={moneyPoolId} onChange={setMoneyPoolId} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs">{t('accounts.toPool')}</Label>
-                  <MoneyPoolSelect pools={activePools} value={transferToPoolId} onChange={setTransferToPoolId} />
-                </div>
-              </div>
-            )}
-          </div>
-        ) : (
-          <>
-            {showPaymentSourceFields && accountsEnabled && activeSources.length > 0 && (
-              <div className="space-y-1.5">
-                <Label className="text-xs sm:text-sm">
-                  {isIncome ? t('accounts.toAccount') : t('accounts.fromAccount')}
-                </Label>
-                <PaymentSourceSelect
-                  sources={activeSources}
-                  value={accountId}
-                  onChange={setAccountId}
-                  allowNone
-                />
-              </div>
-            )}
-            {showPaymentSourceFields && moneyPoolsEnabled && activePools.length > 0 && (
-              <div className="space-y-1.5">
-                <Label className="text-xs sm:text-sm">{t('accounts.selectPool')}</Label>
-                <MoneyPoolSelect pools={activePools} value={moneyPoolId} onChange={setMoneyPoolId} allowNone />
-              </div>
-            )}
-            {!showPaymentSourceFields && (accountsEnabled || moneyPoolsEnabled) && (
-              <p className="text-xs text-muted-foreground text-pretty rounded-lg border border-dashed px-3 py-2">
-                {t('accounts.deferToDebts')}
-              </p>
-            )}
-          </>
         )}
 
-        <FormField
-          control={form.control}
-          name="description"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel className="text-xs sm:text-sm">Description</FormLabel>
-              <FormControl>
-                <Textarea
-                  placeholder={
-                    isTransfer
-                      ? t('accounts.transfer')
-                      : 'Enter details about this transaction'
-                  }
-                  className="min-h-[4.5rem] resize-none text-sm"
-                  {...field}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        {!isTransfer && inputMode === 'receipt' && (
-          <div className="space-y-3 rounded-lg border bg-muted/20 p-3">
+        {!isTransfer && isReceiptMode && (
+          <div className="space-y-3 rounded-lg border p-3">
             <div className="flex items-center justify-between gap-2">
-              <h4 className="text-xs font-medium text-muted-foreground">รายการสินค้า</h4>
+              <h4 className="text-sm font-medium">รายการในใบเสร็จ</h4>
               <CurrencySelect
                 compact
                 value={currency}
                 onChange={setPickedCurrency}
-                aria-label="สกุลเงิน"
-                className="ml-auto h-7 text-xs"
+                aria-label={t('settings.currency')}
+                className="ml-auto h-9"
               />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() =>
-                  setReceiptItems([
-                    ...receiptItems,
-                    { name: '', category: expenseCategoryNames[0] || '', price: '' },
-                  ])
-                }
-                className="h-7 shrink-0 gap-1 px-2 text-xs"
-              >
-                <Plus className="size-3" /> เพิ่ม
-              </Button>
             </div>
 
             <div className="space-y-2.5">
@@ -851,8 +835,9 @@ export function TransactionForm({
                 <div key={idx} className="space-y-1.5 border-b pb-2.5 last:border-b-0 last:pb-0">
                   <div className="flex items-center gap-1.5">
                     <Input
-                      placeholder="Product Name"
-                      className="h-8 min-w-0 flex-1 text-xs"
+                      placeholder="ชื่อสินค้า"
+                      aria-label={`ชื่อสินค้ารายการที่ ${idx + 1}`}
+                      className="h-9 min-w-0 flex-1 text-sm"
                       value={item.name}
                       onChange={e => {
                         const next = [...receiptItems]
@@ -865,15 +850,16 @@ export function TransactionForm({
                         type="button"
                         variant="ghost"
                         size="icon"
-                        className="size-8 shrink-0 hover:bg-destructive/10 hover:text-destructive"
+                        aria-label={`ลบรายการที่ ${idx + 1}`}
+                        className="size-9 shrink-0 hover:bg-destructive/10 hover:text-destructive"
                         onClick={() => setReceiptItems(receiptItems.filter((_, i) => i !== idx))}
                       >
-                        <Minus className="size-3.5" />
+                        <Minus className="size-3.5" aria-hidden />
                       </Button>
                     )}
                   </div>
 
-                  <div className="grid grid-cols-[1fr_5.5rem] gap-1.5">
+                  <div className="grid grid-cols-[1fr_6rem] gap-1.5">
                     <Select
                       value={item.category || undefined}
                       onValueChange={(val) => {
@@ -883,7 +869,7 @@ export function TransactionForm({
                         setReceiptItems(next)
                       }}
                     >
-                      <SelectTrigger className="h-8 w-full text-xs">
+                      <SelectTrigger className="h-9 w-full text-sm" aria-label={`หมวดหมู่รายการที่ ${idx + 1}`}>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -894,9 +880,10 @@ export function TransactionForm({
                             : expenseCategoryNames
                         ).map((c) => {
                           const cat = categoryByName.get(c)
+                          const label = categoryLabel(c, locale)
                           return (
-                            <SelectItem key={c} value={c} className="text-xs">
-                              {cat ? `${cat.icon} ${c}` : c}
+                            <SelectItem key={c} value={c}>
+                              {cat ? `${cat.icon} ${label}` : label}
                             </SelectItem>
                           )
                         })}
@@ -909,8 +896,8 @@ export function TransactionForm({
                       step="0.01"
                       min="0"
                       placeholder="0.00"
-                      aria-label={`ราคา (${currency})`}
-                      className="h-8 px-2 text-xs font-medium tabular-nums"
+                      aria-label={`ราคารายการที่ ${idx + 1} (${currency})`}
+                      className="h-9 px-2 text-sm font-medium tabular-nums"
                       value={item.price}
                       onChange={e => {
                         const next = [...receiptItems]
@@ -930,34 +917,34 @@ export function TransactionForm({
               onClick={() =>
                 setReceiptItems([
                   ...receiptItems,
-                  { name: '', category: expenseCategoryNames[0] || '', price: '' },
+                  { name: '', category: preferredCategory('expense') || '', price: '' },
                 ])
               }
-              className="h-8 w-full gap-1 border-dashed text-xs"
+              className="h-9 w-full gap-1 border-dashed text-sm"
             >
-              <Plus className="size-3" /> เพิ่มรายการ
+              <Plus className="size-3.5" aria-hidden /> เพิ่มรายการ
             </Button>
 
-            <div className="border-t pt-2 space-y-2">
+            <div className="space-y-2 border-t pt-2">
               {!isIncome && (
                 <div className="flex items-center justify-between gap-2">
-                  <Label className="text-xs font-medium sm:text-sm">ส่วนลด</Label>
+                  <Label htmlFor="tx-receipt-discount" className="text-sm">{t('tx.discount')}</Label>
                   <Input
+                    id="tx-receipt-discount"
                     type="number"
                     inputMode="decimal"
                     step="0.01"
                     min="0"
                     placeholder="0.00"
-                    aria-label={`ส่วนลด (${currency})`}
-                    className="h-8 w-28 px-2 text-xs font-medium tabular-nums"
+                    className="h-9 w-28 px-2 text-sm font-medium tabular-nums"
                     value={discount}
                     onChange={(e) => setDiscount(e.target.value)}
                   />
                 </div>
               )}
               <div className="flex items-center justify-between">
-                <Label className="text-xs font-medium sm:text-sm">ยอดรวมสุทธิ</Label>
-                <span className="text-base font-bold tabular-nums sm:text-lg">
+                <span className="text-sm font-medium">ยอดรวมสุทธิ</span>
+                <span className="text-lg font-semibold tabular-nums">
                   {sym}{receiptNet.toLocaleString(undefined, {
                     minimumFractionDigits: 2,
                     maximumFractionDigits: 2,
@@ -965,166 +952,333 @@ export function TransactionForm({
                 </span>
               </div>
               {!isIncome && discountAmount > 0 && receiptTotal > 0 && (
-                <p className="text-[10px] text-muted-foreground text-right tabular-nums">
+                <p className="text-xs text-muted-foreground text-right tabular-nums">
                   รวมสินค้า {sym}{receiptTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} − ส่วนลด {sym}{discountAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </p>
-              )}
-            </div>
-          </div>
-        )}
-
-        {inputMode === 'standard' && (
-          <div className="space-y-3 rounded-lg border bg-muted/20 p-3">
-            <div className={cn(
-              'grid gap-3',
-              !isIncome && !isTransfer ? 'grid-cols-2' : 'grid-cols-1'
-            )}>
-              {!isIncome && !isTransfer && (
-                <div className="space-y-1.5">
-                  <Label className="text-xs">ส่วนลด ({sym})</Label>
-                  <Input
-                    type="number"
-                    inputMode="decimal"
-                    step="0.01"
-                    min="0"
-                    placeholder="0.00"
-                    className="h-9 text-xs tabular-nums"
-                    value={discount}
-                    onChange={(e) => setDiscount(e.target.value)}
-                  />
-                </div>
               )}
               <FormField
                 control={form.control}
                 name="amount"
-                render={({ field }) => (
-                  <FormItem className={cn(!isIncome && 'sm:col-span-1')}>
-                    <FormLabel className="text-xs font-semibold text-primary sm:text-sm">
-                      {paymentMethod === 'paotang' && !isIncome ? 'ยอดสุทธิ' : 'จำนวนเงิน'}
-                    </FormLabel>
-                    <div className="flex gap-1.5">
-                      <CurrencySelect
-                        compact
-                        value={currency}
-                        onChange={setPickedCurrency}
-                        aria-label="สกุลเงิน"
-                        className="h-9 shrink-0 text-xs"
-                      />
-                      <FormControl>
-                        <Input
-                          type="number"
-                          inputMode="decimal"
-                          step="0.01"
-                          placeholder="0.00"
-                          className="h-9 min-w-0 font-semibold tabular-nums border-primary/40 focus-visible:ring-primary"
-                          {...field}
-                        />
-                      </FormControl>
-                    </div>
+                render={() => (
+                  <FormItem>
                     <FormMessage />
                   </FormItem>
                 )}
               />
             </div>
-            {!isIncome && discountAmount > 0 && (parseFloat(watchedAmount) || 0) > 0 && (
-              <p className="text-[10px] text-muted-foreground tabular-nums">
-                ยอดก่อนหักส่วนลด {sym}{((parseFloat(watchedAmount) || 0) + discountAmount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} − ส่วนลด {sym}{discountAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </p>
-            )}
           </div>
         )}
 
-        {!isIncome && !isTransfer && (
-          <div className="space-y-2 rounded-lg border bg-muted/20 p-3">
-            <div className="space-y-1.5">
-              <Label className="text-xs sm:text-sm">วิธีชำระเงิน</Label>
-              <div className="inline-flex gap-0.5 rounded-lg border bg-muted/50 p-0.5">
-                <button
-                  type="button"
-                  onClick={() => setPaymentMethod('normal')}
-                  className={cn(
-                    'rounded-md px-2.5 py-1 text-xs font-medium transition-all',
-                    paymentMethod === 'normal'
-                      ? 'bg-background text-foreground shadow-sm'
-                      : 'text-muted-foreground hover:text-foreground'
-                  )}
-                >
-                  จ่ายปกติ
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPaymentMethod('paotang')}
-                  className={cn(
-                    'rounded-md px-2.5 py-1 text-xs font-medium transition-all',
-                    paymentMethod === 'paotang'
-                      ? 'bg-background text-foreground shadow-sm'
-                      : 'text-muted-foreground hover:text-foreground'
-                  )}
-                >
-                  เป๋าตัง
-                </button>
-              </div>
-            </div>
-
-            {paymentMethod === 'paotang' && !splitEnabled && (
-              <div className="space-y-1.5">
-                <Label className="text-xs">สแกนโดย</Label>
-                <div className="inline-flex gap-0.5 rounded-lg border bg-muted/50 p-0.5">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPaotangPayerMode('self')
-                      form.setValue('paidBy', 'Me')
-                    }}
-                    className={cn(
-                      'rounded-md px-2.5 py-1 text-xs font-medium transition-all',
-                      paotangPayerMode === 'self'
-                        ? 'bg-background text-foreground shadow-sm'
-                        : 'text-muted-foreground hover:text-foreground'
-                    )}
-                  >
-                    ฉันจ่าย
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPaotangPayerMode('other')}
-                    className={cn(
-                      'rounded-md px-2.5 py-1 text-xs font-medium transition-all',
-                      paotangPayerMode === 'other'
-                        ? 'bg-background text-foreground shadow-sm'
-                        : 'text-muted-foreground hover:text-foreground'
-                    )}
-                  >
-                    เพื่อนจ่ายให้
-                  </button>
-                </div>
-                {paotangPayerMode === 'other' && (
-                  <FormField
-                    control={form.control}
-                    name="paidBy"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormControl>
-                          <ContactSelect
-                            value={field.value || ''}
-                            onChange={field.onChange}
-                            placeholder="เลือกผู้จ่าย"
-                            includeMe={false}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
+        <div className={cn('grid gap-3', !isTransfer && 'sm:grid-cols-2')}>
+          {!isTransfer && categoryField}
+          <FormField
+            control={form.control}
+            name="description"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel className="text-sm">{t('tx.description')}</FormLabel>
+                <FormControl>
+                  <Input
+                    placeholder={isTransfer ? t('accounts.transfer') : t('tx.descriptionPlaceholder')}
+                    className="h-10 text-sm"
+                    autoComplete="off"
+                    {...field}
                   />
-                )}
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
+
+        {isTransfer ? (
+          <div className="space-y-3 rounded-lg border border-dashed p-3">
+            <p className="text-xs text-muted-foreground">{t('accounts.transferDesc')}</p>
+            {accountsEnabled && (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label className="text-sm">{t('accounts.fromAccount')}</Label>
+                  <PaymentSourceSelect sources={activeSources} value={accountId} onChange={setAccountId} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-sm">{t('accounts.toAccount')}</Label>
+                  <PaymentSourceSelect sources={activeSources} value={transferToAccountId} onChange={setTransferToAccountId} />
+                </div>
               </div>
             )}
-
-            {paymentMethod === 'paotang' && splitEnabled && (
-              <p className="text-[10px] text-muted-foreground">
-                แบ่งจ่ายเปิดอยู่ — ใส่ยอดสแกนเต็ม หนี้คิดจาก 40%
+            {moneyPoolsEnabled && (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label className="text-sm">{t('accounts.fromPool')}</Label>
+                  <MoneyPoolSelect pools={activePools} value={moneyPoolId} onChange={setMoneyPoolId} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-sm">{t('accounts.toPool')}</Label>
+                  <MoneyPoolSelect pools={activePools} value={transferToPoolId} onChange={setTransferToPoolId} />
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <>
+            {showPaymentSourceFields && accountsEnabled && activeSources.length > 0 && (
+              <div className="space-y-1.5">
+                <Label className="text-sm">
+                  {isIncome ? t('accounts.toAccount') : t('accounts.fromAccount')}
+                </Label>
+                <PaymentSourceSelect
+                  sources={activeSources}
+                  value={accountId}
+                  onChange={setAccountId}
+                  allowNone
+                />
+              </div>
+            )}
+            {showPaymentSourceFields && moneyPoolsEnabled && activePools.length > 0 && (
+              <div className="space-y-1.5">
+                <Label className="text-sm">{t('accounts.selectPool')}</Label>
+                <MoneyPoolSelect pools={activePools} value={moneyPoolId} onChange={setMoneyPoolId} allowNone />
+              </div>
+            )}
+            {!showPaymentSourceFields && (accountsEnabled || moneyPoolsEnabled) && (
+              <p className="text-xs text-muted-foreground text-pretty rounded-lg border border-dashed px-3 py-2">
+                {t('accounts.deferToDebts')}
               </p>
             )}
+          </>
+        )}
+
+        {isIncome && (
+          <FormField
+            control={form.control}
+            name="paidBy"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel className="text-sm">{t('tx.receivedFrom')}</FormLabel>
+                <FormControl>
+                  <ContactSelect
+                    value={field.value || ''}
+                    onChange={field.onChange}
+                    placeholder={t('tx.receivedFromPlaceholder')}
+                    allowNone
+                    noneLabel="ไม่ระบุ"
+                    includeMe={false}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        )}
+
+        {!isIncome && !isTransfer && (
+          <div className="space-y-3 rounded-lg border p-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <Label htmlFor="tx-split" className="text-sm">{t('tx.split')}</Label>
+                <p className="text-xs text-muted-foreground">
+                  {splitEnabled ? t('tx.splitOn') : t('tx.splitOff')}
+                </p>
+              </div>
+              <Switch
+                id="tx-split"
+                checked={splitEnabled}
+                onCheckedChange={(next) => {
+                  setSplitEnabled(next)
+                  if (!next) setSplitData(null)
+                }}
+              />
+            </div>
+
+            {splitEnabled && splitTotal > 0 && (
+              <TransactionSplitSection
+                total={splitTotal}
+                initialPayers={resolvedInitialSplit?.payers}
+                initialShares={resolvedInitialSplit?.shares}
+                initialSplitMode={resolvedInitialSplit?.splitMode}
+                currencySymbol={sym}
+                useEffectivePayerAmounts={paymentMethod === 'paotang'}
+                embedded
+                onChange={handleSplitChange}
+              />
+            )}
+            {splitEnabled && splitTotal <= 0 && (
+              <p className="text-xs text-muted-foreground">{t('tx.enterAmountFirst')}</p>
+            )}
+            {splitEnabled && debtToggle}
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-3">
+          <FormField
+            control={form.control}
+            name="date"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel className="text-sm">{t('tx.date')}</FormLabel>
+                <FormControl>
+                  <Input type="date" className="h-10 w-full text-sm" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="time"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel className="text-sm">{t('tx.time')}</FormLabel>
+                <FormControl>
+                  <Input type="time" className="h-10 w-full text-sm" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
+
+        <div className="rounded-lg border">
+          <button
+            type="button"
+            aria-expanded={showMore}
+            aria-controls="tx-more-details"
+            onClick={() => setShowMore((v) => !v)}
+            className="flex min-h-11 w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left hover:bg-muted/50"
+          >
+            <span className="min-w-0">
+              <span className="block text-sm font-medium">{t('tx.moreDetails')}</span>
+              <span className="block truncate text-xs text-muted-foreground">
+                {moreSummary || t('tx.moreDetailsHint')}
+              </span>
+            </span>
+            <ChevronDown
+              aria-hidden
+              className={cn('size-4 shrink-0 text-muted-foreground transition-transform', showMore && 'rotate-180')}
+            />
+          </button>
+
+          {showMore && (
+            <div id="tx-more-details" className="space-y-4 border-t p-3">
+              {!isTransfer && (
+                <div className="space-y-1.5">
+                  <Label className="text-sm" id="tx-entry-mode">{t('tx.entryMode')}</Label>
+                  <div role="group" aria-labelledby="tx-entry-mode" className="grid grid-cols-2 gap-1 rounded-lg bg-muted p-1">
+                    <button
+                      type="button"
+                      aria-pressed={inputMode === 'standard'}
+                      onClick={() => setInputMode('standard')}
+                      className={segmentClass(inputMode === 'standard')}
+                    >
+                      {t('tx.inputStandard')}
+                    </button>
+                    <button
+                      type="button"
+                      aria-pressed={inputMode === 'receipt'}
+                      onClick={() => setInputMode('receipt')}
+                      className={segmentClass(inputMode === 'receipt')}
+                    >
+                      {t('tx.inputReceipt')}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {!isIncome && !isTransfer && !isReceiptMode && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="tx-discount" className="text-sm">{t('tx.discount')} ({sym})</Label>
+                  <Input
+                    id="tx-discount"
+                    type="number"
+                    inputMode="decimal"
+                    step="0.01"
+                    min="0"
+                    placeholder="0.00"
+                    className="h-10 w-40 text-sm tabular-nums"
+                    value={discount}
+                    onChange={(e) => setDiscount(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">ใส่ยอดที่จ่ายจริงในช่องจำนวนเงิน ส่วนลดใช้แค่แสดงว่าประหยัดไปเท่าไร</p>
+                </div>
+              )}
+
+              {!isIncome && !isTransfer && (
+                <div className="space-y-2">
+                  <div className="space-y-1.5">
+                    <Label className="text-sm" id="tx-payment-method">{t('tx.paymentMethod')}</Label>
+                    <div role="group" aria-labelledby="tx-payment-method" className="inline-grid grid-cols-2 gap-1 rounded-lg bg-muted p-1">
+                      <button
+                        type="button"
+                        aria-pressed={paymentMethod === 'normal'}
+                        onClick={() => setPaymentMethod('normal')}
+                        className={segmentClass(paymentMethod === 'normal')}
+                      >
+                        จ่ายปกติ
+                      </button>
+                      <button
+                        type="button"
+                        aria-pressed={paymentMethod === 'paotang'}
+                        onClick={() => setPaymentMethod('paotang')}
+                        className={segmentClass(paymentMethod === 'paotang')}
+                      >
+                        เป๋าตัง
+                      </button>
+                    </div>
+                  </div>
+
+                  {paymentMethod === 'paotang' && !splitEnabled && (
+                    <div className="space-y-1.5">
+                      <Label className="text-sm" id="tx-paotang-payer">สแกนโดย</Label>
+                      <div role="group" aria-labelledby="tx-paotang-payer" className="inline-grid grid-cols-2 gap-1 rounded-lg bg-muted p-1">
+                        <button
+                          type="button"
+                          aria-pressed={paotangPayerMode === 'self'}
+                          onClick={() => {
+                            setPaotangPayerMode('self')
+                            form.setValue('paidBy', 'Me')
+                          }}
+                          className={segmentClass(paotangPayerMode === 'self')}
+                        >
+                          ฉันจ่าย
+                        </button>
+                        <button
+                          type="button"
+                          aria-pressed={paotangPayerMode === 'other'}
+                          onClick={() => setPaotangPayerMode('other')}
+                          className={segmentClass(paotangPayerMode === 'other')}
+                        >
+                          เพื่อนจ่ายให้
+                        </button>
+                      </div>
+                      {paotangPayerMode === 'other' && (
+                        <FormField
+                          control={form.control}
+                          name="paidBy"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormControl>
+                                <ContactSelect
+                                  value={field.value || ''}
+                                  onChange={field.onChange}
+                                  placeholder="เลือกคนที่จ่ายให้"
+                                  includeMe={false}
+                                  allowCreate
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      )}
+                      {isOtherPayerPaotang && debtToggle}
+                    </div>
+                  )}
+
+                  {paymentMethod === 'paotang' && splitEnabled && (
+                    <p className="text-xs text-muted-foreground">
+                      หารกับเพื่อนอยู่ — ใส่ยอดสแกนเต็ม ระบบคิดหนี้จากส่วนที่จ่ายจริง 40%
+                    </p>
+                  )}
 
             {paymentMethod === 'paotang' && (
               <div className="space-y-2">
@@ -1134,7 +1288,7 @@ export function TransactionForm({
                       ? `โควต้า ${watchedPaidBy}`
                       : 'โควต้าเป๋าตัง'}
                   </p>
-                  <p className="hidden text-[10px] text-muted-foreground sm:block">
+                  <p className="hidden text-xs text-muted-foreground sm:block">
                     {isOtherPayerPaotang
                       ? `รัฐจ่ายสูงสุด ฿${PAOTANG_DAILY_GOV_MAX.toLocaleString()}/วัน`
                       : `รวม ฿${PAOTANG_TOTAL_QUOTA.toLocaleString()} · เดือน ฿${PAOTANG_MONTHLY_QUOTA.toLocaleString()} · วัน ฿${PAOTANG_DAILY_GOV_MAX.toLocaleString()}`}
@@ -1179,11 +1333,11 @@ export function TransactionForm({
                         ]
                     ).map((q) => (
                       <div key={q.label} className="rounded border bg-muted/30 px-1.5 py-1.5">
-                        <p className="text-[10px] text-muted-foreground">{q.label}</p>
-                        <p className="font-semibold tabular-nums text-[11px]">
+                        <p className="text-xs text-muted-foreground">{q.label}</p>
+                        <p className="font-semibold tabular-nums text-xs">
                           ฿{Math.max(0, q.remaining).toLocaleString()}
                         </p>
-                        <p className="text-[9px] text-muted-foreground tabular-nums">
+                        <p className="text-xs text-muted-foreground tabular-nums">
                           {q.used.toLocaleString()}/{q.max.toLocaleString()}
                         </p>
                       </div>
@@ -1195,12 +1349,12 @@ export function TransactionForm({
                   <div className="rounded-md border bg-background p-2.5 text-xs space-y-1.5">
                     {isOtherPayerPaotang ? (
                       <>
-                        <p className="text-[11px] text-muted-foreground">
+                        <p className="text-xs text-muted-foreground">
                           {watchedPaidBy} จ่ายให้ — คุณคืน {PAOTANG_USER_PERCENT}%
                         </p>
                         <div className="grid grid-cols-3 gap-1.5">
                           <div>
-                            <p className="text-[10px] text-muted-foreground">เต็ม</p>
+                            <p className="text-xs text-muted-foreground">เต็ม</p>
                             <p className="font-semibold tabular-nums text-xs">
                               ฿{totalForPayment.toLocaleString(undefined, {
                                 minimumFractionDigits: 0,
@@ -1209,7 +1363,7 @@ export function TransactionForm({
                             </p>
                           </div>
                           <div>
-                            <p className="text-[10px] text-muted-foreground">รัฐจ่าย</p>
+                            <p className="text-xs text-muted-foreground">รัฐจ่าย</p>
                             <p className="font-semibold tabular-nums text-xs text-chart-2">
                               ฿{paotangSplit.subsidy.toLocaleString(undefined, {
                                 minimumFractionDigits: 0,
@@ -1218,7 +1372,7 @@ export function TransactionForm({
                             </p>
                           </div>
                           <div>
-                            <p className="text-[10px] text-muted-foreground">คุณคืน</p>
+                            <p className="text-xs text-muted-foreground">คุณคืน</p>
                             <p className="font-semibold tabular-nums text-xs text-destructive">
                               ฿{paotangSplit.oweToPayer?.toLocaleString(undefined, {
                                 minimumFractionDigits: 0,
@@ -1228,19 +1382,19 @@ export function TransactionForm({
                           </div>
                         </div>
                         {paotangSplit.capped && (
-                          <p className="text-[10px] text-warning">
+                          <p className="text-xs text-warning">
                             โควต้าวันนี้เต็ม — {getPaotangCapReasonLabel(paotangSplit.capReason)}
                           </p>
                         )}
                       </>
                     ) : (
                       <>
-                        <p className="text-[11px] text-muted-foreground">
+                        <p className="text-xs text-muted-foreground">
                           รัฐ {PAOTANG_GOV_PERCENT}% · เรา {PAOTANG_USER_PERCENT}%
                         </p>
                         <div className="grid grid-cols-3 gap-1.5">
                           <div>
-                            <p className="text-[10px] text-muted-foreground">เต็ม</p>
+                            <p className="text-xs text-muted-foreground">เต็ม</p>
                             <p className="font-semibold tabular-nums text-xs">
                               ฿{totalForPayment.toLocaleString(undefined, {
                                 minimumFractionDigits: 0,
@@ -1249,7 +1403,7 @@ export function TransactionForm({
                             </p>
                           </div>
                           <div>
-                            <p className="text-[10px] text-muted-foreground">รัฐจ่าย</p>
+                            <p className="text-xs text-muted-foreground">รัฐจ่าย</p>
                             <p className="font-semibold tabular-nums text-xs text-chart-2">
                               ฿{paotangSplit.subsidy.toLocaleString(undefined, {
                                 minimumFractionDigits: 0,
@@ -1258,7 +1412,7 @@ export function TransactionForm({
                             </p>
                           </div>
                           <div>
-                            <p className="text-[10px] text-muted-foreground">เราจ่าย</p>
+                            <p className="text-xs text-muted-foreground">เราจ่าย</p>
                             <p className="font-semibold tabular-nums text-xs text-destructive">
                               ฿{paotangSplit.userPaid.toLocaleString(undefined, {
                                 minimumFractionDigits: 0,
@@ -1268,7 +1422,7 @@ export function TransactionForm({
                           </div>
                         </div>
                         {paotangSplit.capped && (
-                          <p className="text-[10px] text-warning">
+                          <p className="text-xs text-warning">
                             โควต้าไม่พอ — {getPaotangCapReasonLabel(paotangSplit.capReason)}
                           </p>
                         )}
@@ -1278,163 +1432,59 @@ export function TransactionForm({
                 )}
               </div>
             )}
-          </div>
-        )}
+                </div>
+              )}
 
-        {isTransfer ? null : isIncome ? (
-          <FormField
-            control={form.control}
-            name="paidBy"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel className="text-xs sm:text-sm">Received From</FormLabel>
-                <FormControl>
-                  <ContactSelect
-                    value={field.value || ''}
-                    onChange={field.onChange}
-                    placeholder="เลือกผู้จ่ายให้ (ไม่บังคับ)"
-                    allowNone
-                    noneLabel="ไม่ระบุ"
-                    includeMe={false}
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        ) : (
-          <div className="space-y-2.5 rounded-lg border bg-muted/20 p-3">
-            <div className="flex items-center justify-between gap-2">
-              <Label className="text-xs sm:text-sm">แบ่งค่าใช้จ่าย</Label>
-              <button
-                type="button"
-                onClick={() => {
-                  const next = !splitEnabled
-                  setSplitEnabled(next)
-                  if (!next) setSplitData(null)
-                }}
-                className={cn(
-                  'shrink-0 rounded-lg border px-2.5 py-1 text-xs font-medium transition-all',
-                  splitEnabled
-                    ? 'border-primary bg-primary text-primary-foreground'
-                    : 'border-border hover:border-primary/50'
-                )}
-              >
-                {splitEnabled ? 'เปิด' : 'ปิด'}
-              </button>
-            </div>
+              {activeTrips.length > 0 && !isTransfer && (
+                <FormField
+                  control={form.control}
+                  name="tripId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-sm">{t('tx.trip')}</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger className="h-10 w-full">
+                            <SelectValue placeholder={t('tx.noTrip')} />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="none">{t('tx.noTrip')}</SelectItem>
+                          {activeTrips.map((trip) => (
+                            <SelectItem key={trip.id} value={trip.id!}>
+                              {trip.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
 
-            {splitEnabled && splitTotal > 0 && (
-              <TransactionSplitSection
-                total={splitTotal}
-                initialPayers={resolvedInitialSplit?.payers}
-                initialShares={resolvedInitialSplit?.shares}
-                initialSplitMode={resolvedInitialSplit?.splitMode}
-                useEffectivePayerAmounts={paymentMethod === 'paotang'}
-                embedded
-                onChange={handleSplitChange}
+              <ImmichAttachmentsField
+                value={attachmentIds}
+                onChange={setAttachmentIds}
+                tripId={selectedTripId}
+                deliveryKey={
+                  initialData?.id
+                    ? `attachments:transaction:${initialData.id}`
+                    : 'attachments:transaction:new'
+                }
               />
-            )}
-            {splitEnabled && splitTotal <= 0 && (
-              <p className="text-xs text-muted-foreground">กรอกจำนวนเงินก่อน</p>
-            )}
 
-            <div className="flex items-center justify-between gap-2 border-t pt-2">
-              <Label className="text-xs sm:text-sm">คิดหนี้กับเพื่อน</Label>
-              <button
-                type="button"
-                onClick={() => setDebtTracking((v) => !v)}
-                className={cn(
-                  'shrink-0 rounded-lg border px-2.5 py-1 text-xs font-medium transition-all',
-                  debtTracking
-                    ? 'border-primary bg-primary text-primary-foreground'
-                    : 'border-border hover:border-primary/50'
-                )}
-              >
-                {debtTracking ? 'เปิด' : 'ปิด'}
-              </button>
+              <OptionalNoteField value={note} onChange={setNote} />
             </div>
-
-            {!debtTracking && (
-              <p className="text-[10px] text-muted-foreground">
-                แค่บันทึกรายการ ไม่สร้างหนี้
-              </p>
-            )}
-            {debtTracking && (
-              <p className="text-[10px] text-muted-foreground">
-                หนี้ที่ยังไม่จ่ายจะไม่นับในกระแสเงินสด — เมื่อจ่ายคืนในหน้าหนี้จะสร้างธุรกรรมแยก
-              </p>
-            )}
-          </div>
-        )}
-
-        {activeTrips.length > 0 && (
-          <FormField
-            control={form.control}
-            name="tripId"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Trip (Optional)</FormLabel>
-                <Select onValueChange={field.onChange} value={field.value}>
-                  <FormControl>
-                    <SelectTrigger>
-                      <SelectValue placeholder="No trip" />
-                    </SelectTrigger>
-                  </FormControl>
-                  <SelectContent>
-                    <SelectItem value="none">No trip</SelectItem>
-                    {activeTrips.map((trip) => (
-                      <SelectItem key={trip.id} value={trip.id!}>
-                        {trip.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        )}
-
-        <div className="rounded-lg border bg-muted/20 p-3">
-          <div className="grid grid-cols-2 gap-3">
-            <FormField
-              control={form.control}
-              name="date"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="text-xs sm:text-sm">Date</FormLabel>
-                  <FormControl>
-                    <Input type="date" className="h-9 w-full text-sm" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="time"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="text-xs sm:text-sm">Time</FormLabel>
-                  <FormControl>
-                    <Input type="time" className="h-9 w-full text-sm" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </div>
+          )}
         </div>
 
-        <OptionalNoteField value={note} onChange={setNote} />
-
-        <DialogFooter className="pt-2">
-          <Button type="button" variant="outline" className="flex-1 sm:flex-none" onClick={onCancel}>
-            Cancel
+        <DialogFooter className="sticky bottom-0 z-10 -mx-1 gap-2 bg-background px-1 pt-2 pb-1">
+          <Button type="button" variant="outline" className="h-10 flex-1 sm:flex-none" onClick={onCancel}>
+            {t('common.cancel')}
           </Button>
-          <Button type="submit" className="flex-1 sm:flex-none" disabled={isSubmitting || categoriesLoading}>
-            {isSubmitting ? 'Saving...' : 'Save Transaction'}
+          <Button type="submit" className="h-10 flex-1 sm:flex-none" disabled={isSubmitting || categoriesLoading}>
+            {isSubmitting ? t('common.saving') : t('tx.save')}
           </Button>
         </DialogFooter>
       </form>

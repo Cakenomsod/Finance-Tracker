@@ -1,24 +1,27 @@
 import { ZodError } from 'zod';
 
-/** User-facing message for AI parse failures (avoids dumping raw Zod JSON). */
-export function formatAiParseError(error: unknown, fallback = 'Parse failed'): string {
+const THAI_TEXT = /[\u0E00-\u0E7F]/;
+
+/**
+ * User-facing message for AI failures. Raw provider/Zod details belong in server logs,
+ * so only messages already written for users (Thai) pass through.
+ */
+export function formatAiParseError(
+  error: unknown,
+  fallback = 'AI ประมวลผลไม่สำเร็จ — ลองใหม่อีกครั้ง หรือจดเองด้วยปุ่ม + ไปก่อนได้'
+): string {
   if (error instanceof ZodError) {
-    const fields = [...new Set(error.issues.map((i) => i.path.join('.') || 'root'))]
-      .filter(Boolean)
-      .slice(0, 4);
-    const hint = fields.length ? ` (fields: ${fields.join(', ')})` : '';
-    return `AI returned incomplete or invalid receipt data${hint} — try again with a clearer photo`;
+    return 'AI อ่านข้อมูลได้ไม่ครบ — ลองถ่ายรูปให้ชัดขึ้นหรือพิมพ์รายละเอียดเพิ่ม';
   }
   if (error instanceof Error && error.message.trim()) {
     const msg = error.message;
-    if (/no longer available|404 Not Found|models\/gemini/i.test(msg)) {
-      return 'โมเดล Gemini บนเซิร์ฟเวอร์ล้าสมัยหรือถูกจำกัดสิทธิ์ — อัปเดต AI_RECEIPT_MODEL เป็น gemini-3.6-flash แล้วลองใหม่';
+    if (/429|quota|rate.?limit|resource.?exhausted/i.test(msg)) {
+      return 'ตอนนี้มีคนใช้ AI เยอะ — รอสักครู่แล้วลองใหม่';
     }
-    if (/\[GoogleGenerativeAI Error\]/i.test(msg)) {
-      const short = msg.replace(/^\[GoogleGenerativeAI Error\]:\s*/i, '').trim();
-      return short.length > 220 ? `${short.slice(0, 220)}…` : short;
+    if (/no longer available|404 Not Found|models\/|api key|permission|ECONNREFUSED|fetch failed/i.test(msg)) {
+      return 'ตอนนี้ AI ยังใช้ไม่ได้ — จดเองด้วยปุ่ม + ไปก่อนได้';
     }
-    return msg;
+    if (THAI_TEXT.test(msg) && msg.length <= 220) return msg;
   }
   return fallback;
 }

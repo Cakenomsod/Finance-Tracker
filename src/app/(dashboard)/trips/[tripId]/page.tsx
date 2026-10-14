@@ -40,6 +40,7 @@ import {
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn, amountColorClass } from '@/lib/utils'
+import { toast } from 'sonner'
 import { useTrips } from '@/hooks/use-trips'
 import { useTripsData } from '@/hooks/use-trips-data-context'
 import { useTransactions } from '@/hooks/use-transactions'
@@ -56,6 +57,7 @@ import {
   deleteTripExpenseWithTransaction,
 } from '@/lib/sync-expense-transaction'
 import { MemberPicker, PickedMember } from '@/components/trips/member-picker'
+import { useUndoableDelete } from '@/hooks/use-undoable-delete'
 import {
   TripSettingsFields,
   tripSettingsFromTrip,
@@ -87,10 +89,16 @@ import { usePaymentSources } from '@/hooks/use-payment-sources'
 import { useMoneyPools } from '@/hooks/use-money-pools'
 import { useUserSettings } from '@/hooks/use-user-settings'
 import { useLocale } from '@/components/locale-provider'
+import { categoryLabel } from '@/lib/default-categories'
 
 function TripDetailSkeleton() {
+  const { p } = useLocale()
   return (
-    <div className="flex flex-col gap-4 p-4 sm:gap-6 sm:p-6" aria-busy="true" aria-label="Loading trip">
+    <div
+      className="flex flex-col gap-4 p-4 sm:gap-6 sm:p-6"
+      aria-busy="true"
+      aria-label={p({ th: 'กำลังโหลดทริป', en: 'Loading trip', zh: '正在加载行程' })}
+    >
       <div className="flex items-start gap-3">
         <Skeleton className="size-9 shrink-0 rounded-md" />
         <div className="min-w-0 flex-1 space-y-2">
@@ -138,7 +146,9 @@ export default function TripDetailPage() {
   const router = useRouter()
   const tripId = params.tripId as string
   const { user } = useAuth()
-  const { t } = useLocale()
+  const { t, p, locale } = useLocale()
+  const dateLocale = locale === 'th' ? 'th-TH' : locale === 'zh' ? 'zh-CN' : 'en-US'
+  const { pendingIds: pendingDeleteIds, scheduleDelete } = useUndoableDelete()
   const { accountsEnabled, moneyPoolsEnabled } = useUserSettings()
   const { activeSources, defaultSource } = usePaymentSources()
   const { activePools } = useMoneyPools()
@@ -175,6 +185,22 @@ export default function TripDetailPage() {
   const [isRecordPaymentOpen, setIsRecordPaymentOpen] = React.useState(false)
   const [recordPaymentData, setRecordPaymentData] = React.useState<{ from: string, to: string, amount: number } | null>(null)
   const [settlementAmount, setSettlementAmount] = React.useState<string>('')
+  const [isRecordingPayment, setIsRecordingPayment] = React.useState(false)
+  const settlementError = (() => {
+    if (!recordPaymentData) return null
+    const value = parseFloat(settlementAmount)
+    if (!settlementAmount.trim() || !value || value <= 0) {
+      return p({ th: 'ใส่จำนวนเงินที่มากกว่า 0', en: 'Enter an amount above 0', zh: '请输入大于 0 的金额' })
+    }
+    if (value > recordPaymentData.amount + 0.001) {
+      return p({
+        th: `เกินยอดค้าง (${recordPaymentData.amount.toLocaleString()})`,
+        en: `More than what's owed (${recordPaymentData.amount.toLocaleString()})`,
+        zh: `超过欠款（${recordPaymentData.amount.toLocaleString()}）`,
+      })
+    }
+    return null
+  })()
   const [settleAccountId, setSettleAccountId] = React.useState('')
   const [settleMoneyPoolId, setSettleMoneyPoolId] = React.useState('')
 
@@ -226,7 +252,7 @@ export default function TripDetailPage() {
 
       if (!split) return [] // Solo
 
-      let involved = split === 'all'
+      const involved = split === 'all'
         ? members
         : [payer, resolveMember(split)].filter((m): m is string => !!m && members.includes(m))
       if (involved.length === 0) return []
@@ -475,6 +501,7 @@ export default function TripDetailPage() {
   }, [allExpensesCombined, paymentHistory, calculateExpenseTransfers, resolveMember])
 
   const filteredExpenses = allExpensesCombined.filter((ex) => {
+    if (ex.id && pendingDeleteIds.has(ex.id)) return false
     const matchSearch = !expenseSearch ||
       ex.description?.toLowerCase().includes(expenseSearch.toLowerCase()) ||
       ex.category?.toLowerCase().includes(expenseSearch.toLowerCase())
@@ -555,13 +582,20 @@ export default function TripDetailPage() {
       <div className="flex flex-col items-center justify-center gap-4 p-12 text-center">
         <Plane className="size-10 text-muted-foreground/50" aria-hidden />
         <div className="space-y-1">
-          <p className="text-lg font-semibold tracking-tight">Trip not found</p>
+          <p className="text-lg font-semibold tracking-tight">
+            {p({ th: 'ไม่พบทริปนี้', en: 'Trip not found', zh: '找不到该行程' })}
+          </p>
           <p className="max-w-sm text-sm text-muted-foreground">
-            This trip may have been deleted, or you don&apos;t have access.
+            {p({
+              th: 'ทริปนี้อาจถูกลบไปแล้ว หรือคุณไม่มีสิทธิ์เปิดดู',
+              en: "This trip may have been deleted, or you don't have access.",
+              zh: '该行程可能已被删除，或你没有访问权限。',
+            })}
           </p>
         </div>
         <Button variant="outline" onClick={() => router.push('/trips')}>
-          <ArrowLeft className="mr-2 size-4" /> Back to Trips
+          <ArrowLeft className="mr-2 size-4" aria-hidden />{' '}
+          {p({ th: 'กลับไปหน้าทริป', en: 'Back to trips', zh: '返回行程' })}
         </Button>
       </div>
     )
@@ -577,9 +611,9 @@ export default function TripDetailPage() {
             size="icon"
             className="shrink-0"
             onClick={() => router.push('/trips')}
-            aria-label="Back to trips"
+            aria-label={p({ th: 'กลับไปหน้าทริป', en: 'Back to trips', zh: '返回行程' })}
           >
-            <ArrowLeft className="size-5" />
+            <ArrowLeft className="size-5" aria-hidden />
           </Button>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
@@ -588,7 +622,9 @@ export default function TripDetailPage() {
                 variant={trip.status === 'active' ? 'default' : 'secondary'}
                 className={cn(trip.status === 'active' && 'bg-primary/15 text-primary hover:bg-primary/15')}
               >
-                {trip.status === 'active' ? 'Active' : 'Closed'}
+                {trip.status === 'active'
+                  ? p({ th: 'เปิดอยู่', en: 'Active', zh: '进行中' })
+                  : p({ th: 'ปิดแล้ว', en: 'Closed', zh: '已结束' })}
               </Badge>
             </div>
             <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
@@ -601,9 +637,9 @@ export default function TripDetailPage() {
               {startDate && (
                 <span className="flex items-center gap-1.5 tabular-nums">
                   <Calendar className="size-3.5 shrink-0" aria-hidden />
-                  {startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                  {startDate.toLocaleDateString(dateLocale, { month: 'short', day: 'numeric' })}
                   {endDate && startDate.toDateString() !== endDate.toDateString() &&
-                    ` – ${endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`}
+                    ` – ${endDate.toLocaleDateString(dateLocale, { month: 'short', day: 'numeric' })}`}
                 </span>
               )}
             </div>
@@ -612,22 +648,29 @@ export default function TripDetailPage() {
         <div className="flex shrink-0 items-center gap-2 self-end sm:self-auto">
           {trip.status === 'active' && (
             <Button className="gap-2" onClick={() => setIsAddExpenseOpen(true)}>
-              <Plus className="size-4" />
-              <span className="hidden sm:inline">Add Expense</span>
-              <span className="sm:hidden">Add</span>
+              <Plus className="size-4" aria-hidden />
+              <span className="hidden sm:inline">
+                {p({ th: 'เพิ่มค่าใช้จ่าย', en: 'Add expense', zh: '添加支出' })}
+              </span>
+              <span className="sm:hidden">{p({ th: 'เพิ่ม', en: 'Add', zh: '添加' })}</span>
             </Button>
           )}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="icon" aria-label="Trip actions">
-                <MoreHorizontal className="size-4" />
+              <Button
+                variant="outline"
+                size="icon"
+                aria-label={p({ th: 'ตัวเลือกทริป', en: 'Trip actions', zh: '行程操作' })}
+              >
+                <MoreHorizontal className="size-4" aria-hidden />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               {trip.status === 'active' && (
                 <>
                   <DropdownMenuItem onClick={() => setShowCloseConfirm(true)}>
-                    <Lock className="mr-2 size-4" /> Close Trip
+                    <Lock className="mr-2 size-4" aria-hidden />{' '}
+                    {p({ th: 'ปิดทริป', en: 'Close trip', zh: '结束行程' })}
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => {
                     // convert trip.members to PickedMember[]
@@ -640,18 +683,21 @@ export default function TripDetailPage() {
                     setEditTripMembers(picked)
                     setIsEditTripOpen(true)
                   }}>
-                    <Edit2 className="mr-2 size-4" /> Edit Trip
+                    <Edit2 className="mr-2 size-4" aria-hidden />{' '}
+                    {p({ th: 'แก้ไขทริป', en: 'Edit trip', zh: '编辑行程' })}
                   </DropdownMenuItem>
                 </>
               )}
               {trip.status === 'closed' && (
                 <DropdownMenuItem onClick={() => resumeTrip(trip.id!)}>
-                  <Unlock className="mr-2 size-4" /> Reopen Trip
+                  <Unlock className="mr-2 size-4" aria-hidden />{' '}
+                  {p({ th: 'เปิดทริปอีกครั้ง', en: 'Reopen trip', zh: '重新开启行程' })}
                 </DropdownMenuItem>
               )}
               <DropdownMenuSeparator />
               <DropdownMenuItem className="text-destructive" onClick={() => setShowDeleteConfirm(true)}>
-                <Trash2 className="mr-2 size-4" /> Delete Trip
+                <Trash2 className="mr-2 size-4" aria-hidden />{' '}
+                {p({ th: 'ลบทริป', en: 'Delete trip', zh: '删除行程' })}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -662,7 +708,9 @@ export default function TripDetailPage() {
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 sm:gap-4">
         <Card className="shadow-sm animate-in fade-in-0 duration-200 fill-mode-both motion-reduce:animate-none">
           <CardContent className="pt-6">
-            <p className="text-sm font-medium text-muted-foreground">Total expenses</p>
+            <p className="text-sm font-medium text-muted-foreground">
+              {p({ th: 'ค่าใช้จ่ายรวม', en: 'Total expenses', zh: '总支出' })}
+            </p>
             <p className="mt-2 text-2xl font-semibold tracking-tight tabular-nums sm:text-3xl">
               {homeSymbol}{totalExpenses.toLocaleString()}
             </p>
@@ -670,27 +718,44 @@ export default function TripDetailPage() {
         </Card>
         <Card className="shadow-sm animate-in fade-in-0 duration-200 fill-mode-both motion-reduce:animate-none" style={{ animationDelay: '40ms' }}>
           <CardContent className="pt-6">
-            <p className="text-sm font-medium text-muted-foreground">Your balance</p>
+            <p className="text-sm font-medium text-muted-foreground">
+              {p({ th: 'ยอดของคุณ', en: 'Your balance', zh: '你的余额' })}
+            </p>
             <p className={cn('mt-2 text-2xl font-semibold tracking-tight tabular-nums sm:text-3xl', amountColorClass(myBalance, 'text-foreground'))}>
               {myBalance > 0 ? '+' : ''}{homeSymbol}{myBalance.toLocaleString()}
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
-              {myBalance > 0 ? 'You are owed' : myBalance < 0 ? 'You owe' : 'Settled up'}
+              {myBalance > 0
+                ? p({ th: 'มีคนต้องจ่ายคืนคุณ', en: 'You are owed', zh: '别人欠你' })
+                : myBalance < 0
+                  ? p({ th: 'คุณต้องจ่ายคืน', en: 'You owe', zh: '你欠别人' })
+                  : p({ th: 'เคลียร์ครบแล้ว', en: 'Settled up', zh: '已结清' })}
             </p>
           </CardContent>
         </Card>
         <Card className="shadow-sm animate-in fade-in-0 duration-200 fill-mode-both motion-reduce:animate-none" style={{ animationDelay: '80ms' }}>
           <CardContent className="pt-6">
-            <p className="text-sm font-medium text-muted-foreground">Participants</p>
+            <p className="text-sm font-medium text-muted-foreground">
+              {p({ th: 'สมาชิก', en: 'Participants', zh: '成员' })}
+            </p>
             <p className="mt-2 text-2xl font-semibold tracking-tight tabular-nums sm:text-3xl">{members.length}</p>
           </CardContent>
         </Card>
         <Card className="shadow-sm animate-in fade-in-0 duration-200 fill-mode-both motion-reduce:animate-none" style={{ animationDelay: '120ms' }}>
           <CardContent className="pt-6">
-            <p className="text-sm font-medium text-muted-foreground">Expenses</p>
+            <p className="text-sm font-medium text-muted-foreground">
+              {p({ th: 'จำนวนรายการ', en: 'Expenses', zh: '支出笔数' })}
+            </p>
             <p className="mt-2 text-2xl font-semibold tracking-tight tabular-nums sm:text-3xl">{allExpensesCombined.length}</p>
             <p className="mt-1 text-xs text-muted-foreground tabular-nums">
-              {allExpensesCombined.filter((ex) => !ex.splitLabel.includes('Solo')).length} shared
+              {(() => {
+                const sharedCount = allExpensesCombined.filter((ex) => !ex.splitLabel.includes('Solo')).length
+                return p({
+                  th: `หารกัน ${sharedCount} รายการ`,
+                  en: `${sharedCount} shared`,
+                  zh: `${sharedCount} 笔分摊`,
+                })
+              })()}
             </p>
           </CardContent>
         </Card>
@@ -715,22 +780,22 @@ export default function TripDetailPage() {
       {/* Tabs */}
       <Tabs defaultValue="expenses" className="w-full min-w-0">
         <TabsList className="grid h-auto w-full min-w-0 grid-cols-3 gap-1 p-1">
-          <TabsTrigger value="expenses" className="min-w-0 gap-1 px-1.5 py-2 text-[11px] sm:gap-2 sm:px-3 sm:text-sm">
+          <TabsTrigger value="expenses" className="min-w-0 gap-1 px-1.5 py-2 text-xs sm:gap-2 sm:px-3 sm:text-sm">
             <Receipt className="size-3.5 shrink-0 sm:size-4" aria-hidden />
-            <span className="truncate">Expenses</span>
-            <Badge variant="secondary" className="ml-0.5 shrink-0 px-1.5 tabular-nums text-[10px] sm:ml-1">
+            <span className="truncate">{p({ th: 'รายการ', en: 'Expenses', zh: '支出' })}</span>
+            <Badge variant="secondary" className="ml-0.5 shrink-0 px-1.5 tabular-nums text-xs sm:ml-1">
               {allExpensesCombined.length}
             </Badge>
           </TabsTrigger>
-          <TabsTrigger value="analytics" className="min-w-0 gap-1 px-1.5 py-2 text-[11px] sm:gap-2 sm:px-3 sm:text-sm">
+          <TabsTrigger value="analytics" className="min-w-0 gap-1 px-1.5 py-2 text-xs sm:gap-2 sm:px-3 sm:text-sm">
             <BarChart3 className="size-3.5 shrink-0 sm:size-4" aria-hidden />
-            <span className="truncate">Analytics</span>
+            <span className="truncate">{p({ th: 'สรุป', en: 'Analytics', zh: '分析' })}</span>
           </TabsTrigger>
-          <TabsTrigger value="settlements" className="min-w-0 gap-1 px-1.5 py-2 text-[11px] sm:gap-2 sm:px-3 sm:text-sm">
+          <TabsTrigger value="settlements" className="min-w-0 gap-1 px-1.5 py-2 text-xs sm:gap-2 sm:px-3 sm:text-sm">
             <Users className="size-3.5 shrink-0 sm:size-4" aria-hidden />
-            <span className="truncate">Settle</span>
+            <span className="truncate">{p({ th: 'เคลียร์เงิน', en: 'Settle', zh: '结算' })}</span>
             {settlements.length > 0 && (
-              <Badge variant="secondary" className="ml-0.5 shrink-0 px-1.5 tabular-nums text-[10px] sm:ml-1">
+              <Badge variant="secondary" className="ml-0.5 shrink-0 px-1.5 tabular-nums text-xs sm:ml-1">
                 {settlements.length}
               </Badge>
             )}
@@ -743,23 +808,31 @@ export default function TripDetailPage() {
             <CardHeader>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <CardTitle>All expenses</CardTitle>
+                  <CardTitle>{p({ th: 'รายการทั้งหมด', en: 'All expenses', zh: '全部支出' })}</CardTitle>
                   <CardDescription className="tabular-nums">
-                    {filteredExpenses.length} of {allExpensesCombined.length} shown
+                    {p({
+                      th: `แสดง ${filteredExpenses.length} จาก ${allExpensesCombined.length} รายการ`,
+                      en: `${filteredExpenses.length} of ${allExpensesCombined.length} shown`,
+                      zh: `显示 ${filteredExpenses.length} / ${allExpensesCombined.length} 笔`,
+                    })}
                   </CardDescription>
                 </div>
                 <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
                   <div className="relative w-full sm:w-auto">
                     <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
                     <Input
-                      placeholder="Search expenses…"
+                      placeholder={p({ th: 'ค้นหารายการ…', en: 'Search expenses…', zh: '搜索支出…' })}
                       value={expenseSearch}
                       onChange={(e) => setExpenseSearch(e.target.value)}
                       className="w-full pl-9 sm:w-[200px]"
-                      aria-label="Search expenses"
+                      aria-label={p({ th: 'ค้นหารายการ', en: 'Search expenses', zh: '搜索支出' })}
                     />
                   </div>
-                  <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filter by payer">
+                  <div
+                    className="flex flex-wrap gap-1.5"
+                    role="group"
+                    aria-label={p({ th: 'กรองตามคนจ่าย', en: 'Filter by payer', zh: '按付款人筛选' })}
+                  >
                     <button
                       type="button"
                       onClick={() => setExpenseFilterPaidBy('all')}
@@ -771,7 +844,7 @@ export default function TripDetailPage() {
                           : 'bg-background hover:bg-muted'
                       )}
                     >
-                      Everyone
+                      {p({ th: 'ทุกคน', en: 'Everyone', zh: '所有人' })}
                     </button>
                     {members.map((m) => (
                       <button
@@ -797,23 +870,35 @@ export default function TripDetailPage() {
               {allExpensesCombined.length === 0 ? (
                 <div className="flex flex-col items-center justify-center px-4 py-10 text-center">
                   <Receipt className="size-10 text-muted-foreground/50" aria-hidden />
-                  <p className="mt-4 text-base font-medium">No expenses yet</p>
+                  <p className="mt-4 text-base font-medium">
+                    {p({ th: 'ยังไม่มีรายการ', en: 'No expenses yet', zh: '还没有支出' })}
+                  </p>
                   <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-                    Add your first trip expense, or capture a receipt with AI above.
+                    {p({
+                      th: 'เพิ่มค่าใช้จ่ายแรกของทริป หรือถ่ายรูปใบเสร็จให้ AI ช่วยอ่านด้านบน',
+                      en: 'Add your first trip expense, or capture a receipt with AI above.',
+                      zh: '添加第一笔行程支出，或在上方用 AI 识别收据。',
+                    })}
                   </p>
                   {trip.status === 'active' && (
                     <Button size="sm" className="mt-4 gap-2" onClick={() => setIsAddExpenseOpen(true)}>
-                      <Plus className="size-4" />
-                      Add expense
+                      <Plus className="size-4" aria-hidden />
+                      {p({ th: 'เพิ่มค่าใช้จ่าย', en: 'Add expense', zh: '添加支出' })}
                     </Button>
                   )}
                 </div>
               ) : filteredExpenses.length === 0 ? (
                 <div className="flex flex-col items-center justify-center px-4 py-10 text-center">
                   <Search className="size-10 text-muted-foreground/50" aria-hidden />
-                  <p className="mt-4 text-base font-medium">No matching expenses</p>
+                  <p className="mt-4 text-base font-medium">
+                    {p({ th: 'ไม่พบรายการที่ตรงกัน', en: 'No matching expenses', zh: '没有匹配的支出' })}
+                  </p>
                   <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-                    Try a different search or payer filter.
+                    {p({
+                      th: 'ลองค้นหาคำอื่น หรือเลือกคนจ่ายคนอื่น',
+                      en: 'Try a different search or payer filter.',
+                      zh: '试试其他关键词或付款人筛选。',
+                    })}
                   </p>
                   <Button
                     size="sm"
@@ -824,7 +909,7 @@ export default function TripDetailPage() {
                       setExpenseFilterPaidBy('all')
                     }}
                   >
-                    Clear filters
+                    {p({ th: 'ล้างตัวกรอง', en: 'Clear filters', zh: '清除筛选' })}
                   </Button>
                 </div>
               ) : (
@@ -842,10 +927,24 @@ export default function TripDetailPage() {
                     setEditingExpense(expense)
                     setIsAddExpenseOpen(true)
                   }}
-                  onDeleteLegacy={(id, tx) => removeTransaction(id, tx)}
+                  onDeleteLegacy={(id, tx) =>
+                    scheduleDelete(id, () => removeTransaction(id, tx), {
+                      message: `ลบ "${tx?.description || 'รายการ'}" แล้ว`,
+                      undoLabel: t('common.undo'),
+                    })
+                  }
                   onDeleteExpense={async (id, raw) => {
-                    await requestDeleteImmichAssets(collectImmichAssetIds(raw))
-                    await deleteTripExpenseWithTransaction(id, raw.transactionId)
+                    scheduleDelete(
+                      id,
+                      async () => {
+                        await requestDeleteImmichAssets(collectImmichAssetIds(raw))
+                        await deleteTripExpenseWithTransaction(id, raw.transactionId)
+                      },
+                      {
+                        message: `ลบ "${raw.description || 'รายการ'}" แล้ว — ยอดหารของทุกคนในทริปจะคำนวณใหม่`,
+                        undoLabel: t('common.undo'),
+                      }
+                    )
                   }}
                 />
               )}
@@ -859,12 +958,18 @@ export default function TripDetailPage() {
             {/* Per-person paid vs share */}
             <Card className="min-w-0 overflow-hidden shadow-sm">
               <CardHeader className="px-4 sm:px-6">
-                <CardTitle>Paid vs balance</CardTitle>
-                <CardDescription>How much each person paid and their net balance</CardDescription>
+                <CardTitle>{p({ th: 'ใครจ่ายไปเท่าไหร่', en: 'Paid vs balance', zh: '已付与余额' })}</CardTitle>
+                <CardDescription>
+                  {p({
+                    th: 'แต่ละคนจ่ายไปเท่าไหร่ และสุดท้ายต้องจ่ายคืนหรือได้คืนเท่าไหร่',
+                    en: 'How much each person paid and their net balance',
+                    zh: '每个人付了多少，以及净余额',
+                  })}
+                </CardDescription>
               </CardHeader>
               <CardContent className="min-w-0 overflow-hidden px-2 sm:px-6">
                 {perPersonData.length > 0 ? (
-                  <ChartContainer config={{ paid: { label: 'Paid', color: 'var(--chart-1)' }, share: { label: 'Net', color: 'var(--chart-4)' } }} className="aspect-auto h-[220px] w-full min-w-0 sm:h-[250px]">
+                  <ChartContainer config={{ paid: { label: p({ th: 'จ่ายไป', en: 'Paid', zh: '已付' }), color: 'var(--chart-1)' }, share: { label: p({ th: 'ยอดสุทธิ', en: 'Net', zh: '净额' }), color: 'var(--chart-4)' } }} className="aspect-auto h-[220px] w-full min-w-0 sm:h-[250px]">
                     <BarChart data={perPersonData} margin={{ top: 8, right: 4, left: 0, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" className="stroke-muted" vertical={false} />
                       <XAxis
@@ -894,8 +999,16 @@ export default function TripDetailPage() {
                   </ChartContainer>
                 ) : (
                   <div className="flex h-[220px] flex-col items-center justify-center gap-1 text-center text-sm text-muted-foreground sm:h-[250px]">
-                    <p className="font-medium text-foreground">No chart data yet</p>
-                    <p>Add expenses to see paid vs balance by person.</p>
+                    <p className="font-medium text-foreground">
+                      {p({ th: 'ยังไม่มีข้อมูลกราฟ', en: 'No chart data yet', zh: '暂无图表数据' })}
+                    </p>
+                    <p>
+                      {p({
+                        th: 'เพิ่มค่าใช้จ่ายเพื่อดูว่าแต่ละคนจ่ายไปเท่าไหร่',
+                        en: 'Add expenses to see paid vs balance by person.',
+                        zh: '添加支出后即可查看每个人的已付与余额。',
+                      })}
+                    </p>
                   </div>
                 )}
               </CardContent>
@@ -904,8 +1017,10 @@ export default function TripDetailPage() {
             {/* Category breakdown */}
             <Card className="min-w-0 overflow-hidden shadow-sm">
               <CardHeader className="px-4 sm:px-6">
-                <CardTitle>By category</CardTitle>
-                <CardDescription>Expense breakdown by category</CardDescription>
+                <CardTitle>{p({ th: 'แยกตามหมวดหมู่', en: 'By category', zh: '按类别' })}</CardTitle>
+                <CardDescription>
+                  {p({ th: 'ค่าใช้จ่ายแยกตามหมวดหมู่', en: 'Expense breakdown by category', zh: '按类别查看支出' })}
+                </CardDescription>
               </CardHeader>
               <CardContent className="min-w-0 overflow-hidden px-4 sm:px-6">
                 {categoryData.length > 0 ? (
@@ -929,7 +1044,7 @@ export default function TripDetailPage() {
                               style={{ backgroundColor: categoryColors[i % categoryColors.length] }}
                               aria-hidden
                             />
-                            <span className="truncate [overflow-wrap:anywhere]">{cat.name}</span>
+                            <span className="truncate [overflow-wrap:anywhere]">{categoryLabel(cat.name, locale)}</span>
                           </div>
                           <span className="shrink-0 font-medium tabular-nums text-muted-foreground">
                             {homeSymbol}{cat.value.toLocaleString()}
@@ -940,8 +1055,16 @@ export default function TripDetailPage() {
                   </>
                 ) : (
                   <div className="flex h-[160px] flex-col items-center justify-center gap-1 text-center text-sm text-muted-foreground sm:h-[180px]">
-                    <p className="font-medium text-foreground">No category data</p>
-                    <p>Categories appear once expenses are logged.</p>
+                    <p className="font-medium text-foreground">
+                      {p({ th: 'ยังไม่มีข้อมูลหมวดหมู่', en: 'No category data', zh: '暂无类别数据' })}
+                    </p>
+                    <p>
+                      {p({
+                        th: 'หมวดหมู่จะแสดงเมื่อมีการบันทึกค่าใช้จ่าย',
+                        en: 'Categories appear once expenses are logged.',
+                        zh: '记录支出后会显示类别。',
+                      })}
+                    </p>
                   </div>
                 )}
               </CardContent>
@@ -951,28 +1074,31 @@ export default function TripDetailPage() {
           {/* Per-person detail table */}
           <Card className="mt-4 min-w-0 overflow-hidden shadow-sm lg:mt-6">
             <CardHeader className="px-4 sm:px-6">
-              <CardTitle>Per person summary</CardTitle>
-              <CardDescription>Paid totals and who owes whom</CardDescription>
+              <CardTitle>{p({ th: 'สรุปรายคน', en: 'Per person summary', zh: '每人汇总' })}</CardTitle>
+              <CardDescription>
+                {p({ th: 'แต่ละคนจ่ายไปเท่าไหร่ และใครติดใคร', en: 'Paid totals and who owes whom', zh: '已付总额以及谁欠谁' })}
+              </CardDescription>
             </CardHeader>
             <CardContent className="px-4 sm:px-6">
               {participants.length === 0 ? (
                 <div className="py-8 text-center text-sm text-muted-foreground">
-                  Add members to see balances.
+                  {p({ th: 'เพิ่มสมาชิกเพื่อดูยอดของแต่ละคน', en: 'Add members to see balances.', zh: '添加成员后即可查看余额。' })}
                 </div>
               ) : (
                 <div className="divide-y rounded-lg border">
-                  {participants.map((p) => {
-                    const balance = p.netBalance
+                  {participants.map((person) => {
+                    const balance = person.netBalance
+                    const paidText = `${homeSymbol}${Math.round(person.paid).toLocaleString()}`
                     return (
-                      <div key={p.name} className="flex min-w-0 items-center justify-between gap-3 px-3 py-3 sm:px-4 sm:py-3.5">
+                      <div key={person.name} className="flex min-w-0 items-center justify-between gap-3 px-3 py-3 sm:px-4 sm:py-3.5">
                         <div className="flex min-w-0 items-center gap-3">
                           <Avatar className="size-9 shrink-0 sm:size-10">
-                            <AvatarFallback className="bg-muted text-xs">{p.initials}</AvatarFallback>
+                            <AvatarFallback className="bg-muted text-xs">{person.initials}</AvatarFallback>
                           </Avatar>
                           <div className="min-w-0">
-                            <p className="truncate font-medium [overflow-wrap:anywhere]">{p.displayName}</p>
+                            <p className="truncate font-medium [overflow-wrap:anywhere]">{person.displayName}</p>
                             <p className="text-xs text-muted-foreground tabular-nums">
-                              Paid {homeSymbol}{Math.round(p.paid).toLocaleString()}
+                              {p({ th: `จ่ายไป ${paidText}`, en: `Paid ${paidText}`, zh: `已付 ${paidText}` })}
                             </p>
                           </div>
                         </div>
@@ -981,7 +1107,11 @@ export default function TripDetailPage() {
                             {balance > 0 ? '+' : ''}{homeSymbol}{balance.toLocaleString()}
                           </p>
                           <p className="text-xs text-muted-foreground">
-                            {balance > 0 ? 'Owed to them' : balance < 0 ? 'They owe' : 'Even'}
+                            {balance > 0
+                              ? p({ th: 'มีคนต้องคืนให้', en: 'Owed to them', zh: '别人欠TA' })
+                              : balance < 0
+                                ? p({ th: 'ต้องจ่ายคืน', en: 'They owe', zh: 'TA 欠别人' })
+                                : p({ th: 'เคลียร์แล้ว', en: 'Even', zh: '持平' })}
                           </p>
                         </div>
                       </div>
@@ -1001,20 +1131,36 @@ export default function TripDetailPage() {
           <div className="grid min-w-0 gap-4 lg:gap-6">
             <Card className="min-w-0 overflow-hidden shadow-sm">
               <CardHeader className="px-4 sm:px-6">
-                <CardTitle>Settlement plan</CardTitle>
-                <CardDescription>Minimum transfers to settle all balances</CardDescription>
+                <CardTitle>{p({ th: 'แผนเคลียร์เงิน', en: 'Settlement plan', zh: '结算方案' })}</CardTitle>
+                <CardDescription>
+                  {p({
+                    th: 'โอนให้น้อยครั้งที่สุดเพื่อเคลียร์ยอดค้างทั้งหมด',
+                    en: 'Minimum transfers to settle all balances',
+                    zh: '用最少的转账结清所有余额',
+                  })}
+                </CardDescription>
               </CardHeader>
               <CardContent className="px-4 sm:px-6">
                 {settlements.length === 0 ? (
                   <div className="flex flex-col items-center justify-center px-2 py-10 text-center sm:px-4">
                     <CheckCircle2 className="size-10 text-success/70" aria-hidden />
                     <p className="mt-4 text-base font-medium">
-                      {totalExpenses === 0 ? 'No expenses yet' : 'Everyone is settled up'}
+                      {totalExpenses === 0
+                        ? p({ th: 'ยังไม่มีรายการ', en: 'No expenses yet', zh: '还没有支出' })
+                        : p({ th: 'ทุกคนเคลียร์ครบแล้ว', en: 'Everyone is settled up', zh: '大家都已结清' })}
                     </p>
                     <p className="mt-1 max-w-sm text-sm text-muted-foreground">
                       {totalExpenses === 0
-                        ? 'Once shared expenses exist, suggested transfers appear here.'
-                        : 'No outstanding balances between members.'}
+                        ? p({
+                            th: 'เมื่อมีค่าใช้จ่ายที่หารกัน รายการที่ต้องโอนคืนจะแสดงที่นี่',
+                            en: 'Once shared expenses exist, suggested transfers appear here.',
+                            zh: '有分摊支出后，建议的转账会显示在这里。',
+                          })
+                        : p({
+                            th: 'ไม่มีใครติดเงินใครแล้ว',
+                            en: 'No outstanding balances between members.',
+                            zh: '成员之间没有未结清的余额。',
+                          })}
                     </p>
                   </div>
                 ) : (
@@ -1030,20 +1176,22 @@ export default function TripDetailPage() {
                           <div className="flex min-w-0 items-start gap-2.5">
                             <div className="flex shrink-0 items-center gap-1.5 pt-0.5" aria-hidden>
                               <Avatar className="size-8">
-                                <AvatarFallback className="bg-destructive/15 text-[10px] text-destructive">
+                                <AvatarFallback className="bg-destructive/15 text-xs text-destructive">
                                   {fromName.substring(0, 2).toUpperCase()}
                                 </AvatarFallback>
                               </Avatar>
                               <ArrowRight className="size-3.5 text-muted-foreground" />
                               <Avatar className="size-8">
-                                <AvatarFallback className="bg-primary/15 text-[10px] text-primary">
+                                <AvatarFallback className="bg-primary/15 text-xs text-primary">
                                   {toName.substring(0, 2).toUpperCase()}
                                 </AvatarFallback>
                               </Avatar>
                             </div>
                             <p className="min-w-0 flex-1 text-sm font-medium leading-snug [overflow-wrap:anywhere]">
                               <span className="text-destructive">{fromName}</span>
-                              <span className="text-muted-foreground"> pays </span>
+                              <span className="text-muted-foreground">
+                                {p({ th: ' จ่ายคืน ', en: ' pays ', zh: ' 还给 ' })}
+                              </span>
                               <span className="text-primary">{toName}</span>
                             </p>
                           </div>
@@ -1062,7 +1210,7 @@ export default function TripDetailPage() {
                                   setIsRecordPaymentOpen(true)
                                 }}
                               >
-                                Record
+                                {p({ th: 'บันทึกการจ่าย', en: 'Record', zh: '记录' })}
                               </Button>
                             )}
                           </div>
@@ -1076,16 +1224,28 @@ export default function TripDetailPage() {
 
             <Card className="min-w-0 overflow-hidden shadow-sm">
               <CardHeader className="px-4 sm:px-6">
-                <CardTitle>Itemized debts</CardTitle>
-                <CardDescription>Debts generated by each expense</CardDescription>
+                <CardTitle>{p({ th: 'ยอดค้างแยกตามรายการ', en: 'Itemized debts', zh: '逐笔欠款' })}</CardTitle>
+                <CardDescription>
+                  {p({
+                    th: 'แต่ละรายการทำให้ใครติดใครเท่าไหร่',
+                    en: 'Debts generated by each expense',
+                    zh: '每笔支出产生的欠款',
+                  })}
+                </CardDescription>
               </CardHeader>
               <CardContent className="px-4 sm:px-6">
                 {allExpensesCombined.length === 0 ? (
                   <div className="flex flex-col items-center justify-center px-2 py-10 text-center sm:px-4">
                     <Receipt className="size-10 text-muted-foreground/50" aria-hidden />
-                    <p className="mt-4 text-base font-medium">No expenses recorded</p>
+                    <p className="mt-4 text-base font-medium">
+                      {p({ th: 'ยังไม่มีรายการ', en: 'No expenses recorded', zh: '还没有记录支出' })}
+                    </p>
                     <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-                      Itemized who-owes-whom appears after shared expenses are added.
+                      {p({
+                        th: 'เมื่อเพิ่มค่าใช้จ่ายที่หารกัน จะเห็นว่าใครติดใครในแต่ละรายการ',
+                        en: 'Itemized who-owes-whom appears after shared expenses are added.',
+                        zh: '添加分摊支出后，会逐笔显示谁欠谁。',
+                      })}
                     </p>
                   </div>
                 ) : (
@@ -1108,10 +1268,14 @@ export default function TripDetailPage() {
                                 {ex.description}
                               </p>
                               <p className="mt-0.5 text-xs text-muted-foreground">
-                                {ex.isLegacy ? 'Legacy' : ex.category || 'Expense'}
+                                {ex.isLegacy
+                                  ? p({ th: 'ส่วนตัว', en: 'Personal', zh: '个人' })
+                                  : ex.category
+                                    ? categoryLabel(ex.category, locale)
+                                    : p({ th: 'ค่าใช้จ่าย', en: 'Expense', zh: '支出' })}
                                 {' · '}
                                 {ex.date?.seconds
-                                  ? new Date(ex.date.seconds * 1000).toLocaleDateString('en-US', {
+                                  ? new Date(ex.date.seconds * 1000).toLocaleDateString(dateLocale, {
                                       month: 'short',
                                       day: 'numeric',
                                       year: 'numeric',
@@ -1125,7 +1289,7 @@ export default function TripDetailPage() {
                                 {exSymbol}{ex.amount.toLocaleString()}
                               </span>
                               {exHomeHint && (
-                                <span className="mt-0.5 block text-[10px] font-normal text-muted-foreground">
+                                <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
                                   ({exHomeHint})
                                 </span>
                               )}
@@ -1150,7 +1314,9 @@ export default function TripDetailPage() {
                                 >
                                   <p className="min-w-0 leading-snug [overflow-wrap:anywhere]">
                                     <span className="font-medium text-destructive">{fromName}</span>
-                                    <span className="text-xs text-muted-foreground"> owes </span>
+                                    <span className="text-xs text-muted-foreground">
+                                      {p({ th: ' ติด ', en: ' owes ', zh: ' 欠 ' })}
+                                    </span>
                                     <span className="font-medium text-primary">{toName}</span>
                                   </p>
                                   <div className="flex items-center justify-between gap-2">
@@ -1159,19 +1325,23 @@ export default function TripDetailPage() {
                                         {homeSymbol}{t.amount.toLocaleString()}
                                       </span>
                                       {trip?.tripCurrency === 'JPY' && homeCurrency === 'THB' && (trip.exchangeRate ?? 0) > 0 && (
-                                        <span className="block text-[10px] text-muted-foreground tabular-nums">
+                                        <span className="block text-xs text-muted-foreground tabular-nums">
                                           (¥{Math.round(t.amount / (trip.exchangeRate ?? LEGACY_JPY_TO_THB)).toLocaleString()})
                                         </span>
                                       )}
                                       {debtState.status === 'partial' && (
-                                        <span className="block text-[10px] text-muted-foreground tabular-nums">
-                                          Paid {homeSymbol}{debtState.paidAmount.toLocaleString()}
+                                        <span className="block text-xs text-muted-foreground tabular-nums">
+                                          {p({
+                                            th: `จ่ายแล้ว ${homeSymbol}${debtState.paidAmount.toLocaleString()}`,
+                                            en: `Paid ${homeSymbol}${debtState.paidAmount.toLocaleString()}`,
+                                            zh: `已付 ${homeSymbol}${debtState.paidAmount.toLocaleString()}`,
+                                          })}
                                         </span>
                                       )}
                                     </div>
                                     {debtState.status === 'paid' ? (
                                       <Badge className="pointer-events-none shrink-0 border-0 bg-primary/15 text-xs text-primary hover:bg-primary/15">
-                                        Paid
+                                        {p({ th: 'จ่ายแล้ว', en: 'Paid', zh: '已付' })}
                                       </Badge>
                                     ) : (
                                       trip.status === 'active' && (
@@ -1189,7 +1359,7 @@ export default function TripDetailPage() {
                                             setIsRecordPaymentOpen(true)
                                           }}
                                         >
-                                          Pay
+                                          {p({ th: 'จ่ายคืน', en: 'Pay', zh: '还款' })}
                                         </Button>
                                       )
                                     )}
@@ -1205,9 +1375,15 @@ export default function TripDetailPage() {
                     {allExpensesCombined.every((ex) => calculateExpenseTransfers(ex).length === 0) && (
                       <div className="flex flex-col items-center justify-center px-2 py-10 text-center sm:px-4">
                         <CheckCircle2 className="size-10 text-success/70" aria-hidden />
-                        <p className="mt-4 text-base font-medium">No open itemized debts</p>
+                        <p className="mt-4 text-base font-medium">
+                          {p({ th: 'ไม่มียอดค้าง', en: 'No open itemized debts', zh: '没有未结的逐笔欠款' })}
+                        </p>
                         <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-                          Shared expenses will show who owes whom for each item.
+                          {p({
+                            th: 'ค่าใช้จ่ายที่หารกันจะแสดงว่าใครติดใครในแต่ละรายการ',
+                            en: 'Shared expenses will show who owes whom for each item.',
+                            zh: '分摊支出会逐笔显示谁欠谁。',
+                          })}
                         </p>
                       </div>
                     )}
@@ -1218,16 +1394,28 @@ export default function TripDetailPage() {
 
             <Card className="min-w-0 overflow-hidden shadow-sm">
               <CardHeader className="px-4 sm:px-6">
-                <CardTitle>Payment history</CardTitle>
-                <CardDescription>Recorded payments between members</CardDescription>
+                <CardTitle>{p({ th: 'ประวัติการจ่ายคืน', en: 'Payment history', zh: '还款记录' })}</CardTitle>
+                <CardDescription>
+                  {p({
+                    th: 'การจ่ายคืนระหว่างสมาชิกที่บันทึกไว้',
+                    en: 'Recorded payments between members',
+                    zh: '成员之间已记录的还款',
+                  })}
+                </CardDescription>
               </CardHeader>
               <CardContent className="px-4 sm:px-6">
                 {paymentHistory.length === 0 ? (
                   <div className="flex flex-col items-center justify-center px-2 py-10 text-center sm:px-4">
                     <CheckCircle2 className="size-10 text-muted-foreground/50" aria-hidden />
-                    <p className="mt-4 text-base font-medium">No payments recorded</p>
+                    <p className="mt-4 text-base font-medium">
+                      {p({ th: 'ยังไม่มีการจ่ายคืน', en: 'No payments recorded', zh: '还没有还款记录' })}
+                    </p>
                     <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-                      Use Record or Pay on a settlement to log a transfer.
+                      {p({
+                        th: 'กด "บันทึกการจ่าย" หรือ "จ่ายคืน" ด้านบนเพื่อบันทึกการโอน',
+                        en: 'Use Record or Pay on a settlement to log a transfer.',
+                        zh: '在结算项上点“记录”或“还款”即可登记转账。',
+                      })}
                     </p>
                   </div>
                 ) : (
@@ -1247,10 +1435,14 @@ export default function TripDetailPage() {
                             </div>
                             <div className="min-w-0 flex-1">
                               <p className="text-sm font-medium leading-snug [overflow-wrap:anywhere]">
-                                {fromName} paid {toName}
+                                {p({
+                                  th: `${fromName} จ่ายคืน ${toName}`,
+                                  en: `${fromName} paid ${toName}`,
+                                  zh: `${fromName} 还给 ${toName}`,
+                                })}
                               </p>
                               <p className="text-xs text-muted-foreground tabular-nums">
-                                {date.toLocaleDateString('th-TH', {
+                                {date.toLocaleDateString(dateLocale, {
                                   month: 'short',
                                   day: 'numeric',
                                   year: 'numeric',
@@ -1277,8 +1469,10 @@ export default function TripDetailPage() {
           className="max-h-[min(90vh,90dvh)] w-[calc(100vw-1rem)] overflow-y-auto overflow-x-hidden p-4 max-sm:top-[4vh] max-sm:translate-y-0 sm:max-w-[680px] sm:p-6"
         >
           <DialogHeader>
-            <DialogTitle>Edit trip</DialogTitle>
-            <DialogDescription>Update trip details and members</DialogDescription>
+            <DialogTitle>{p({ th: 'แก้ไขทริป', en: 'Edit trip', zh: '编辑行程' })}</DialogTitle>
+            <DialogDescription>
+              {p({ th: 'แก้ไขรายละเอียดทริปและสมาชิก', en: 'Update trip details and members', zh: '更新行程信息和成员' })}
+            </DialogDescription>
           </DialogHeader>
           <form
             onSubmit={async (e) => {
@@ -1306,21 +1500,23 @@ export default function TripDetailPage() {
             className="space-y-4 pt-4"
           >
             <div className="space-y-2">
-              <Label htmlFor="name">Trip Name</Label>
+              <Label htmlFor="name">{p({ th: 'ชื่อทริป', en: 'Trip name', zh: '行程名称' })}</Label>
               <Input id="name" name="name" defaultValue={trip.name} required />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="description">Description (Location/Details)</Label>
+              <Label htmlFor="description">
+                {p({ th: 'รายละเอียด (สถานที่ / โน้ต)', en: 'Description (location / details)', zh: '描述（地点/详情）' })}
+              </Label>
               <Textarea
                 id="description"
                 name="description"
                 defaultValue={trip.description || ''}
-                placeholder="e.g. Japan Spring Trip"
+                placeholder={p({ th: 'เช่น เที่ยวญี่ปุ่นช่วงซากุระ', en: 'e.g. Japan Spring Trip', zh: '例如：日本春季之旅' })}
               />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="startDate">Start Date</Label>
+                <Label htmlFor="startDate">{p({ th: 'วันเริ่ม', en: 'Start date', zh: '开始日期' })}</Label>
                 <Input
                   id="startDate"
                   name="startDate"
@@ -1333,7 +1529,7 @@ export default function TripDetailPage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="endDate">End Date</Label>
+                <Label htmlFor="endDate">{p({ th: 'วันสิ้นสุด', en: 'End date', zh: '结束日期' })}</Label>
                 <Input
                   id="endDate"
                   name="endDate"
@@ -1347,20 +1543,26 @@ export default function TripDetailPage() {
               </div>
             </div>
             <div className="space-y-2">
-              <Label>สมาชิก</Label>
+              <Label>{p({ th: 'สมาชิก', en: 'Members', zh: '成员' })}</Label>
               <MemberPicker
                 value={editTripMembers}
                 onChange={setEditTripMembers}
                 selfUid={user?.uid}
               />
-              <p className="text-xs text-muted-foreground">คุณจะถูกเพิ่มเป็นสมาชิกอัตโนมัติ</p>
+              <p className="text-xs text-muted-foreground">
+                {p({
+                  th: 'คุณจะถูกเพิ่มเป็นสมาชิกอัตโนมัติ',
+                  en: "You're added as a member automatically",
+                  zh: '你会自动成为成员',
+                })}
+              </p>
             </div>
             <TripSettingsFields value={editTripSettings} onChange={setEditTripSettings} />
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setIsEditTripOpen(false)}>
-                Cancel
+                {t('common.cancel')}
               </Button>
-              <Button type="submit">Save Changes</Button>
+              <Button type="submit">{p({ th: 'บันทึกการแก้ไข', en: 'Save changes', zh: '保存更改' })}</Button>
             </DialogFooter>
           </form>
         </DialogContent>
@@ -1379,14 +1581,26 @@ export default function TripDetailPage() {
         >
           <DialogHeader>
             <DialogTitle>
-              {editingExpense ? 'Edit expense' : ocrDraft ? 'Review AI expense' : 'Add trip expense'}
+              {editingExpense
+                ? p({ th: 'แก้ไขค่าใช้จ่าย', en: 'Edit expense', zh: '编辑支出' })
+                : ocrDraft
+                  ? p({ th: 'ตรวจรายการที่ AI อ่านมา', en: 'Review AI expense', zh: '核对 AI 识别的支出' })
+                  : p({ th: 'เพิ่มค่าใช้จ่ายทริป', en: 'Add trip expense', zh: '添加行程支出' })}
             </DialogTitle>
             <DialogDescription>
               {editingExpense
-                ? 'Update this expense — linked transactions stay in sync.'
+                ? p({
+                    th: 'แก้ไขรายการนี้ รายการที่เชื่อมกันจะอัปเดตตามด้วย',
+                    en: 'Update this expense — linked transactions stay in sync.',
+                    zh: '更新这笔支出，关联的交易会同步更新。',
+                  })
                 : ocrDraft
-                  ? 'Parsed by AI — review and edit before saving.'
-                  : 'Log an expense for this trip.'}
+                  ? p({
+                      th: 'AI อ่านมาให้แล้ว ตรวจและแก้ไขก่อนบันทึก',
+                      en: 'Parsed by AI — review and edit before saving.',
+                      zh: '由 AI 识别，保存前请核对并修改。',
+                    })
+                  : p({ th: 'บันทึกค่าใช้จ่ายของทริปนี้', en: 'Log an expense for this trip.', zh: '记录这次行程的一笔支出。' })}
             </DialogDescription>
           </DialogHeader>
           <TripExpenseFormV2
@@ -1468,16 +1682,23 @@ export default function TripDetailPage() {
           className="max-h-[min(90vh,90dvh)] w-[calc(100vw-1rem)] p-4 sm:max-w-lg sm:p-6"
         >
           <DialogHeader>
-            <DialogTitle>Record payment</DialogTitle>
+            <DialogTitle>{p({ th: 'บันทึกการจ่ายคืน', en: 'Record payment', zh: '记录还款' })}</DialogTitle>
             <DialogDescription>
-              Confirm that {recordPaymentData ? getDisplayName(recordPaymentData.from) : ''} paid{' '}
-              {recordPaymentData ? getDisplayName(recordPaymentData.to) : ''}.
+              {recordPaymentData
+                ? p({
+                    th: `${getDisplayName(recordPaymentData.from)} จ่ายคืน ${getDisplayName(recordPaymentData.to)}`,
+                    en: `${getDisplayName(recordPaymentData.from)} paid ${getDisplayName(recordPaymentData.to)}`,
+                    zh: `${getDisplayName(recordPaymentData.from)} 还给 ${getDisplayName(recordPaymentData.to)}`,
+                  })
+                : ''}
             </DialogDescription>
           </DialogHeader>
           {recordPaymentData && (
             <div className="space-y-4 pt-2">
               <div className="space-y-2">
-                <Label htmlFor="settlement-amount">Amount to settle ({homeSymbol})</Label>
+                <Label htmlFor="settlement-amount">
+                  {p({ th: `จำนวนที่จ่าย (${homeSymbol})`, en: `Amount paid (${homeSymbol})`, zh: `还款金额（${homeSymbol}）` })}
+                </Label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" aria-hidden>
                     {homeSymbol}
@@ -1485,15 +1706,27 @@ export default function TripDetailPage() {
                   <Input
                     id="settlement-amount"
                     type="number"
+                    inputMode="decimal"
+                    min="0"
                     step="0.01"
-                    className="pl-8 text-lg font-semibold tabular-nums"
+                    className="h-12 pl-8 text-lg font-semibold tabular-nums"
                     value={settlementAmount}
                     onChange={(e) => setSettlementAmount(e.target.value)}
+                    aria-invalid={Boolean(settlementError)}
+                    aria-describedby="settlement-amount-hint"
                   />
                 </div>
-                <p className="text-xs text-muted-foreground tabular-nums">
-                  Total owed: {homeSymbol}{recordPaymentData.amount.toLocaleString()}.
-                  You can enter a smaller amount for a partial settlement.
+                <p
+                  id="settlement-amount-hint"
+                  className={cn('text-xs tabular-nums', settlementError ? 'text-destructive' : 'text-muted-foreground')}
+                  role={settlementError ? 'alert' : undefined}
+                >
+                  {settlementError ??
+                    p({
+                      th: `ยอดค้าง ${homeSymbol}${recordPaymentData.amount.toLocaleString()} — ใส่น้อยกว่านี้ได้ถ้าจ่ายบางส่วน`,
+                      en: `Owed ${homeSymbol}${recordPaymentData.amount.toLocaleString()} — enter less for a partial payment`,
+                      zh: `欠款 ${homeSymbol}${recordPaymentData.amount.toLocaleString()}，可输入更少金额部分还款`,
+                    })}
                 </p>
               </div>
               {(accountsEnabled || moneyPoolsEnabled) &&
@@ -1526,35 +1759,58 @@ export default function TripDetailPage() {
                   )}
                 </div>
               )}
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setIsRecordPaymentOpen(false)}>
-                  Cancel
+              <DialogFooter className="gap-2">
+                <Button variant="outline" className="h-10" onClick={() => setIsRecordPaymentOpen(false)}>
+                  {t('common.cancel')}
                 </Button>
-                <Button onClick={async () => {
-                  const payAmount = parseFloat(settlementAmount) || recordPaymentData.amount
-                  const fromKey = resolveMember(recordPaymentData.from) || recordPaymentData.from
-                  const toKey = resolveMember(recordPaymentData.to) || recordPaymentData.to
-                  await recordSettlement(
-                    {
-                      tripId,
-                      fromUserId: fromKey,
-                      toUserId: toKey,
-                      fromDisplayName: getDisplayName(fromKey),
-                      toDisplayName: getDisplayName(toKey),
-                      amount: payAmount,
-                      isPartial: payAmount < recordPaymentData.amount,
-                      date: Timestamp.now(),
-                    },
-                    {
-                      accountId: accountsEnabled && settleAccountId ? settleAccountId : undefined,
-                      moneyPoolId: moneyPoolsEnabled && settleMoneyPoolId ? settleMoneyPoolId : undefined,
+                <Button
+                  className="h-10"
+                  disabled={Boolean(settlementError) || isRecordingPayment}
+                  onClick={async () => {
+                    const payAmount = parseFloat(settlementAmount)
+                    if (!payAmount || payAmount <= 0 || payAmount > recordPaymentData.amount + 0.001) return
+                    const fromKey = resolveMember(recordPaymentData.from) || recordPaymentData.from
+                    const toKey = resolveMember(recordPaymentData.to) || recordPaymentData.to
+                    setIsRecordingPayment(true)
+                    try {
+                      await recordSettlement(
+                        {
+                          tripId,
+                          fromUserId: fromKey,
+                          toUserId: toKey,
+                          fromDisplayName: getDisplayName(fromKey),
+                          toDisplayName: getDisplayName(toKey),
+                          amount: payAmount,
+                          isPartial: payAmount < recordPaymentData.amount - 0.001,
+                          date: Timestamp.now(),
+                        },
+                        {
+                          accountId: accountsEnabled && settleAccountId ? settleAccountId : undefined,
+                          moneyPoolId: moneyPoolsEnabled && settleMoneyPoolId ? settleMoneyPoolId : undefined,
+                        }
+                      )
+                      toast.success(
+                        payAmount < recordPaymentData.amount - 0.001
+                          ? p({ th: 'บันทึกการจ่ายบางส่วนแล้ว', en: 'Partial payment recorded', zh: '已记录部分还款' })
+                          : p({ th: 'จ่ายครบแล้ว', en: 'Fully settled', zh: '已结清' })
+                      )
+                      setIsRecordPaymentOpen(false)
+                      setSettleAccountId('')
+                      setSettleMoneyPoolId('')
+                    } catch (err) {
+                      toast.error(
+                        err instanceof Error
+                          ? err.message
+                          : p({ th: 'บันทึกไม่สำเร็จ ลองใหม่อีกครั้ง', en: 'Could not save. Try again.', zh: '保存失败，请重试' })
+                      )
+                    } finally {
+                      setIsRecordingPayment(false)
                     }
-                  )
-                  setIsRecordPaymentOpen(false)
-                  setSettleAccountId('')
-                  setSettleMoneyPoolId('')
-                }}>
-                  Confirm payment
+                  }}
+                >
+                  {isRecordingPayment
+                    ? t('common.saving')
+                    : p({ th: 'ยืนยันการจ่าย', en: 'Confirm payment', zh: '确认还款' })}
                 </Button>
               </DialogFooter>
             </div>
@@ -1565,21 +1821,24 @@ export default function TripDetailPage() {
       <AlertDialog open={showCloseConfirm} onOpenChange={setShowCloseConfirm}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Close this trip?</AlertDialogTitle>
+            <AlertDialogTitle>{p({ th: 'ปิดทริปนี้ไหม?', en: 'Close this trip?', zh: '结束这次行程？' })}</AlertDialogTitle>
             <AlertDialogDescription>
-              Closing a trip prevents adding new expenses and recording payments.
-              You can reopen it later if needed.
+              {p({
+                th: 'เมื่อปิดทริปแล้ว จะเพิ่มค่าใช้จ่ายหรือบันทึกการจ่ายคืนไม่ได้ ถ้าต้องการก็เปิดใหม่ได้ภายหลัง',
+                en: 'Closing a trip prevents adding new expenses and recording payments. You can reopen it later if needed.',
+                zh: '结束后将无法添加新支出或记录还款。如有需要，之后可以重新开启。',
+              })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
             <AlertDialogAction
               onClick={async () => {
                 await endTrip(tripId)
                 setShowCloseConfirm(false)
               }}
             >
-              Close Trip
+              {p({ th: 'ปิดทริป', en: 'Close trip', zh: '结束行程' })}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -1588,15 +1847,19 @@ export default function TripDetailPage() {
       <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete &quot;{trip.name}&quot;?</AlertDialogTitle>
+            <AlertDialogTitle>
+              {p({ th: `ลบ "${trip.name}" ไหม?`, en: `Delete "${trip.name}"?`, zh: `删除“${trip.name}”？` })}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently remove the trip. Expenses and settlements linked to this trip
-              will remain in the database but won&apos;t be visible until the trip is restored.
-              This action cannot be undone from the app.
+              {p({
+                th: 'ทริปนี้จะถูกลบถาวร ค่าใช้จ่ายและการจ่ายคืนในทริปยังเก็บไว้ในระบบ แต่จะมองไม่เห็นจนกว่าจะกู้ทริปคืน และย้อนกลับจากในแอปไม่ได้',
+                en: "This will permanently remove the trip. Expenses and settlements linked to this trip will remain in the database but won't be visible until the trip is restored. This action cannot be undone from the app.",
+                zh: '这会永久删除该行程。关联的支出和还款仍保存在数据库中，但在行程恢复前不会显示。此操作无法在应用内撤销。',
+              })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={async () => {
@@ -1605,7 +1868,7 @@ export default function TripDetailPage() {
                 router.push('/trips')
               }}
             >
-              Delete Trip
+              {p({ th: 'ลบทริป', en: 'Delete trip', zh: '删除行程' })}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

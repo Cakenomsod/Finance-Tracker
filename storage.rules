@@ -1,0 +1,37 @@
+rules_version = '2';
+
+// Slip / receipt photos. Paths must match src/lib/attachments/storage.ts.
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // Keep in sync with MAX_BYTES in src/lib/attachments/storage.ts
+    function isSmallImage() {
+      return request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+
+    function isTripMember(tripId) {
+      return signedIn()
+        && request.auth.uid in firestore.get(/databases/(default)/documents/trips/$(tripId)).data.members;
+    }
+
+    // Personal photos: only the owner can see or remove them.
+    match /users/{uid}/attachments/{fileId} {
+      allow read, delete: if signedIn() && request.auth.uid == uid;
+      allow create: if signedIn() && request.auth.uid == uid && isSmallImage();
+    }
+
+    // Trip photos: every member can see them (shared receipts), members may upload or remove.
+    match /trips/{tripId}/attachments/{fileId} {
+      allow read, delete: if isTripMember(tripId);
+      allow create: if isTripMember(tripId) && isSmallImage();
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

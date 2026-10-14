@@ -75,6 +75,9 @@ import {
 } from '@/lib/aggregate-transactions'
 import { computeTotalLedgerBalanceUpToMonth } from '@/lib/account-balances'
 import { PaymentSource } from '@/lib/firestore-types'
+import { useLocale } from '@/components/locale-provider'
+import { categoryLabel } from '@/lib/default-categories'
+import type { AppLocale } from '@/lib/locale'
 
 const chartConfig = {
   income: { label: 'Income', color: 'var(--chart-1)' },
@@ -124,8 +127,18 @@ function buildDailySpending(transactions: CombinedTransaction[], month: MonthSel
     }))
 }
 
-function buildWeekdayPattern(transactions: CombinedTransaction[], month: MonthSelection) {
-  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+/** 4 Jan 2026 is a Sunday, so index 0..6 maps to Date#getDay(). */
+function weekdayName(dayIndex: number, locale: AppLocale, width: 'short' | 'long') {
+  const tag = locale === 'th' ? 'th-TH' : locale === 'zh' ? 'zh-CN' : 'en-US'
+  return new Date(2026, 0, 4 + dayIndex).toLocaleDateString(tag, { weekday: width })
+}
+
+function buildWeekdayPattern(
+  transactions: CombinedTransaction[],
+  month: MonthSelection,
+  locale: AppLocale
+) {
+  const dayNames = Array.from({ length: 7 }, (_, i) => weekdayName(i, locale, 'short'))
   const monthSums = new Array(7).fill(0)
 
   transactions
@@ -145,21 +158,25 @@ function buildWeekdayPattern(transactions: CombinedTransaction[], month: MonthSe
   }))
 }
 
-function getFinancialHabits(transactions: CombinedTransaction[], month: MonthSelection) {
+function getFinancialHabits(
+  transactions: CombinedTransaction[],
+  month: MonthSelection,
+  locale: AppLocale
+) {
   const expenseTxs = transactions.filter((tx) => getCountedExpenseThb(tx) > 0)
   const totalExpenses = expenseTxs.reduce((s, tx) => s + getCountedExpenseThb(tx), 0)
 
   const daysInMonth = new Date(month.year, month.month + 1, 0).getDate()
   const avgDaily = daysInMonth > 0 ? Math.round(totalExpenses / daysInMonth) : 0
 
-  const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
   const daySums = new Array(7).fill(0)
   expenseTxs.forEach((tx) => {
     const d = getDateFromTx(tx)
     daySums[d.getDay()] += getCountedExpenseThb(tx)
   })
   const highestDayIdx = daySums.indexOf(Math.max(...daySums))
-  const highestDay = daySums[highestDayIdx] > 0 ? dayNames[highestDayIdx] : '—'
+  const highestDay =
+    daySums[highestDayIdx] > 0 ? weekdayName(highestDayIdx, locale, 'long') : '—'
 
   const catMap = new Map<string, number>()
   expenseTxs.forEach((tx) => {
@@ -198,6 +215,7 @@ export default function DashboardPage() {
     return map
   }, [activeSources])
   const { openQuickAdd } = useQuickAdd()
+  const { locale, p, t } = useLocale()
   const [selectedMonth, setSelectedMonth] = React.useState(getCurrentMonthSelection)
   const { monthKey, direction: monthDirection, onMonthChange } = useMonthTransition(selectedMonth)
 
@@ -365,18 +383,18 @@ export default function DashboardPage() {
     [combined, selectedMonth]
   )
   const weekdayPattern = React.useMemo(
-    () => buildWeekdayPattern(combined, selectedMonth),
-    [combined, selectedMonth]
+    () => buildWeekdayPattern(combined, selectedMonth, locale),
+    [combined, selectedMonth, locale]
   )
   const weeklySpendingTrend = React.useMemo(
     () =>
       isCurrentMonthSelection(selectedMonth)
         ? buildWeekdaySpending(historicalCombined)
-        : buildWeekdayPattern(combined, selectedMonth).map((d) => ({
+        : buildWeekdayPattern(combined, selectedMonth, locale).map((d) => ({
             day: d.day,
             amount: d.thisWeek,
           })),
-    [historicalCombined, combined, selectedMonth]
+    [historicalCombined, combined, selectedMonth, locale]
   )
   const weekComparison = React.useMemo(() => {
     if (isCurrentMonthSelection(selectedMonth)) {
@@ -398,8 +416,8 @@ export default function DashboardPage() {
     [combined]
   )
   const habits = React.useMemo(
-    () => getFinancialHabits(combined, selectedMonth),
-    [combined, selectedMonth]
+    () => getFinancialHabits(combined, selectedMonth, locale),
+    [combined, selectedMonth, locale]
   )
 
   if (loading) {
@@ -410,10 +428,14 @@ export default function DashboardPage() {
     <header className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
       <div className="min-w-0 flex flex-col gap-1">
         <h1 className="text-xl font-semibold tracking-tight text-balance sm:text-2xl">
-          Dashboard
+          {t('nav.dashboard')}
         </h1>
         <p className="max-w-prose text-sm text-muted-foreground text-pretty">
-          Balance, shared money, and spending patterns for {monthLabel}.
+          {p({
+            th: `ยอดเงิน หนี้ที่หารกัน และพฤติกรรมการใช้เงินของ ${monthLabel}`,
+            en: `Balance, shared money, and spending patterns for ${monthLabel}.`,
+            zh: `${monthLabel} 的余额、分摊和消费习惯`,
+          })}
         </p>
       </div>
       <div className="flex shrink-0 items-center gap-2 self-start">
@@ -463,16 +485,25 @@ export default function DashboardPage() {
         <Card className="border-dashed">
           <CardContent className="flex flex-col items-center justify-center px-6 py-12 text-center">
             <p className="text-base font-medium text-balance">
-              No transactions in {monthLabel}
+              {p({
+                th: `${monthLabel} ยังไม่มีรายการ`,
+                en: `No entries in ${monthLabel}`,
+                zh: `${monthLabel} 还没有记录`,
+              })}
             </p>
             <p className="mt-2 max-w-sm text-sm text-muted-foreground text-pretty">
-              Log an expense or income to unlock charts, category breakdowns, and spending habits
-              for this month.
+              {p({
+                th: 'จดรายรับหรือรายจ่ายสักรายการ แล้วกราฟและสรุปหมวดหมู่จะขึ้นที่นี่',
+                en: 'Log an expense or income to see charts and category breakdowns for this month.',
+                zh: '记录一笔收支后，这里会显示图表和类别分析',
+              })}
             </p>
             <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
-              <Button onClick={openQuickAdd}>Add a transaction</Button>
-              <Button variant="outline" asChild>
-                <Link href="/transactions">View transactions</Link>
+              <Button className="h-10" onClick={() => openQuickAdd()}>
+                {p({ th: 'จดรายการ', en: 'Add entry', zh: '添加记录' })}
+              </Button>
+              <Button variant="outline" className="h-10" asChild>
+                <Link href="/">{p({ th: 'ดูรายการทั้งหมด', en: 'View all entries', zh: '查看全部记录' })}</Link>
               </Button>
             </div>
           </CardContent>
@@ -490,9 +521,11 @@ export default function DashboardPage() {
       <div className="grid gap-6 lg:grid-cols-3">
         <Card className="min-w-0 overflow-hidden lg:col-span-2">
           <CardHeader className="px-4 sm:px-6">
-            <CardTitle className="text-balance">Income vs expenses</CardTitle>
+            <CardTitle className="text-balance">
+              {p({ th: 'รายรับเทียบรายจ่าย', en: 'Income vs expenses', zh: '收入与支出' })}
+            </CardTitle>
             <CardDescription className="text-pretty">
-              Monthly comparison from loaded history
+              {p({ th: 'เปรียบเทียบรายเดือน', en: 'Month-by-month comparison', zh: '按月对比' })}
             </CardDescription>
           </CardHeader>
           <CardContent className="px-4 sm:px-6">
@@ -504,7 +537,13 @@ export default function DashboardPage() {
                 onLoadOlder={loadOlderChartData}
               />
             ) : (
-              <ChartEmpty>No monthly history yet. Add transactions to compare months.</ChartEmpty>
+              <ChartEmpty>
+                {p({
+                  th: 'ยังไม่มีข้อมูลหลายเดือน จดต่อไปเรื่อย ๆ แล้วจะเทียบได้',
+                  en: 'No monthly history yet. Keep logging to compare months.',
+                  zh: '暂无多月数据，持续记录后即可对比',
+                })}
+              </ChartEmpty>
             )}
           </CardContent>
         </Card>
@@ -518,9 +557,15 @@ export default function DashboardPage() {
 
       <Card className="min-w-0 overflow-hidden">
         <CardHeader className="px-4 sm:px-6">
-          <CardTitle className="text-balance">Spending by category</CardTitle>
+          <CardTitle className="text-balance">
+            {p({ th: 'ใช้จ่ายตามหมวดหมู่', en: 'Spending by category', zh: '按类别支出' })}
+          </CardTitle>
           <CardDescription className="text-pretty">
-            Where {monthLabel} expenses went
+            {p({
+              th: `เงินเดือน ${monthLabel} หมดไปกับอะไร`,
+              en: `Where ${monthLabel} expenses went`,
+              zh: `${monthLabel} 的钱花在哪里`,
+            })}
           </CardDescription>
         </CardHeader>
         <CardContent className="px-4 sm:px-6">
@@ -550,7 +595,11 @@ export default function DashboardPage() {
                   </PieChart>
                 </ChartContainer>
 
-                <div className="space-y-3" role="list" aria-label="Category ranking">
+                <div
+                  className="space-y-3"
+                  role="list"
+                  aria-label={p({ th: 'อันดับหมวดหมู่', en: 'Category ranking', zh: '类别排名' })}
+                >
                   {categoryBreakdown.slice(0, 6).map((category, index) => {
                     const maxValue = categoryBreakdown[0]?.value || 1
                     const barWidth = Math.round((category.value / maxValue) * 100)
@@ -565,7 +614,7 @@ export default function DashboardPage() {
                               }}
                               aria-hidden
                             />
-                            <span className="truncate">{category.name}</span>
+                            <span className="truncate">{categoryLabel(category.name, locale)}</span>
                           </div>
                           <div className="flex shrink-0 items-center gap-2">
                             <span className="text-muted-foreground tabular-nums">
@@ -579,7 +628,7 @@ export default function DashboardPage() {
                         <Progress
                           value={barWidth}
                           className="h-1.5"
-                          aria-label={`${category.name} ${category.percentage}% of expenses`}
+                          aria-label={`${categoryLabel(category.name, locale)} ${category.percentage}%`}
                         />
                       </div>
                     )
@@ -588,7 +637,11 @@ export default function DashboardPage() {
               </div>
             ) : (
               <ChartEmpty>
-                No expenses this month. Log a purchase to see category breakdown.
+                {p({
+                  th: 'เดือนนี้ยังไม่มีรายจ่าย',
+                  en: 'No expenses this month yet.',
+                  zh: '本月暂无支出',
+                })}
               </ChartEmpty>
             )}
           </MonthContentTransition>
@@ -603,15 +656,19 @@ export default function DashboardPage() {
                 <CardTitle className="text-balance">
                   <MonthAnimatedValue valueKey={`${monthKey}-trend-title`} className="inline">
                     {isCurrentMonthSelection(selectedMonth)
-                      ? 'Weekly spending'
-                      : 'Weekday pattern'}
+                      ? p({ th: 'ใช้จ่ายสัปดาห์นี้', en: 'Weekly spending', zh: '本周支出' })
+                      : p({ th: 'ใช้จ่ายตามวันในสัปดาห์', en: 'Weekday pattern', zh: '按星期' })}
                   </MonthAnimatedValue>
                 </CardTitle>
                 <CardDescription className="text-pretty">
                   <MonthAnimatedValue valueKey={`${monthKey}-weekday-desc`} className="inline">
                     {isCurrentMonthSelection(selectedMonth)
-                      ? 'Daily spending this week'
-                      : `By day of week in ${monthLabel}`}
+                      ? p({ th: 'รายวันของสัปดาห์นี้', en: 'Daily spending this week', zh: '本周每日支出' })
+                      : p({
+                          th: `แยกตามวันใน ${monthLabel}`,
+                          en: `By day of week in ${monthLabel}`,
+                          zh: `${monthLabel} 按星期`,
+                        })}
                   </MonthAnimatedValue>
                 </CardDescription>
               </div>
@@ -635,7 +692,9 @@ export default function DashboardPage() {
                       <TrendingUp className="mr-1 size-3" aria-hidden />
                     )}
                     {weekComparison.value}{' '}
-                    {isCurrentMonthSelection(selectedMonth) ? 'vs last week' : 'vs last month'}
+                    {isCurrentMonthSelection(selectedMonth)
+                      ? p({ th: 'เทียบสัปดาห์ก่อน', en: 'vs last week', zh: '较上周' })
+                      : p({ th: 'เทียบเดือนก่อน', en: 'vs last month', zh: '较上月' })}
                   </Badge>
                 </MonthAnimatedValue>
               )}
@@ -684,7 +743,9 @@ export default function DashboardPage() {
                     </LineChart>
                   </ChartContainer>
                 ) : (
-                  <ChartEmpty>No spending this week yet.</ChartEmpty>
+                  <ChartEmpty>
+                    {p({ th: 'สัปดาห์นี้ยังไม่มีรายจ่าย', en: 'No spending this week yet.', zh: '本周暂无支出' })}
+                  </ChartEmpty>
                 )
               ) : (
                 weekdayPattern.some((d) => d.thisWeek > 0) ? (
@@ -720,12 +781,18 @@ export default function DashboardPage() {
                         dataKey="thisWeek"
                         fill="var(--chart-1)"
                         radius={[4, 4, 0, 0]}
-                        name="Spending"
+                        name={p({ th: 'รายจ่าย', en: 'Spending', zh: '支出' })}
                       />
                     </BarChart>
                   </ChartContainer>
                 ) : (
-                  <ChartEmpty>No weekday spending in {monthLabel}.</ChartEmpty>
+                  <ChartEmpty>
+                    {p({
+                      th: `${monthLabel} ยังไม่มีรายจ่าย`,
+                      en: `No spending in ${monthLabel}.`,
+                      zh: `${monthLabel} 暂无支出`,
+                    })}
+                  </ChartEmpty>
                 )
               )}
             </MonthContentTransition>
@@ -734,11 +801,16 @@ export default function DashboardPage() {
 
         <Card className="min-w-0 overflow-hidden">
           <CardHeader className="px-4 sm:px-6">
-            <CardTitle className="text-balance">Daily spending</CardTitle>
+            <CardTitle className="text-balance">
+              {p({ th: 'ใช้จ่ายรายวัน', en: 'Daily spending', zh: '每日支出' })}
+            </CardTitle>
             <CardDescription className="text-pretty">
-              Day-by-day pattern for{' '}
               <MonthAnimatedValue valueKey={`${monthKey}-daily-desc`} className="inline">
-                {monthLabel}
+                {p({
+                  th: `ยอดแต่ละวันของ ${monthLabel}`,
+                  en: `Day-by-day pattern for ${monthLabel}`,
+                  zh: `${monthLabel} 每日走势`,
+                })}
               </MonthAnimatedValue>
             </CardDescription>
           </CardHeader>
@@ -784,7 +856,13 @@ export default function DashboardPage() {
                   </LineChart>
                 </ChartContainer>
               ) : (
-                <ChartEmpty>No daily spending recorded for {monthLabel}.</ChartEmpty>
+                <ChartEmpty>
+                  {p({
+                    th: `${monthLabel} ยังไม่มีรายจ่าย`,
+                    en: `No spending recorded for ${monthLabel}.`,
+                    zh: `${monthLabel} 暂无支出`,
+                  })}
+                </ChartEmpty>
               )}
             </MonthContentTransition>
           </CardContent>
@@ -793,16 +871,24 @@ export default function DashboardPage() {
 
       <Card className="min-w-0 overflow-hidden">
         <CardHeader className="px-4 sm:px-6">
-          <CardTitle className="text-balance">Habits at a glance</CardTitle>
+          <CardTitle className="text-balance">
+            {p({ th: 'พฤติกรรมการใช้เงิน', en: 'Habits at a glance', zh: '消费习惯' })}
+          </CardTitle>
           <CardDescription className="text-pretty">
-            Snapshot of how you spent in {monthLabel}
+            {p({
+              th: `สรุปการใช้เงินของ ${monthLabel}`,
+              en: `Snapshot of how you spent in ${monthLabel}`,
+              zh: `${monthLabel} 消费概览`,
+            })}
           </CardDescription>
         </CardHeader>
         <CardContent className="px-4 sm:px-6">
           <MonthContentTransition monthKey={monthKey} direction={monthDirection}>
             <dl className="grid gap-0 divide-y divide-border sm:grid-cols-2 sm:gap-x-8 sm:divide-y-0">
               <div className="flex items-baseline justify-between gap-4 py-3 sm:border-b sm:border-border sm:py-3.5">
-                <dt className="text-sm text-muted-foreground">Avg. daily spending</dt>
+                <dt className="text-sm text-muted-foreground">
+                  {p({ th: 'ใช้เฉลี่ยต่อวัน', en: 'Avg. daily spending', zh: '日均支出' })}
+                </dt>
                 <dd>
                   <MonthAnimatedValue
                     valueKey={`${monthKey}-avg-daily`}
@@ -813,7 +899,9 @@ export default function DashboardPage() {
                 </dd>
               </div>
               <div className="flex items-baseline justify-between gap-4 py-3 sm:border-b sm:border-border sm:py-3.5">
-                <dt className="text-sm text-muted-foreground">Highest spending day</dt>
+                <dt className="text-sm text-muted-foreground">
+                  {p({ th: 'วันที่ใช้เยอะสุด', en: 'Highest spending day', zh: '支出最多的一天' })}
+                </dt>
                 <dd>
                   <MonthAnimatedValue
                     valueKey={`${monthKey}-highest-day`}
@@ -824,23 +912,31 @@ export default function DashboardPage() {
                 </dd>
               </div>
               <div className="flex items-baseline justify-between gap-4 py-3 sm:py-3.5">
-                <dt className="text-sm text-muted-foreground">Top category</dt>
+                <dt className="text-sm text-muted-foreground">
+                  {p({ th: 'หมวดที่ใช้มากสุด', en: 'Top category', zh: '最大类别' })}
+                </dt>
                 <dd className="min-w-0 text-right">
                   <MonthAnimatedValue
                     valueKey={`${monthKey}-top-cat`}
                     className="block truncate text-sm font-semibold"
                   >
-                    {habits.topCategory}
+                    {habits.topCategory === '—' ? '—' : categoryLabel(habits.topCategory, locale)}
                   </MonthAnimatedValue>
                   {habits.topCategoryPct > 0 && (
                     <span className="text-xs text-muted-foreground tabular-nums">
-                      {habits.topCategoryPct}% of expenses
+                      {p({
+                        th: `${habits.topCategoryPct}% ของรายจ่าย`,
+                        en: `${habits.topCategoryPct}% of expenses`,
+                        zh: `占支出 ${habits.topCategoryPct}%`,
+                      })}
                     </span>
                   )}
                 </dd>
               </div>
               <div className="flex items-baseline justify-between gap-4 py-3 sm:py-3.5">
-                <dt className="text-sm text-muted-foreground">Transactions</dt>
+                <dt className="text-sm text-muted-foreground">
+                  {p({ th: 'จำนวนรายการ', en: 'Entries', zh: '记录数' })}
+                </dt>
                 <dd>
                   <MonthAnimatedValue
                     valueKey={`${monthKey}-habit-tx`}

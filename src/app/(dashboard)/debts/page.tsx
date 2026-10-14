@@ -34,6 +34,8 @@ import { useUserSettings } from '@/hooks/use-user-settings'
 import { usePaymentSources } from '@/hooks/use-payment-sources'
 import { useMoneyPools } from '@/hooks/use-money-pools'
 import { useLocale } from '@/components/locale-provider'
+import { useConfirm } from '@/components/shared/confirm-dialog'
+import { ContactSelect } from '@/components/friends/contact-select'
 import {
   Select,
   SelectContent,
@@ -256,10 +258,10 @@ function DebtTable({
     () => groupItemsByDate(debts, (debt) => resolveDebtDate(debt, txById)),
     [debts, txById]
   )
-  const personRole = type === 'owe' ? 'เจ้าหนี้' : 'ลูกหนี้'
-  const amountTone = type === 'owe' ? 'text-destructive' : 'text-success'
+  const personRole = type === 'owe' ? 'ต้องคืนให้' : 'รอเก็บจาก'
+  const amountTone = type === 'owe' ? 'text-foreground' : 'text-success'
   const avatarTone =
-    type === 'owe' ? 'bg-destructive/15 text-destructive' : 'bg-success/15 text-success'
+    type === 'owe' ? 'bg-warning/15 text-foreground' : 'bg-success/15 text-success'
 
   return (
     <>
@@ -572,7 +574,8 @@ export default function DebtsPage() {
   const { accountsEnabled, moneyPoolsEnabled } = useUserSettings()
   const { activeSources, defaultSource } = usePaymentSources()
   const { activePools } = useMoneyPools()
-  const { t } = useLocale()
+  const { t, p } = useLocale()
+  const { confirm, dialog: confirmDialog } = useConfirm()
 
   const txById = React.useMemo(() => {
     const map = new Map<string, Transaction>()
@@ -586,6 +589,7 @@ export default function DebtsPage() {
   const [newDebtType, setNewDebtType] = React.useState<'owe' | 'owed'>('owe')
   const [newDebtPerson, setNewDebtPerson] = React.useState('')
   const [newDebtAmount, setNewDebtAmount] = React.useState('')
+  const [isAddingDebt, setIsAddingDebt] = React.useState(false)
 
   const [settleDebtData, setSettleDebtData] = React.useState<UIGlobalDebt | null>(null)
   const [isSettleOpen, setIsSettleOpen] = React.useState(false)
@@ -735,6 +739,22 @@ export default function DebtsPage() {
   
   const netBalance = totalOwedToYou - totalOwed
 
+  const byPerson = (() => {
+    const map = new Map<string, { name: string; owedToYou: number; youOwe: number }>()
+    for (const d of allPending) {
+      const iOwe = d.fromUserId === user?.uid
+      const name = iOwe ? d.toDisplayName || d.toUserId : d.fromDisplayName || d.fromUserId
+      const key = name.trim().toLowerCase()
+      const entry = map.get(key) ?? { name, owedToYou: 0, youOwe: 0 }
+      if (iOwe) entry.youOwe += d.amount
+      else entry.owedToYou += d.amount
+      map.set(key, entry)
+    }
+    return [...map.values()]
+      .map((e) => ({ ...e, net: e.owedToYou - e.youOwe }))
+      .sort((a, b) => Math.abs(b.net) - Math.abs(a.net))
+  })()
+
   const handleSettleClick = (id: string) => {
     const debt = allPending.find(d => d.id === id)
     if (!debt) return
@@ -832,8 +852,39 @@ export default function DebtsPage() {
     setIsTxDetailOpen(true)
   }
 
+  const handleDeleteDebt = async (id: string) => {
+    const debt = debtById.get(id)
+    const person = debt
+      ? debt.fromUserId === user?.uid
+        ? debt.toDisplayName || debt.toUserId
+        : debt.fromDisplayName || debt.fromUserId
+      : ''
+    const ok = await confirm({
+      title: 'ลบหนี้รายการนี้?',
+      description: debt
+        ? `ยอด ฿${debt.amount.toLocaleString()} กับ ${person} จะหายจากยอดรวม ถ้าแค่ได้เงินคืนแล้ว ให้กด "บันทึกการจ่าย" แทน`
+        : undefined,
+      destructive: true,
+    })
+    if (!ok) return
+    try {
+      await removeDebt(id)
+      toast.success('ลบหนี้แล้ว')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'ลบไม่สำเร็จ')
+    }
+  }
+
   const handleDeletePayment = async (payment: PaymentHistoryItem) => {
     if (deletingPaymentId) return
+
+    const ok = await confirm({
+      title: 'ยกเลิกการจ่ายคืนนี้?',
+      description: `฿${payment.amount.toLocaleString()} กับ ${payment.person} จะกลับไปเป็นยอดค้างอีกครั้ง`,
+      confirmLabel: 'ยกเลิกการจ่าย',
+      destructive: true,
+    })
+    if (!ok) return
 
     setDeletingPaymentId(payment.id)
     try {
@@ -888,17 +939,24 @@ export default function DebtsPage() {
 
   const handleAddDebt = async () => {
     if (!newDebtPerson || !newDebtAmount || isNaN(parseFloat(newDebtAmount))) return
-    
-    await addDebt({
-      fromUserId: newDebtType === 'owe' ? user!.uid : newDebtPerson,
-      toUserId: newDebtType === 'owe' ? newDebtPerson : user!.uid,
-      amount: parseFloat(newDebtAmount),
-      relatedTxIds: [],
-    })
 
-    setIsAddOpen(false)
-    setNewDebtPerson('')
-    setNewDebtAmount('')
+    setIsAddingDebt(true)
+    try {
+      await addDebt({
+        fromUserId: newDebtType === 'owe' ? user!.uid : newDebtPerson,
+        toUserId: newDebtType === 'owe' ? newDebtPerson : user!.uid,
+        amount: parseFloat(newDebtAmount),
+        relatedTxIds: [],
+      })
+      toast.success('จดหนี้แล้ว')
+      setIsAddOpen(false)
+      setNewDebtPerson('')
+      setNewDebtAmount('')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'บันทึกไม่สำเร็จ')
+    } finally {
+      setIsAddingDebt(false)
+    }
   }
 
   const settleIsPayer = settleDebtData?.fromUserId === user?.uid
@@ -915,19 +973,25 @@ export default function DebtsPage() {
 
   return (
     <div className="flex flex-col gap-6 p-4 sm:p-6">
+      {confirmDialog}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex flex-col gap-1">
-          <h1 className="text-2xl font-semibold tracking-tight text-balance">Debts</h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-balance">{t('nav.debts')}</h1>
           <p className="max-w-prose text-sm text-muted-foreground text-pretty">
-            ดูชัดว่าใครติดใคร แล้วจ่ายคืนได้ในไม่กี่คลิก
+            {p({
+              th: 'ดูชัดว่าใครติดใคร แล้วบันทึกการจ่ายคืนได้ในไม่กี่คลิก',
+              en: 'See who owes whom and record paybacks in a few taps',
+              zh: '清楚看到谁欠谁，几步记录还款',
+            })}
           </p>
         </div>
         <Button
-          className="w-full gap-2 sm:w-auto"
+          variant="outline"
+          className="h-10 w-full gap-2 sm:w-auto"
           onClick={() => setIsAddOpen(true)}
         >
           <Plus className="size-4" aria-hidden />
-          Record Debt
+          {p({ th: 'จดหนี้', en: 'Record a debt', zh: '记录债务' })}
         </Button>
       </div>
 
@@ -935,14 +999,14 @@ export default function DebtsPage() {
         <Card className="shadow-sm animate-in fade-in-0 slide-in-from-bottom-1 duration-200 fill-mode-both motion-reduce:animate-none">
           <CardContent className="pt-6">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Send className="size-4 text-destructive" aria-hidden />
-              You owe
+              <Send className="size-4" aria-hidden />
+              {p({ th: 'ฉันต้องจ่ายคืน', en: 'You owe', zh: '我欠别人' })}
             </div>
-            <p className="mt-2 text-2xl font-bold tabular-nums text-destructive sm:text-3xl">
+            <p className="mt-2 text-2xl font-bold tabular-nums text-foreground sm:text-3xl">
               {formatDebtAmount(totalOwed)}
             </p>
             <p className="mt-1 text-sm text-muted-foreground tabular-nums">
-              {youOwe.length} active
+              {p({ th: `${youOwe.length} รายการ`, en: `${youOwe.length} open`, zh: `${youOwe.length} 笔` })}
             </p>
           </CardContent>
         </Card>
@@ -954,13 +1018,13 @@ export default function DebtsPage() {
           <CardContent className="pt-6">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Wallet className="size-4 text-success" aria-hidden />
-              Owed to you
+              {p({ th: 'เพื่อนต้องคืนฉัน', en: 'Owed to you', zh: '别人欠我' })}
             </div>
             <p className="mt-2 text-2xl font-bold tabular-nums text-success sm:text-3xl">
               {formatDebtAmount(totalOwedToYou)}
             </p>
             <p className="mt-1 text-sm text-muted-foreground tabular-nums">
-              {owedToYou.length} active
+              {p({ th: `${owedToYou.length} รายการ`, en: `${owedToYou.length} open`, zh: `${owedToYou.length} 笔` })}
             </p>
           </CardContent>
         </Card>
@@ -972,7 +1036,7 @@ export default function DebtsPage() {
           <CardContent className="pt-6">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Users className="size-4" aria-hidden />
-              Net balance
+              {p({ th: 'หักลบแล้ว', en: 'Net balance', zh: '净额' })}
             </div>
             <p
               className={cn(
@@ -985,46 +1049,94 @@ export default function DebtsPage() {
             </p>
             <p className="mt-1 text-sm text-muted-foreground">
               {netBalance > 0
-                ? 'In your favor'
+                ? p({ th: 'โดยรวมเพื่อนติดคุณ', en: 'Overall, others owe you', zh: '总体别人欠你' })
                 : netBalance < 0
-                  ? 'You settle more'
-                  : 'All settled'}
+                  ? p({ th: 'โดยรวมคุณต้องจ่ายคืน', en: 'Overall, you owe others', zh: '总体你欠别人' })
+                  : p({ th: 'เคลียร์หมดแล้ว', en: 'All settled', zh: '已全部结清' })}
             </p>
           </CardContent>
         </Card>
       </div>
 
+      {byPerson.length > 0 && (
+        <Card className="shadow-sm">
+          <CardContent className="p-4">
+            <p className="text-sm font-semibold tracking-tight">
+              {p({ th: 'สรุปรายคน (หักลบแล้ว)', en: 'Per person (netted)', zh: '按人汇总（已抵消）' })}
+            </p>
+            <ul className="mt-2 divide-y divide-border">
+              {byPerson.map((person) => (
+                <li key={person.name} className="flex items-center justify-between gap-3 py-2.5">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">{person.name}</p>
+                    {person.owedToYou > 0 && person.youOwe > 0 && (
+                      <p className="text-xs text-muted-foreground tabular-nums">
+                        {p({
+                          th: `เขาติดคุณ ${formatDebtAmount(person.owedToYou)} · คุณติดเขา ${formatDebtAmount(person.youOwe)}`,
+                          en: `They owe ${formatDebtAmount(person.owedToYou)} · you owe ${formatDebtAmount(person.youOwe)}`,
+                          zh: `对方欠 ${formatDebtAmount(person.owedToYou)} · 你欠 ${formatDebtAmount(person.youOwe)}`,
+                        })}
+                      </p>
+                    )}
+                  </div>
+                  <p
+                    className={cn(
+                      'shrink-0 text-sm font-semibold tabular-nums',
+                      person.net > 0 ? 'text-success' : 'text-foreground'
+                    )}
+                  >
+                    {person.net > 0
+                      ? p({
+                          th: `ติดคุณ ${formatDebtAmount(person.net)}`,
+                          en: `Owes you ${formatDebtAmount(person.net)}`,
+                          zh: `欠你 ${formatDebtAmount(person.net)}`,
+                        })
+                      : person.net < 0
+                        ? p({
+                            th: `คุณติด ${formatDebtAmount(-person.net)}`,
+                            en: `You owe ${formatDebtAmount(-person.net)}`,
+                            zh: `你欠 ${formatDebtAmount(-person.net)}`,
+                          })
+                        : p({ th: 'หักลบแล้วเท่ากัน', en: 'Even', zh: '已抵消' })}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
+
       <Tabs defaultValue="you-owe" className="w-full">
         <TabsList className="h-auto w-full flex-wrap justify-start gap-1 p-1">
           <TabsTrigger value="you-owe" className="gap-2 px-3 py-2">
             <Send className="size-4 shrink-0" aria-hidden />
-            <span>You Owe</span>
+            <span>{p({ th: 'ฉันต้องจ่าย', en: 'You owe', zh: '我欠' })}</span>
             <Badge
               variant="secondary"
               className="rounded-md tabular-nums"
-              aria-label={`${youOwe.length} debts you owe`}
+              aria-hidden
             >
               {youOwe.length}
             </Badge>
           </TabsTrigger>
           <TabsTrigger value="owed-to-you" className="gap-2 px-3 py-2">
             <Wallet className="size-4 shrink-0" aria-hidden />
-            <span>Owed to You</span>
+            <span>{p({ th: 'เพื่อนต้องคืน', en: 'Owed to you', zh: '欠我' })}</span>
             <Badge
               variant="secondary"
               className="rounded-md tabular-nums"
-              aria-label={`${owedToYou.length} debts owed to you`}
+              aria-hidden
             >
               {owedToYou.length}
             </Badge>
           </TabsTrigger>
           <TabsTrigger value="history" className="gap-2 px-3 py-2">
             <History className="size-4 shrink-0" aria-hidden />
-            <span>History</span>
+            <span>{p({ th: 'ประวัติ', en: 'History', zh: '历史' })}</span>
             <Badge
               variant="secondary"
               className="rounded-md tabular-nums"
-              aria-label={`${paymentHistory.length} settlements`}
+              aria-hidden
             >
               {paymentHistory.length}
             </Badge>
@@ -1047,7 +1159,7 @@ export default function DebtsPage() {
               type="owe"
               txById={txById}
               onSettle={handleSettleClick}
-              onDelete={removeDebt}
+              onDelete={handleDeleteDebt}
               onViewTransaction={handleViewTransaction}
             />
           )}
@@ -1069,7 +1181,7 @@ export default function DebtsPage() {
               type="owed"
               txById={txById}
               onSettle={handleSettleClick}
-              onDelete={removeDebt}
+              onDelete={handleDeleteDebt}
               onViewTransaction={handleViewTransaction}
             />
           )}
@@ -1116,7 +1228,7 @@ export default function DebtsPage() {
                               <p
                                 className={cn(
                                   'shrink-0 font-semibold tabular-nums',
-                                  payment.isReceived ? 'text-success' : 'text-destructive'
+                                  payment.isReceived ? 'text-success' : 'text-foreground'
                                 )}
                               >
                                 {formatDebtAmount(payment.amount, {
@@ -1179,7 +1291,7 @@ export default function DebtsPage() {
                                       'flex size-7 items-center justify-center rounded-full',
                                       payment.isReceived
                                         ? 'bg-success/15 text-success'
-                                        : 'bg-destructive/15 text-destructive'
+                                        : 'bg-muted text-muted-foreground'
                                     )}
                                     aria-hidden
                                   >
@@ -1205,7 +1317,7 @@ export default function DebtsPage() {
                                   'pr-6 text-right font-semibold tabular-nums',
                                   payment.isReceived
                                     ? 'text-success'
-                                    : 'text-destructive'
+                                    : 'text-foreground'
                                 )}
                               >
                                 {formatDebtAmount(payment.amount, {
@@ -1241,41 +1353,51 @@ export default function DebtsPage() {
       <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Record debt</DialogTitle>
+            <DialogTitle>{p({ th: 'จดหนี้', en: 'Record a debt', zh: '记录债务' })}</DialogTitle>
             <DialogDescription>
-              บันทึกใครติดใคร — ชัดเจน ไม่ต้องตามทวงเอง
+              {p({
+                th: 'สำหรับเงินที่ยืม/ให้ยืมนอกรายการปกติ ถ้าเป็นค่าข้าวที่หารกัน ให้จดเป็นรายการแล้วเปิด "หารกับเพื่อน" แทน',
+                en: 'For loans outside normal entries. For shared bills, add an entry and turn on "Split" instead.',
+                zh: '用于普通记录之外的借贷。共同账单请添加记录并开启"分摊"',
+              })}
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-2">
             <div className="grid gap-2">
-              <Label htmlFor="debt-type">Direction</Label>
-              <Select
-                value={newDebtType}
-                onValueChange={(v: 'owe' | 'owed') => setNewDebtType(v)}
-              >
-                <SelectTrigger id="debt-type">
-                  <SelectValue placeholder="Select type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="owe">I owe someone</SelectItem>
-                  <SelectItem value="owed">Someone owes me</SelectItem>
-                </SelectContent>
-              </Select>
+              <p className="text-sm font-medium" id="debt-type-label">
+                {p({ th: 'ใครติดใคร', en: 'Who owes whom', zh: '谁欠谁' })}
+              </p>
+              <div className="grid grid-cols-2 gap-1.5" role="group" aria-labelledby="debt-type-label">
+                {(['owed', 'owe'] as const).map((type) => (
+                  <Button
+                    key={type}
+                    type="button"
+                    variant={newDebtType === type ? 'default' : 'outline'}
+                    className="h-10"
+                    aria-pressed={newDebtType === type}
+                    onClick={() => setNewDebtType(type)}
+                  >
+                    {type === 'owed'
+                      ? p({ th: 'เพื่อนติดเงินฉัน', en: 'They owe me', zh: '对方欠我' })
+                      : p({ th: 'ฉันติดเงินเพื่อน', en: 'I owe them', zh: '我欠对方' })}
+                  </Button>
+                ))}
+              </div>
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="debt-person">
-                {newDebtType === 'owe' ? 'Pay to' : 'Receive from'}
-              </Label>
-              <Input
+              <Label htmlFor="debt-person">{p({ th: 'กับใคร', en: 'With', zh: '对象' })}</Label>
+              <ContactSelect
                 id="debt-person"
-                placeholder="ชื่อเพื่อน"
                 value={newDebtPerson}
-                onChange={(e) => setNewDebtPerson(e.target.value)}
-                autoComplete="name"
+                onChange={setNewDebtPerson}
+                includeMe={false}
+                allowNone
+                noneLabel={p({ th: '— เลือกเพื่อน —', en: '— Choose a person —', zh: '— 选择联系人 —' })}
+                allowCreate
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="debt-amount">Amount (฿)</Label>
+              <Label htmlFor="debt-amount">{p({ th: 'จำนวนเงิน (฿)', en: 'Amount (฿)', zh: '金额（฿）' })}</Label>
               <Input
                 id="debt-amount"
                 type="number"
@@ -1289,12 +1411,12 @@ export default function DebtsPage() {
               />
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsAddOpen(false)}>
-              Cancel
+          <DialogFooter className="gap-2">
+            <Button variant="outline" className="h-10" onClick={() => setIsAddOpen(false)}>
+              {t('common.cancel')}
             </Button>
-            <Button onClick={handleAddDebt} disabled={!canSaveDebt}>
-              Save
+            <Button className="h-10" onClick={handleAddDebt} disabled={!canSaveDebt || isAddingDebt}>
+              {isAddingDebt ? t('common.saving') : t('common.save')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1365,7 +1487,7 @@ export default function DebtsPage() {
                 className={cn(
                   'rounded-xl border px-4 py-3',
                   settleIsPayer
-                    ? 'border-destructive/20 bg-destructive/5'
+                    ? 'border-warning/30 bg-warning/5'
                     : 'border-success/20 bg-success/5'
                 )}
               >
@@ -1373,7 +1495,7 @@ export default function DebtsPage() {
                 <p
                   className={cn(
                     'mt-1 text-xl font-semibold tabular-nums',
-                    settleIsPayer ? 'text-destructive' : 'text-success'
+                    settleIsPayer ? 'text-foreground' : 'text-success'
                   )}
                 >
                   {formatDebtAmount(settleDebtData.amount)}

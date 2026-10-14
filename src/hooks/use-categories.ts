@@ -10,7 +10,7 @@ import {
   updateCategory,
   deleteCategory,
 } from '@/lib/firestore';
-import { buildDefaultCategories } from '@/lib/default-categories';
+import { buildDefaultCategories, compareCategories } from '@/lib/default-categories';
 
 /** Shared across hook instances to prevent parallel default seeding. */
 const seedingUsers = new Set<string>();
@@ -78,7 +78,7 @@ export function useCategories() {
           }
         }
 
-        const sorted = [...items].sort((a, b) => a.name.localeCompare(b.name));
+        const sorted = [...items].sort(compareCategories);
         setCategories(sorted);
         setLoading(false);
 

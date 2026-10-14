@@ -8,6 +8,7 @@ import {
 } from '@/lib/immich/client';
 import { adminDb } from '@/lib/firebase-admin';
 import { photoDb } from '@/lib/photo-firebase-admin';
+import { IMMICH_ENABLED, IMMICH_MAINTENANCE_MESSAGE } from '@/lib/immich/feature';
 
 
 const MAX_SIZE = 15 * 1024 * 1024;
@@ -16,6 +17,9 @@ export async function POST(request: NextRequest) {
   const session = await verifySession();
   if (!session) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  if (!IMMICH_ENABLED) {
+    return NextResponse.json({ error: IMMICH_MAINTENANCE_MESSAGE }, { status: 503 });
   }
 
   const immich = await getUserImmichSettings(session.uid);

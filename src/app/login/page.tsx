@@ -17,6 +17,8 @@ import { AlertCircle, Loader2 } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState, Suspense } from 'react';
 import { FirebaseError } from 'firebase/app';
+import { useLocale } from '@/components/locale-provider';
+import type { LocalizedText } from '@/lib/i18n';
 
 function GoogleMark({ className }: { className?: string }) {
   return (
@@ -42,11 +44,12 @@ function GoogleMark({ className }: { className?: string }) {
 }
 
 function LoginSkeleton() {
+  const { p } = useLocale();
   return (
     <Card
       className="w-full max-w-md"
       aria-busy="true"
-      aria-label="Loading sign-in"
+      aria-label={p({ th: 'กำลังโหลดหน้าเข้าสู่ระบบ', en: 'Loading sign-in', zh: '正在加载登录' })}
     >
       <CardHeader className="justify-items-center text-center">
         <Skeleton className="size-10 rounded-lg motion-reduce:animate-none" />
@@ -66,9 +69,15 @@ function LoginSkeleton() {
   );
 }
 
-function getSignInErrorMessage(error: unknown): string | null {
+const GENERIC_SIGN_IN_ERROR: LocalizedText = {
+  th: 'เข้าสู่ระบบไม่สำเร็จ ลองใหม่อีกครั้ง',
+  en: 'We couldn’t sign you in. Please try again.',
+  zh: '登录失败，请重试。',
+};
+
+function getSignInErrorMessage(error: unknown): LocalizedText | null {
   if (!(error instanceof FirebaseError)) {
-    return 'We couldn’t sign you in. Please try again.';
+    return GENERIC_SIGN_IN_ERROR;
   }
 
   switch (error.code) {
@@ -76,16 +85,25 @@ function getSignInErrorMessage(error: unknown): string | null {
     case 'auth/cancelled-popup-request':
       return null;
     case 'auth/popup-blocked':
-      return 'Your browser blocked the sign-in window. Allow popups for this site and try again.';
+      return {
+        th: 'เบราว์เซอร์บล็อกหน้าต่างเข้าสู่ระบบ อนุญาตป๊อปอัปสำหรับเว็บนี้แล้วลองใหม่',
+        en: 'Your browser blocked the sign-in window. Allow popups for this site and try again.',
+        zh: '浏览器拦截了登录窗口。请允许此网站弹出窗口后重试。',
+      };
     case 'auth/network-request-failed':
-      return 'Network error. Check your connection and try again.';
+      return {
+        th: 'เชื่อมต่ออินเทอร์เน็ตไม่ได้ ตรวจสอบสัญญาณแล้วลองใหม่',
+        en: 'Network error. Check your connection and try again.',
+        zh: '网络错误，请检查连接后重试。',
+      };
     default:
-      return 'We couldn’t sign you in. Please try again.';
+      return GENERIC_SIGN_IN_ERROR;
   }
 }
 
 function LoginContent() {
   const { user, signInWithGoogle, loading } = useAuth();
+  const { p } = useLocale();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [isSigningIn, setIsSigningIn] = useState(false);
@@ -111,7 +129,7 @@ function LoginContent() {
     } catch (error) {
       const message = getSignInErrorMessage(error);
       if (message) {
-        setErrorMessage(message);
+        setErrorMessage(p(message));
       }
     } finally {
       setIsSigningIn(false);
@@ -134,7 +152,11 @@ function LoginContent() {
               Finance Tracker
             </CardTitle>
             <CardDescription className="text-pretty">
-              Track spending, split costs, and settle up with friends.
+              {p({
+                th: 'จดรายจ่าย หารค่าใช้จ่าย และเคลียร์เงินกับเพื่อนได้ง่าย ๆ',
+                en: 'Track spending, split costs, and settle up with friends.',
+                zh: '记录支出、分摊费用，轻松和朋友结清。',
+              })}
             </CardDescription>
           </div>
         </CardHeader>
@@ -142,14 +164,18 @@ function LoginContent() {
         <CardContent className="space-y-4">
           {errorMessage ? (
             <Alert variant="destructive">
-              <AlertCircle />
-              <AlertTitle>Sign-in failed</AlertTitle>
+              <AlertCircle aria-hidden />
+              <AlertTitle>{p({ th: 'เข้าสู่ระบบไม่สำเร็จ', en: 'Sign-in failed', zh: '登录失败' })}</AlertTitle>
               <AlertDescription>{errorMessage}</AlertDescription>
             </Alert>
           ) : null}
 
           <p className="text-center text-sm text-muted-foreground text-pretty">
-            Sign in to open Transactions and keep your numbers straight.
+            {p({
+              th: 'เข้าสู่ระบบเพื่อดูรายการและจัดการเงินของคุณ',
+              en: 'Sign in to open Transactions and keep your numbers straight.',
+              zh: '登录后即可查看交易记录，管好你的账。',
+            })}
           </p>
 
           <Button
@@ -166,12 +192,12 @@ function LoginContent() {
                   className="size-4 animate-spin motion-reduce:animate-none"
                   aria-hidden="true"
                 />
-                <span>Signing in…</span>
+                <span>{p({ th: 'กำลังเข้าสู่ระบบ…', en: 'Signing in…', zh: '正在登录…' })}</span>
               </>
             ) : (
               <>
                 <GoogleMark className="size-4" />
-                <span>Continue with Google</span>
+                <span>{p({ th: 'เข้าสู่ระบบด้วย Google', en: 'Continue with Google', zh: '使用 Google 继续' })}</span>
               </>
             )}
           </Button>
@@ -179,7 +205,11 @@ function LoginContent() {
 
         <CardFooter className="justify-center">
           <p className="max-w-prose px-2 text-center text-xs text-muted-foreground text-pretty">
-            By continuing, you agree to our Terms of Service and Privacy Policy.
+            {p({
+              th: 'การเข้าสู่ระบบถือว่าคุณยอมรับข้อกำหนดการใช้งานและนโยบายความเป็นส่วนตัว',
+              en: 'By continuing, you agree to our Terms of Service and Privacy Policy.',
+              zh: '继续即表示你同意我们的服务条款和隐私政策。',
+            })}
           </p>
         </CardFooter>
       </Card>

@@ -6,12 +6,14 @@ import { db } from '@/lib/firebase';
 import { useAuth } from '@/hooks/use-auth';
 import { useUserSettings } from '@/hooks/use-user-settings';
 import { AppLocale, isAppLocale, LOCALE_STORAGE_KEY } from '@/lib/locale';
-import { t as translate, type MessageKey } from '@/lib/i18n';
+import { pick, t as translate, type LocalizedText, type MessageKey } from '@/lib/i18n';
 
 interface LocaleContextType {
   locale: AppLocale;
   setLocale: (locale: AppLocale) => Promise<void>;
   t: (key: MessageKey, vars?: Record<string, string>) => string;
+  /** Inline localized copy: p({ th, en, zh? }). */
+  p: (text: LocalizedText) => string;
   detecting: boolean;
 }
 
@@ -19,6 +21,7 @@ const LocaleContext = createContext<LocaleContextType>({
   locale: 'en',
   setLocale: async () => {},
   t: (key) => key,
+  p: (text) => text.en,
   detecting: false,
 });
 
@@ -122,8 +125,10 @@ export function LocaleProvider({ children }: { children: React.ReactNode }) {
     [locale]
   );
 
+  const p = useCallback((text: LocalizedText) => pick(locale, text), [locale]);
+
   return (
-    <LocaleContext.Provider value={{ locale, setLocale, t, detecting }}>
+    <LocaleContext.Provider value={{ locale, setLocale, t, p, detecting }}>
       {children}
     </LocaleContext.Provider>
   );

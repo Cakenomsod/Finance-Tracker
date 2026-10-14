@@ -367,7 +367,7 @@ export default function FriendsPage() {
             <Clock className="size-4" aria-hidden />
             คำขอที่รอ
             {pendingReceived.length > 0 ? (
-              <Badge className="rounded-full bg-destructive text-destructive-foreground tabular-nums">
+              <Badge className="rounded-full tabular-nums">
                 {pendingReceived.length}
               </Badge>
             ) : null}

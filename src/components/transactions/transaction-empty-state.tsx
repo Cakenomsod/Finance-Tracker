@@ -1,5 +1,8 @@
+'use client'
+
 import { Plus, Receipt } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { useLocale } from '@/components/locale-provider'
 import { cn } from '@/lib/utils'
 
 type TransactionEmptyStateProps = {
@@ -15,23 +18,42 @@ export function TransactionEmptyState({
   onClearFilters,
   className,
 }: TransactionEmptyStateProps) {
+  const { p } = useLocale()
   const isNoData = variant === 'no-data'
   const isFilteredLoadOlder = variant === 'filtered-load-older'
   const isNoMonth = variant === 'no-month-data'
 
   const title = isNoData
-    ? 'ยังไม่มีธุรกรรม'
+    ? p({ th: 'ยังไม่มีรายการ', en: 'No entries yet', zh: '还没有记录' })
     : isNoMonth
-      ? 'ไม่มีธุรกรรมในเดือนนี้'
-      : 'ไม่พบรายการที่ตรงกับตัวกรอง'
+      ? p({ th: 'เดือนนี้ยังไม่มีรายการ', en: 'Nothing this month', zh: '本月没有记录' })
+      : p({ th: 'ไม่พบรายการที่ตรงกับตัวกรอง', en: 'No entries match your filters', zh: '没有符合筛选的记录' })
 
   const description = isNoData
-    ? 'เริ่มบันทึกรายรับรายจ่ายด้วยการเพิ่มรายการแรกของคุณ — หรือใช้ช่อง AI ด้านบนเพื่อบันทึกเร็วขึ้น'
+    ? p({
+        th: 'จดรายการแรกได้ภายใน 5 วินาที — ใส่แค่จำนวนเงินแล้วกดบันทึก หรือพิมพ์ "ข้าว 45" ในช่อง AI ด้านบน',
+        en: 'Your first entry takes 5 seconds — enter an amount and save, or type "lunch 45" in the AI box above',
+        zh: '第一条记录只需 5 秒——输入金额保存，或在上方 AI 框输入"午饭 45"',
+      })
     : isFilteredLoadOlder
-      ? 'ลองเลื่อนลงเพื่อโหลดรายการเพิ่ม หรือปรับตัวกรองใหม่'
+      ? p({
+          th: 'เลื่อนลงเพื่อโหลดรายการเก่าเพิ่ม หรือปรับตัวกรองใหม่',
+          en: 'Scroll down to load older entries, or change the filters',
+          zh: '向下滚动加载更早记录，或调整筛选',
+        })
       : isNoMonth
-        ? 'เปลี่ยนเดือนด้านบน หรือเพิ่มรายการใหม่สำหรับเดือนนี้'
-        : 'ลองเปลี่ยนคำค้นหาหรือเลือกหมวดหมู่อื่น'
+        ? p({
+            th: 'เปลี่ยนเดือนด้านบน หรือเพิ่มรายการใหม่ของเดือนนี้',
+            en: 'Pick another month above, or add an entry for this month',
+            zh: '在上方切换月份，或为本月添加记录',
+          })
+        : p({
+            th: 'ลองคำค้นอื่น หรือเลือกหมวดหมู่อื่น',
+            en: 'Try a different search or category',
+            zh: '换个关键词或类别试试',
+          })
+
+  const addLabel = p({ th: 'จดรายการ', en: 'Add entry', zh: '添加记录' })
 
   return (
     <div
@@ -49,21 +71,15 @@ export function TransactionEmptyState({
         {description}
       </p>
       <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
-        {isNoData && onAddClick && (
-          <Button size="sm" className="gap-2" onClick={onAddClick}>
-            <Plus className="size-4" aria-hidden />
-            เพิ่มธุรกรรม
-          </Button>
-        )}
         {!isNoData && onClearFilters && (
-          <Button size="sm" variant="outline" onClick={onClearFilters}>
-            ล้างตัวกรอง
+          <Button variant="outline" className="h-10" onClick={onClearFilters}>
+            {p({ th: 'ล้างตัวกรอง', en: 'Clear filters', zh: '清除筛选' })}
           </Button>
         )}
-        {!isNoData && onAddClick && (
-          <Button size="sm" className="gap-2" onClick={onAddClick}>
+        {onAddClick && (
+          <Button className="h-10 gap-2" onClick={onAddClick}>
             <Plus className="size-4" aria-hidden />
-            เพิ่มธุรกรรม
+            {addLabel}
           </Button>
         )}
       </div>

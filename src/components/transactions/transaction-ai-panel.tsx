@@ -60,6 +60,11 @@ export const TransactionAiPanel = React.forwardRef<
     jobId: string
   ) => {
     activeJobIdRef.current = jobId
+    // A single-line draft is fully visible in the form itself; only itemized receipts need the summary step.
+    if (!result.items?.length) {
+      openDraftForm(result, immichIds)
+      return
+    }
     setPendingResult(result)
     setReviewImmichIds(immichIds)
     setReviewOpen(true)
@@ -75,10 +80,16 @@ export const TransactionAiPanel = React.forwardRef<
     [pendingResult, activeSources, currency, accountsEnabled]
   )
 
-  const openDraftForm = (result: ReceiptParseResult) => {
+  function openDraftForm(result: ReceiptParseResult, immichIds: string[] = reviewImmichIds) {
     const draft: TransactionDraft = receiptParseToTransactionDraft(result, currency)
+    const resolvedTarget =
+      result === pendingResult && target
+        ? target
+        : resolveDraftTarget(result, activeSources, currency, {
+            fallbackToDefaultAccount: accountsEnabled,
+          })
     const { accountId, transferToAccountId, currency: resolvedCurrency, currencySource } =
-      target ?? resolveDraftTarget(result, activeSources, currency)
+      resolvedTarget
 
     const { accountHint: _a, transferToAccountHint: _b, currency: _c, ...rest } = draft
     const resolved: Omit<Transaction, 'id' | 'createdAt' | 'userId'> = {
@@ -89,7 +100,7 @@ export const TransactionAiPanel = React.forwardRef<
       ...(transferToAccountId ? { transferToAccountId } : {}),
     }
 
-    const ids = [...reviewImmichIds]
+    const ids = [...immichIds]
     onOpenDraftForm(resolved, ids.length ? ids : undefined)
     setReviewImmichIds([])
   }

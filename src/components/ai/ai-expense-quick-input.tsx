@@ -15,10 +15,19 @@ import {
 import { readApiJson } from '@/lib/api-json'
 import { authFetch } from '@/lib/api-auth-client'
 import { compressImageForUpload } from '@/lib/immich/compress-image'
-import { uploadImmichImage } from '@/lib/immich/upload-client'
+import { uploadAttachmentImage } from '@/lib/immich/upload-client'
 import { useImmichUploadDelivery } from '@/providers/immich-upload-context'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
+import { AI_INPUT_ID } from '@/components/quick-add-context'
+import { useLocale } from '@/components/locale-provider'
+
+/** Server/model errors are not actionable for users; keep only messages we wrote ourselves. */
+function friendlyAiError(err: unknown, fallback: string): string {
+  const message = err instanceof Error ? err.message : ''
+  if (!message || /[a-z]{3,}/i.test(message) && !/[\u0E00-\u0E7F]/.test(message)) return fallback
+  return message
+}
 
 export interface AiExpenseQuickInputProps {
   tripId?: string
@@ -56,6 +65,7 @@ export const AiExpenseQuickInput = React.forwardRef<
   },
   ref
 ) {
+  const { p } = useLocale()
   const [input, setInput] = React.useState('')
   const [jobs, setJobs] = React.useState<AiParseJob[]>(() => loadAiParseJobs(storageScope))
   const skipSaveRef = React.useRef(true)
@@ -171,13 +181,13 @@ export const AiExpenseQuickInput = React.forwardRef<
 
       toast.success(
         drafts.length > 1
-          ? `แยกได้ ${drafts.length} รายการ — กดตรวจสอบ/แก้ไขทีละรายการ`
-          : 'แยกรายการเสร็จแล้ว — กดตรวจสอบ/แก้ไข'
+          ? `แยกได้ ${drafts.length} รายการ — กดตรวจสอบทีละรายการเพื่อบันทึก`
+          : 'แยกรายการเสร็จแล้ว — กดตรวจสอบเพื่อบันทึก'
       )
     } catch (err) {
       updateJob(job.id, {
         status: 'error',
-        error: err instanceof Error ? err.message : 'แยกข้อมูลไม่สำเร็จ',
+        error: friendlyAiError(err, 'อ่านข้อความไม่ออก ลองพิมพ์แบบ "ข้าว 45" หรือจดเองด้วยปุ่ม +'),
       })
     }
   }
@@ -204,7 +214,7 @@ export const AiExpenseQuickInput = React.forwardRef<
       const endpoint = tripId ? '/api/ai/receipt/parse' : '/api/ai/transaction/parse'
 
       const [uploadResult, parseRes] = await Promise.all([
-        uploadImmichImage(prepared, { tripId, compress: false }).catch(() => null),
+        uploadAttachmentImage(prepared, { tripId, compress: false }).catch(() => null),
         authFetch(endpoint, { method: 'POST', body: form }),
       ])
 
@@ -220,14 +230,15 @@ export const AiExpenseQuickInput = React.forwardRef<
         result: data.draft as ReceiptParseResult,
         immichIds: boundIds,
       })
-      if (uploadResult?.assetId) {
-        toast.success('เก็บรูปใบเสร็จใน Immich แล้ว')
-      }
-      toast.success('แยกรายการจากรูปเสร็จแล้ว — กดตรวจสอบ/แก้ไข')
+      toast.success(
+        uploadResult?.assetId
+          ? 'อ่านใบเสร็จเสร็จแล้ว (แนบรูปไว้ให้) — กดตรวจสอบเพื่อบันทึก'
+          : 'อ่านใบเสร็จเสร็จแล้ว — กดตรวจสอบเพื่อบันทึก'
+      )
     } catch (err) {
       updateJob(job.id, {
         status: 'error',
-        error: err instanceof Error ? err.message : 'สแกนรูปไม่สำเร็จ',
+        error: friendlyAiError(err, 'อ่านใบเสร็จไม่ออก ลองถ่ายให้ชัดขึ้น หรือจดเองด้วยปุ่ม +'),
       })
     }
   }
@@ -303,13 +314,16 @@ export const AiExpenseQuickInput = React.forwardRef<
           <Sparkles className="size-4 text-primary" aria-hidden />
         </div>
         <div className="min-w-0">
-          <p className="text-sm font-semibold tracking-tight">Add with AI</p>
-          <p className="text-xs text-muted-foreground">Type expenses or attach a receipt</p>
-        </div>
-        <div className="ml-auto flex shrink-0 items-center gap-1.5">
-          <Badge variant="secondary" className="text-[10px]">
-            Gemini
-          </Badge>
+          <p className="text-sm font-semibold tracking-tight">
+            {p({ th: 'ให้ AI จดให้', en: 'Let AI log it', zh: '让 AI 记账' })}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {p({
+              th: 'พิมพ์หลายรายการพร้อมกัน หรือแนบรูปใบเสร็จ',
+              en: 'Type several items at once, or attach a receipt',
+              zh: '一次输入多笔，或附上收据',
+            })}
+          </p>
         </div>
       </div>
 
@@ -324,6 +338,7 @@ export const AiExpenseQuickInput = React.forwardRef<
           />
         ) : (
           <Textarea
+            id={storageScope === 'transactions' ? AI_INPUT_ID : undefined}
             placeholder={'เช่น "ไก่ทอด 20" หรือวางหลายบรรทัด:\nนั่งวิน 10\nข้าว 45\nทั้งหมดนี้วันที่ 25 สิงหา 69\n(Ctrl+Enter เพื่อส่ง)'}
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -350,9 +365,15 @@ export const AiExpenseQuickInput = React.forwardRef<
       </div>
 
       <div className="space-y-2 rounded-lg border bg-muted/30 p-3">
-        <p className="text-xs font-medium text-muted-foreground">Receipt photo</p>
-        <p className="text-[11px] text-muted-foreground">
-          กดส่งแล้วระบบจะแยกด้วย AI และเก็บรูปลง Immich ให้พร้อมกัน (บีบอัดก่อนอัปโหลด)
+        <p className="text-xs font-medium text-muted-foreground">
+          {p({ th: 'รูปใบเสร็จ', en: 'Receipt photo', zh: '收据照片' })}
+        </p>
+        <p className="text-xs text-muted-foreground">
+          {p({
+            th: 'เลือกรูปแล้วกดส่ง AI จะอ่านยอดและรายการให้ พร้อมแนบรูปไว้กับรายการ',
+            en: 'Pick a photo and send — AI reads the total and items and attaches the photo',
+            zh: '选择照片并发送，AI 会识别金额和明细并附上照片',
+          })}
         </p>
         <div className="flex flex-wrap gap-2 items-center">
           <input
@@ -377,24 +398,24 @@ export const AiExpenseQuickInput = React.forwardRef<
             type="button"
             variant="outline"
             size="sm"
-            className="gap-1 h-8"
+            className="gap-1 h-9"
             onClick={() => aiImageInputRef.current?.click()}
           >
-            <ImagePlus className="size-3.5" />
-            เลือกรูป
+            <ImagePlus className="size-3.5" aria-hidden />
+            {p({ th: 'เลือกรูป', en: 'Choose photo', zh: '选择照片' })}
           </Button>
           {pendingReceiptFile && (
             <Button
               type="button"
               variant="ghost"
               size="sm"
-              className="h-8 text-xs"
+              className="h-9 text-xs"
               onClick={() => {
                 setPendingReceiptFile(null)
                 setReceiptExtraInstructions('')
               }}
             >
-              ล้างรูป
+              {p({ th: 'ล้างรูป', en: 'Remove photo', zh: '移除照片' })}
             </Button>
           )}
         </div>
@@ -415,7 +436,7 @@ export const AiExpenseQuickInput = React.forwardRef<
           accept="image/*"
           multiple
           className="hidden"
-          aria-label="เก็บรูปโน้ต Immich"
+          aria-label="แนบรูปประกอบ"
           onChange={(e) => {
             const files = e.target.files
             if (files?.length) {
@@ -428,38 +449,52 @@ export const AiExpenseQuickInput = React.forwardRef<
           type="button"
           variant="outline"
           size="sm"
-          className="gap-1 h-8"
+          className="gap-1 h-9"
           onClick={() => noteImageInputRef.current?.click()}
         >
           {uploadingNoteCount > 0 ? (
-            <Loader2 className="size-3.5 animate-spin" />
+            <Loader2 className="size-3.5 animate-spin" aria-hidden />
           ) : (
-            <Paperclip className="size-3.5" />
+            <Paperclip className="size-3.5" aria-hidden />
           )}
-          เก็บโน้ต (Immich)
+          {p({ th: 'แนบรูปประกอบ', en: 'Attach a photo', zh: '附加照片' })}
           {uploadingNoteCount > 0 ? ` · ${uploadingNoteCount}` : ''}
         </Button>
       </div>
 
       {uploadingNoteCount > 0 && (
-        <p className="text-[11px] text-muted-foreground">
-          กำลังอัปโหลดรูปโน้ตเบื้องหลัง — ส่งข้อความหรือเลื่อนไปทำอย่างอื่นได้
+        <p className="text-xs text-muted-foreground">
+          {p({
+            th: 'กำลังอัปโหลดรูปเบื้องหลัง — พิมพ์ต่อหรือไปทำอย่างอื่นได้',
+            en: 'Uploading in the background — keep typing or move on',
+            zh: '正在后台上传，可继续输入',
+          })}
         </p>
       )}
 
       {pendingImmichIds.length > 0 && (
         <Badge variant="outline" className="text-xs gap-1 w-fit">
-          <Bookmark className="size-3" />
-          มีรูปโน้ตรอแนบ ({pendingImmichIds.length})
+          <Bookmark className="size-3" aria-hidden />
+          {p({
+            th: `รูปรอแนบกับรายการถัดไป (${pendingImmichIds.length})`,
+            en: `Photos waiting for the next entry (${pendingImmichIds.length})`,
+            zh: `待附加到下一笔的照片（${pendingImmichIds.length}）`,
+          })}
         </Badge>
       )}
 
       {jobs.length > 0 && (
         <div className="space-y-2 border-t pt-3">
           <p className="text-xs font-medium text-muted-foreground">
-            Parse status
+            {p({ th: 'รายการที่ AI กำลังอ่าน', en: 'AI results', zh: 'AI 识别结果' })}
             {activeJobCount > 0 && (
-              <span className="tabular-nums"> ({activeJobCount} running)</span>
+              <span className="tabular-nums">
+                {p({
+                  th: ` (กำลังอ่าน ${activeJobCount})`,
+                  en: ` (${activeJobCount} in progress)`,
+                  zh: `（${activeJobCount} 个处理中）`,
+                })}
+              </span>
             )}
           </p>
           <div className="max-h-64 space-y-2 overflow-y-auto">
@@ -485,14 +520,17 @@ export const AiExpenseQuickInput = React.forwardRef<
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-medium">{job.inputLabel}</p>
                     <p className="text-muted-foreground">
-                      {job.kind === 'receipt' ? 'Receipt' : 'Text'} · Gemini · {statusLabel(job)}
+                      {job.kind === 'receipt'
+                        ? p({ th: 'ใบเสร็จ', en: 'Receipt', zh: '收据' })
+                        : p({ th: 'ข้อความ', en: 'Text', zh: '文字' })}{' '}
+                      · {statusLabel(job)}
                     </p>
                   </div>
                   <button
                     type="button"
-                    className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors duration-200 hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                    className="-m-1 flex size-9 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors duration-200 hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
                     onClick={() => removeJob(job.id)}
-                    aria-label="Dismiss parse job"
+                    aria-label={p({ th: 'ปิดรายการนี้', en: 'Dismiss', zh: '关闭' })}
                   >
                     <X className="size-3.5" />
                   </button>
@@ -503,10 +541,10 @@ export const AiExpenseQuickInput = React.forwardRef<
                     type="button"
                     size="sm"
                     variant="secondary"
-                    className="h-7 w-full text-xs"
+                    className="h-9 w-full text-sm"
                     onClick={() => onReview(job.result!, job.immichIds, job.id)}
                   >
-                    ตรวจสอบ / แก้ไข
+                    {p({ th: 'ตรวจสอบแล้วบันทึก', en: 'Review & save', zh: '检查并保存' })}
                   </Button>
                 )}
               </div>

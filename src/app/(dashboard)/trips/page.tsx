@@ -71,6 +71,7 @@ import type { TripCurrencyCode } from '@/lib/tax/countries'
 import { saveTripExpenseWithTransaction } from '@/lib/sync-expense-transaction'
 import { getTripSelfMemberKey } from '@/lib/trip-balance'
 import { Timestamp } from 'firebase/firestore'
+import { useLocale } from '@/components/locale-provider'
 
 // --- Settlement calculation ---
 interface Settlement {
@@ -128,14 +129,14 @@ function calculateSettlements(participants: ParticipantSummary[]): Settlement[] 
   return settlements
 }
 
-function formatTripDateRange(startDate: Date | null, endDate: Date | null) {
+function formatTripDateRange(startDate: Date | null, endDate: Date | null, dateLocale = 'en-US') {
   if (!startDate) return null
-  const start = startDate.toLocaleDateString('en-US', {
+  const start = startDate.toLocaleDateString(dateLocale, {
     month: 'short',
     day: 'numeric',
   })
   if (!endDate || startDate.toDateString() === endDate.toDateString()) return start
-  const end = endDate.toLocaleDateString('en-US', {
+  const end = endDate.toLocaleDateString(dateLocale, {
     month: 'short',
     day: 'numeric',
   })
@@ -143,8 +144,13 @@ function formatTripDateRange(startDate: Date | null, endDate: Date | null) {
 }
 
 function TripsPageSkeleton() {
+  const { p } = useLocale()
   return (
-    <div className="flex flex-col gap-6 p-4 sm:p-6" aria-busy="true" aria-label="Loading trips">
+    <div
+      className="flex flex-col gap-6 p-4 sm:p-6"
+      aria-busy="true"
+      aria-label={p({ th: 'กำลังโหลดทริป', en: 'Loading trips', zh: '正在加载行程' })}
+    >
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-2">
           <Skeleton className="h-8 w-28" />
@@ -186,6 +192,8 @@ function TripCard({
 }) {
   const router = useRouter()
   const { user } = useAuth()
+  const { p, locale } = useLocale()
+  const dateLocale = locale === 'th' ? 'th-TH' : locale === 'zh' ? 'zh-CN' : 'en-US'
 
   // --- 1. Legacy Calculations ---
   const members = trip.members || []
@@ -293,7 +301,7 @@ function TripCard({
     ? new Date(trip.startDate.seconds * 1000)
     : null
   const endDate = trip.endDate ? new Date(trip.endDate.seconds * 1000) : null
-  const dateRange = formatTripDateRange(startDate, endDate)
+  const dateRange = formatTripDateRange(startDate, endDate, dateLocale)
   const isActive = trip.status === 'active'
   const tripHref = `/trips/${trip.id}`
 
@@ -303,7 +311,7 @@ function TripCard({
     <Card
       role="link"
       tabIndex={0}
-      aria-label={`Open trip ${trip.name}`}
+      aria-label={p({ th: `เปิดทริป ${trip.name}`, en: `Open trip ${trip.name}`, zh: `打开行程 ${trip.name}` })}
       className={cn(
         'group cursor-pointer shadow-sm outline-none',
         'transition-[box-shadow,border-color] duration-200 ease-out',
@@ -333,7 +341,9 @@ function TripCard({
                   isActive && 'bg-primary/15 text-primary hover:bg-primary/15'
                 )}
               >
-                {isActive ? 'Active' : 'Closed'}
+                {isActive
+                  ? p({ th: 'เปิดอยู่', en: 'Active', zh: '进行中' })
+                  : p({ th: 'ปิดแล้ว', en: 'Closed', zh: '已结束' })}
               </Badge>
             </div>
             {trip.description && (
@@ -355,23 +365,27 @@ function TripCard({
                 variant="ghost"
                 size="icon"
                 className="size-9 shrink-0"
-                aria-label={`Trip actions for ${trip.name}`}
+                aria-label={p({
+                  th: `ตัวเลือกทริป ${trip.name}`,
+                  en: `Trip actions for ${trip.name}`,
+                  zh: `${trip.name} 的行程操作`,
+                })}
                 onClick={(e) => e.stopPropagation()}
               >
-                <MoreHorizontal className="size-4" />
+                <MoreHorizontal className="size-4" aria-hidden />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
               {isActive && (
                 <DropdownMenuItem onClick={() => onCloseRequest(trip.id!)}>
-                  <Lock className="mr-2 size-4" />
-                  Close Trip
+                  <Lock className="mr-2 size-4" aria-hidden />
+                  {p({ th: 'ปิดทริป', en: 'Close trip', zh: '结束行程' })}
                 </DropdownMenuItem>
               )}
               {trip.status === 'closed' && (
                 <DropdownMenuItem onClick={() => onReopen(trip.id!)}>
-                  <Unlock className="mr-2 size-4" />
-                  Reopen Trip
+                  <Unlock className="mr-2 size-4" aria-hidden />
+                  {p({ th: 'เปิดทริปอีกครั้ง', en: 'Reopen trip', zh: '重新开启行程' })}
                 </DropdownMenuItem>
               )}
               <DropdownMenuSeparator />
@@ -379,8 +393,8 @@ function TripCard({
                 className="text-destructive"
                 onClick={() => onDeleteRequest(trip)}
               >
-                <Trash2 className="mr-2 size-4" />
-                Delete Trip
+                <Trash2 className="mr-2 size-4" aria-hidden />
+                {p({ th: 'ลบทริป', en: 'Delete trip', zh: '删除行程' })}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -391,19 +405,27 @@ function TripCard({
         {/* Ledger totals — flat, not nested cards */}
         <div className="flex items-end justify-between gap-4 border-y border-border/80 py-3">
           <div className="min-w-0">
-            <p className="text-xs font-medium text-muted-foreground">Total expenses</p>
+            <p className="text-xs font-medium text-muted-foreground">
+              {p({ th: 'ค่าใช้จ่ายรวม', en: 'Total expenses', zh: '总支出' })}
+            </p>
             <p className="mt-0.5 text-xl font-semibold tracking-tight tabular-nums sm:text-2xl">
               ฿{totalExpenses.toLocaleString()}
             </p>
             {expenseCount > 0 && (
               <p className="mt-0.5 text-xs text-muted-foreground tabular-nums">
-                {expenseCount} {expenseCount === 1 ? 'item' : 'items'}
+                {p({
+                  th: `${expenseCount} รายการ`,
+                  en: `${expenseCount} ${expenseCount === 1 ? 'item' : 'items'}`,
+                  zh: `${expenseCount} 笔`,
+                })}
               </p>
             )}
           </div>
           {meParticipant && (
             <div className="shrink-0 text-right">
-              <p className="text-xs font-medium text-muted-foreground">Your balance</p>
+              <p className="text-xs font-medium text-muted-foreground">
+                {p({ th: 'ยอดของคุณ', en: 'Your balance', zh: '你的余额' })}
+              </p>
               <p
                 className={cn(
                   'mt-0.5 text-lg font-semibold tracking-tight tabular-nums sm:text-xl',
@@ -418,10 +440,10 @@ function TripCard({
               </p>
               <p className="mt-0.5 text-xs text-muted-foreground">
                 {myNetBalance > 0
-                  ? 'Owed to you'
+                  ? p({ th: 'มีคนต้องจ่ายคืนคุณ', en: 'Owed to you', zh: '别人欠你' })
                   : myNetBalance < 0
-                    ? 'You owe'
-                    : 'Settled'}
+                    ? p({ th: 'คุณต้องจ่ายคืน', en: 'You owe', zh: '你欠别人' })
+                    : p({ th: 'เคลียร์ครบแล้ว', en: 'Settled', zh: '已结清' })}
               </p>
             </div>
           )}
@@ -445,8 +467,11 @@ function TripCard({
                 ))}
               </div>
               <p className="truncate text-sm text-muted-foreground">
-                {participants.length}{' '}
-                {participants.length === 1 ? 'person' : 'people'}
+                {p({
+                  th: `${participants.length} คน`,
+                  en: `${participants.length} ${participants.length === 1 ? 'person' : 'people'}`,
+                  zh: `${participants.length} 人`,
+                })}
                 {participants.length > 5 && (
                   <span className="tabular-nums"> · +{participants.length - 5}</span>
                 )}
@@ -458,7 +483,9 @@ function TripCard({
         {/* Settlements — compact rows, no nested card chrome */}
         {settlements.length > 0 && (
           <div>
-            <p className="mb-2 text-sm font-medium">Settlements needed</p>
+            <p className="mb-2 text-sm font-medium">
+              {p({ th: 'ใครต้องจ่ายคืนใคร', en: 'Settlements needed', zh: '待结算' })}
+            </p>
             <ul className="divide-y divide-border/80 rounded-lg border border-border/80">
               {settlements.slice(0, 3).map((settlement, index) => (
                 <li
@@ -485,7 +512,11 @@ function TripCard({
             </ul>
             {settlements.length > 3 && (
               <p className="mt-1.5 text-xs text-muted-foreground">
-                +{settlements.length - 3} more on trip detail
+                {p({
+                  th: `อีก ${settlements.length - 3} รายการ ดูได้ในหน้าทริป`,
+                  en: `+${settlements.length - 3} more on trip detail`,
+                  zh: `另有 ${settlements.length - 3} 项，请在行程详情查看`,
+                })}
               </p>
             )}
           </div>
@@ -495,7 +526,7 @@ function TripCard({
         {tripTransactions.length > 0 && (
           <div>
             <p className="mb-2 text-sm font-medium">
-              Recent expenses
+              {p({ th: 'รายการล่าสุด', en: 'Recent expenses', zh: '最近支出' })}
               <span className="ml-1 font-normal text-muted-foreground tabular-nums">
                 ({tripTransactions.length})
               </span>
@@ -521,7 +552,11 @@ function TripCard({
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium">{tx.description}</p>
                       <p className="truncate text-xs text-muted-foreground">
-                        Paid by {getDisplayName(tx.paidBy || 'Me')}
+                        {p({
+                          th: `จ่ายโดย ${getDisplayName(tx.paidBy || 'Me')}`,
+                          en: `Paid by ${getDisplayName(tx.paidBy || 'Me')}`,
+                          zh: `付款人：${getDisplayName(tx.paidBy || 'Me')}`,
+                        })}
                       </p>
                     </div>
                     <div className="shrink-0 text-right">
@@ -541,7 +576,11 @@ function TripCard({
             </ul>
             {tripTransactions.length > 4 && (
               <p className="pt-1 text-xs text-muted-foreground">
-                +{tripTransactions.length - 4} more on trip detail
+                {p({
+                  th: `อีก ${tripTransactions.length - 4} รายการ ดูได้ในหน้าทริป`,
+                  en: `+${tripTransactions.length - 4} more on trip detail`,
+                  zh: `另有 ${tripTransactions.length - 4} 笔，请在行程详情查看`,
+                })}
               </p>
             )}
           </div>
@@ -558,8 +597,8 @@ function TripCard({
                 onAddExpense(trip.id!)
               }}
             >
-              <Receipt className="mr-2 size-4" />
-              Add expense
+              <Receipt className="mr-2 size-4" aria-hidden />
+              {p({ th: 'เพิ่มค่าใช้จ่าย', en: 'Add expense', zh: '添加支出' })}
             </Button>
           </div>
         )}
@@ -571,6 +610,7 @@ function TripCard({
 // --- Main Page ---
 export default function TripsPage() {
   const { user } = useAuth()
+  const { t, p } = useLocale()
   const {
     activeTrips,
     closedTrips,
@@ -708,10 +748,14 @@ export default function TripsPage() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex min-w-0 flex-col gap-1">
           <h1 className="text-2xl font-semibold tracking-tight text-balance">
-            Trips
+            {t('nav.trips')}
           </h1>
           <p className="max-w-prose text-muted-foreground text-pretty">
-            Split group costs on trips and events — see totals and who owes whom at a glance.
+            {p({
+              th: 'หารค่าใช้จ่ายกับเพื่อนในทริปหรืองานต่าง ๆ ดูยอดรวมและใครติดใครได้ในที่เดียว',
+              en: 'Split group costs on trips and events — see totals and who owes whom at a glance.',
+              zh: '在旅行和活动中分摊费用，一眼看清总额和谁欠谁。',
+            })}
           </p>
         </div>
         <Dialog
@@ -726,42 +770,48 @@ export default function TripsPage() {
         >
           <DialogTrigger asChild>
             <Button className="w-full shrink-0 gap-2 sm:w-auto">
-              <Plus className="size-4" />
-              New trip
+              <Plus className="size-4" aria-hidden />
+              {p({ th: 'สร้างทริปใหม่', en: 'New trip', zh: '新建行程' })}
             </Button>
           </DialogTrigger>
           <DialogContent
             className="max-h-[90vh] overflow-y-auto overflow-x-hidden sm:max-w-[680px]"
           >
             <DialogHeader>
-              <DialogTitle>Create trip</DialogTitle>
+              <DialogTitle>{p({ th: 'สร้างทริป', en: 'Create trip', zh: '创建行程' })}</DialogTitle>
               <DialogDescription>
-                Start a shared expense session. You are added as a member automatically.
+                {p({
+                  th: 'เริ่มบันทึกค่าใช้จ่ายที่หารกัน คุณจะถูกเพิ่มเป็นสมาชิกอัตโนมัติ',
+                  en: 'Start a shared expense session. You are added as a member automatically.',
+                  zh: '开始记录共同支出，你会自动成为成员。',
+                })}
               </DialogDescription>
             </DialogHeader>
             <div className="grid gap-5 py-2">
               <div className="grid gap-2">
-                <Label htmlFor="trip-name">Trip name</Label>
+                <Label htmlFor="trip-name">{p({ th: 'ชื่อทริป', en: 'Trip name', zh: '行程名称' })}</Label>
                 <Input
                   id="trip-name"
-                  placeholder="e.g., Phuket Weekend"
+                  placeholder={p({ th: 'เช่น เที่ยวภูเก็ตสุดสัปดาห์', en: 'e.g., Phuket Weekend', zh: '例如：普吉岛周末游' })}
                   value={newTripName}
                   onChange={(e) => setNewTripName(e.target.value)}
                   autoComplete="off"
                 />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="trip-destination">Destination / notes</Label>
+                <Label htmlFor="trip-destination">
+                  {p({ th: 'จุดหมาย / โน้ต', en: 'Destination / notes', zh: '目的地/备注' })}
+                </Label>
                 <Input
                   id="trip-destination"
-                  placeholder="e.g., Phuket, Thailand"
+                  placeholder={p({ th: 'เช่น ภูเก็ต', en: 'e.g., Phuket, Thailand', zh: '例如：泰国普吉岛' })}
                   value={newTripDescription}
                   onChange={(e) => setNewTripDescription(e.target.value)}
                 />
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="grid gap-2">
-                  <Label htmlFor="trip-start">Start date</Label>
+                  <Label htmlFor="trip-start">{p({ th: 'วันเริ่ม', en: 'Start date', zh: '开始日期' })}</Label>
                   <Input
                     id="trip-start"
                     type="date"
@@ -770,7 +820,7 @@ export default function TripsPage() {
                   />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="trip-end">End date</Label>
+                  <Label htmlFor="trip-end">{p({ th: 'วันสิ้นสุด', en: 'End date', zh: '结束日期' })}</Label>
                   <Input
                     id="trip-end"
                     type="date"
@@ -780,14 +830,18 @@ export default function TripsPage() {
                 </div>
               </div>
               <div className="grid gap-2">
-                <Label>Members</Label>
+                <Label>{p({ th: 'สมาชิก', en: 'Members', zh: '成员' })}</Label>
                 <MemberPicker
                   value={newTripMembers}
                   onChange={setNewTripMembers}
                   selfUid={user?.uid}
                 />
                 <p className="text-xs text-muted-foreground">
-                  คุณจะถูกเพิ่มเป็นสมาชิกอัตโนมัติ · You&apos;re added automatically
+                  {p({
+                    th: 'คุณจะถูกเพิ่มเป็นสมาชิกอัตโนมัติ',
+                    en: "You're added as a member automatically",
+                    zh: '你会自动成为成员',
+                  })}
                 </p>
               </div>
               <TripSettingsFields value={newTripSettings} onChange={setNewTripSettings} />
@@ -798,13 +852,15 @@ export default function TripsPage() {
                 onClick={() => setIsCreateOpen(false)}
                 disabled={isCreating}
               >
-                Cancel
+                {t('common.cancel')}
               </Button>
               <Button
                 onClick={handleCreateTrip}
                 disabled={!newTripName.trim() || isCreating}
               >
-                {isCreating ? 'Creating…' : 'Create trip'}
+                {isCreating
+                  ? p({ th: 'กำลังสร้าง…', en: 'Creating…', zh: '正在创建…' })
+                  : p({ th: 'สร้างทริป', en: 'Create trip', zh: '创建行程' })}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -813,24 +869,30 @@ export default function TripsPage() {
 
       {/* Overview strip — one composition, not identical icon-card grid */}
       <section
-        aria-label="Trip overview"
+        aria-label={p({ th: 'ภาพรวมทริป', en: 'Trip overview', zh: '行程概览' })}
         className="rounded-xl border bg-card px-4 py-4 shadow-sm sm:px-6"
       >
         <div className="grid gap-4 sm:grid-cols-3 sm:gap-0">
           <div className="sm:pr-6">
-            <p className="text-xs font-medium text-muted-foreground">Active trips</p>
+            <p className="text-xs font-medium text-muted-foreground">
+              {p({ th: 'ทริปที่เปิดอยู่', en: 'Active trips', zh: '进行中的行程' })}
+            </p>
             <p className="mt-1 text-2xl font-semibold tracking-tight tabular-nums">
               {activeTrips.length}
             </p>
           </div>
           <div className="border-t border-border/80 pt-4 sm:border-t-0 sm:border-l sm:px-6 sm:pt-0">
-            <p className="text-xs font-medium text-muted-foreground">Trip expenses</p>
+            <p className="text-xs font-medium text-muted-foreground">
+              {p({ th: 'ค่าใช้จ่ายทริปทั้งหมด', en: 'Trip expenses', zh: '行程总支出' })}
+            </p>
             <p className="mt-1 text-2xl font-semibold tracking-tight tabular-nums">
               ฿{totalTripExpenses.toLocaleString()}
             </p>
           </div>
           <div className="border-t border-border/80 pt-4 sm:border-t-0 sm:border-l sm:pl-6 sm:pt-0">
-            <p className="text-xs font-medium text-muted-foreground">People involved</p>
+            <p className="text-xs font-medium text-muted-foreground">
+              {p({ th: 'จำนวนคนที่ร่วมทริป', en: 'People involved', zh: '参与人数' })}
+            </p>
             <p className="mt-1 text-2xl font-semibold tracking-tight tabular-nums">
               {uniquePeople.size}
             </p>
@@ -843,7 +905,7 @@ export default function TripsPage() {
         <TabsList className="h-auto w-full justify-start gap-1 sm:w-auto">
           <TabsTrigger value="active" className="gap-2">
             <Plane className="size-4" aria-hidden />
-            Active
+            {p({ th: 'เปิดอยู่', en: 'Active', zh: '进行中' })}
             {activeTrips.length > 0 && (
               <Badge variant="secondary" className="rounded-full tabular-nums">
                 {activeTrips.length}
@@ -852,7 +914,7 @@ export default function TripsPage() {
           </TabsTrigger>
           <TabsTrigger value="completed" className="gap-2">
             <Check className="size-4" aria-hidden />
-            Completed
+            {p({ th: 'จบแล้ว', en: 'Completed', zh: '已完成' })}
             {closedTrips.length > 0 && (
               <Badge variant="secondary" className="rounded-full tabular-nums">
                 {closedTrips.length}
@@ -888,17 +950,21 @@ export default function TripsPage() {
                 <Plane className="size-6 text-muted-foreground" aria-hidden />
               </div>
               <p className="mt-4 text-base font-semibold tracking-tight">
-                No active trips yet
+                {p({ th: 'ยังไม่มีทริปที่เปิดอยู่', en: 'No active trips yet', zh: '还没有进行中的行程' })}
               </p>
               <p className="mt-1 max-w-sm text-sm text-muted-foreground text-pretty">
-                Create a trip to track shared costs, split fairly, and settle up when you get home.
+                {p({
+                  th: 'สร้างทริปเพื่อจดค่าใช้จ่ายที่ใช้ร่วมกัน หารให้ยุติธรรม แล้วเคลียร์เงินกันตอนกลับบ้าน',
+                  en: 'Create a trip to track shared costs, split fairly, and settle up when you get home.',
+                  zh: '创建行程来记录共同支出、公平分摊，回家后再结清。',
+                })}
               </p>
               <Button
                 className="mt-5 gap-2"
                 onClick={() => setIsCreateOpen(true)}
               >
-                <Plus className="size-4" />
-                Create your first trip
+                <Plus className="size-4" aria-hidden />
+                {p({ th: 'สร้างทริปแรก', en: 'Create your first trip', zh: '创建第一个行程' })}
               </Button>
             </div>
           )}
@@ -931,10 +997,14 @@ export default function TripsPage() {
                 <Check className="size-6 text-muted-foreground" aria-hidden />
               </div>
               <p className="mt-4 text-base font-semibold tracking-tight">
-                No completed trips
+                {p({ th: 'ยังไม่มีทริปที่จบแล้ว', en: 'No completed trips', zh: '没有已完成的行程' })}
               </p>
               <p className="mt-1 max-w-sm text-sm text-muted-foreground text-pretty">
-                When you close a trip, it lands here — still readable for totals and settlements.
+                {p({
+                  th: 'เมื่อปิดทริปแล้ว จะย้ายมาอยู่ตรงนี้ ยังเปิดดูยอดรวมและใครติดใครได้เหมือนเดิม',
+                  en: 'When you close a trip, it lands here — still readable for totals and settlements.',
+                  zh: '结束的行程会出现在这里，仍可查看总额和结算情况。',
+                })}
               </p>
             </div>
           )}
@@ -953,11 +1023,19 @@ export default function TripsPage() {
           className="max-h-[90vh] overflow-y-auto overflow-x-hidden sm:max-w-[680px]"
         >
           <DialogHeader>
-            <DialogTitle>Add trip expense</DialogTitle>
+            <DialogTitle>{p({ th: 'เพิ่มค่าใช้จ่ายทริป', en: 'Add trip expense', zh: '添加行程支出' })}</DialogTitle>
             <DialogDescription>
               {expenseTrip
-                ? `Add a shared cost to “${expenseTrip.name}”. Split among participants.`
-                : 'Add an expense to this trip. It will be split among participants.'}
+                ? p({
+                    th: `เพิ่มค่าใช้จ่ายที่หารกันใน “${expenseTrip.name}”`,
+                    en: `Add a shared cost to “${expenseTrip.name}”. Split among participants.`,
+                    zh: `为“${expenseTrip.name}”添加一笔共同支出，由成员分摊。`,
+                  })
+                : p({
+                    th: 'เพิ่มค่าใช้จ่ายในทริปนี้ แล้วหารกันระหว่างสมาชิก',
+                    en: 'Add an expense to this trip. It will be split among participants.',
+                    zh: '为此行程添加一笔支出，由成员分摊。',
+                  })}
             </DialogDescription>
           </DialogHeader>
           <TripExpenseFormV2
@@ -991,14 +1069,17 @@ export default function TripsPage() {
       <AlertDialog open={!!tripToClose} onOpenChange={(open) => !open && setTripToClose(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Close this trip?</AlertDialogTitle>
+            <AlertDialogTitle>{p({ th: 'ปิดทริปนี้ไหม?', en: 'Close this trip?', zh: '结束这次行程？' })}</AlertDialogTitle>
             <AlertDialogDescription>
-              Closing a trip prevents adding new expenses and recording payments.
-              You can reopen it later if needed.
+              {p({
+                th: 'เมื่อปิดทริปแล้ว จะเพิ่มค่าใช้จ่ายหรือบันทึกการจ่ายคืนไม่ได้ ถ้าต้องการก็เปิดใหม่ได้ภายหลัง',
+                en: 'Closing a trip prevents adding new expenses and recording payments. You can reopen it later if needed.',
+                zh: '结束后将无法添加新支出或记录还款。如有需要，之后可以重新开启。',
+              })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
             <AlertDialogAction
               onClick={async () => {
                 if (tripToClose) {
@@ -1007,7 +1088,7 @@ export default function TripsPage() {
                 }
               }}
             >
-              Close trip
+              {p({ th: 'ปิดทริป', en: 'Close trip', zh: '结束行程' })}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -1016,15 +1097,23 @@ export default function TripsPage() {
       <AlertDialog open={!!tripToDelete} onOpenChange={(open) => !open && setTripToDelete(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete &quot;{tripToDelete?.name}&quot;?</AlertDialogTitle>
+            <AlertDialogTitle>
+              {p({
+                th: `ลบ "${tripToDelete?.name ?? ''}" ไหม?`,
+                en: `Delete "${tripToDelete?.name ?? ''}"?`,
+                zh: `删除“${tripToDelete?.name ?? ''}”？`,
+              })}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently remove the trip. Expenses and settlements linked to this trip
-              will remain in the database but won&apos;t be visible until the trip is restored.
-              This action cannot be undone from the app.
+              {p({
+                th: 'ทริปนี้จะถูกลบถาวร ค่าใช้จ่ายและการจ่ายคืนในทริปยังเก็บไว้ในระบบ แต่จะมองไม่เห็นจนกว่าจะกู้ทริปคืน และย้อนกลับจากในแอปไม่ได้',
+                en: "This will permanently remove the trip. Expenses and settlements linked to this trip will remain in the database but won't be visible until the trip is restored. This action cannot be undone from the app.",
+                zh: '这会永久删除该行程。关联的支出和还款仍保存在数据库中，但在行程恢复前不会显示。此操作无法在应用内撤销。',
+              })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={async () => {
@@ -1034,7 +1123,7 @@ export default function TripsPage() {
                 }
               }}
             >
-              Delete trip
+              {p({ th: 'ลบทริป', en: 'Delete trip', zh: '删除行程' })}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -54,32 +54,53 @@ import { useLocale } from '@/components/locale-provider'
 import { MobileBottomNav } from '@/components/mobile-bottom-nav'
 import { AppLogo } from '@/components/app-logo'
 import { Badge } from '@/components/ui/badge'
-import type { MessageKey } from '@/lib/i18n'
+import type { LocalizedText, MessageKey } from '@/lib/i18n'
 
-const mainNavItems: { titleKey: MessageKey; icon: typeof Receipt; href: string }[] = [
-  { titleKey: 'nav.transactions', icon: Receipt, href: '/' },
-  { titleKey: 'nav.accounts', icon: Landmark, href: '/accounts' },
-  { titleKey: 'nav.debts', icon: Users, href: '/debts' },
-  { titleKey: 'nav.trips', icon: Plane, href: '/trips' },
-  { titleKey: 'nav.friends', icon: UserPlus2, href: '/friends' },
+type NavItem = { titleKey: MessageKey; icon: typeof Receipt; href: string }
+
+const navGroups: { label: LocalizedText; items: NavItem[] }[] = [
+  {
+    label: { th: 'เงินของฉัน', en: 'Money', zh: '我的钱' },
+    items: [
+      { titleKey: 'nav.transactions', icon: Receipt, href: '/' },
+      { titleKey: 'nav.accounts', icon: Landmark, href: '/accounts' },
+    ],
+  },
+  {
+    label: { th: 'หารกับคนอื่น', en: 'Shared', zh: '分摊' },
+    items: [
+      { titleKey: 'nav.debts', icon: Users, href: '/debts' },
+      { titleKey: 'nav.trips', icon: Plane, href: '/trips' },
+      { titleKey: 'nav.friends', icon: UserPlus2, href: '/friends' },
+    ],
+  },
+  {
+    label: { th: 'สรุป', en: 'Insights', zh: '分析' },
+    items: [
+      { titleKey: 'nav.dashboard', icon: LayoutDashboard, href: '/dashboard' },
+      { titleKey: 'nav.insights', icon: Sparkles, href: '/insights' },
+    ],
+  },
+  {
+    label: { th: 'ตั้งค่า', en: 'Settings', zh: '设置' },
+    items: [
+      { titleKey: 'nav.line', icon: MessageCircle, href: '/line' },
+      { titleKey: 'nav.settings', icon: Settings, href: '/settings' },
+    ],
+  },
 ]
 
-const insightsNavItems: { titleKey: MessageKey; icon: typeof LayoutDashboard; href: string }[] = [
-  { titleKey: 'nav.dashboard', icon: LayoutDashboard, href: '/dashboard' },
-  { titleKey: 'nav.insights', icon: Sparkles, href: '/insights' },
-]
-
-const integrationNavItems: { titleKey: MessageKey; icon: typeof MessageCircle; href: string }[] = [
-  { titleKey: 'nav.line', icon: MessageCircle, href: '/line' },
-  { titleKey: 'nav.settings', icon: Settings, href: '/settings' },
-]
+function isActivePath(pathname: string, href: string) {
+  if (href === '/') return pathname === '/'
+  return pathname === href || pathname.startsWith(href + '/')
+}
 
 export function AppSidebar({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const { user, signOut } = useAuth()
   const { pendingReceived } = useFriends()
   const { openQuickAdd, openSearch } = useQuickAdd()
-  const { t } = useLocale()
+  const { t, p } = useLocale()
   const pendingCount = pendingReceived.length
 
   return (
@@ -94,8 +115,10 @@ export function AppSidebar({ children }: { children: React.ReactNode }) {
                     <AppLogo />
                   </div>
                   <div className="flex flex-col gap-0.5 leading-none">
-                    <span className="font-semibold">Finance</span>
-                    <span className="text-xs text-muted-foreground">System</span>
+                    <span className="font-semibold">Finance Tracker</span>
+                    <span className="text-xs text-muted-foreground">
+                      {p({ th: 'รายรับรายจ่าย & หารเงิน', en: 'Spending & splits', zh: '记账与分摊' })}
+                    </span>
                   </div>
                 </Link>
               </SidebarMenuButton>
@@ -104,80 +127,44 @@ export function AppSidebar({ children }: { children: React.ReactNode }) {
         </SidebarHeader>
 
         <SidebarContent>
-          <SidebarGroup>
-            <SidebarGroupLabel>{t('nav.overview')}</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {mainNavItems.map((item) => (
-                  <SidebarMenuItem key={item.href}>
-                    <SidebarMenuButton
-                      asChild
-                      isActive={pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href + '/'))}
-                      tooltip={t(item.titleKey)}
-                    >
-                      <Link href={item.href} className="relative flex items-center gap-2">
-                        <item.icon className="size-4" />
-                        <span>{t(item.titleKey)}</span>
-                        {item.href === '/friends' && pendingCount > 0 && (
-                          <Badge className="ml-auto h-5 min-w-5 rounded-full bg-destructive text-destructive-foreground text-[10px] px-1">
-                            {pendingCount}
-                          </Badge>
-                        )}
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-
-          <SidebarSeparator />
-
-          <SidebarGroup>
-            <SidebarGroupLabel>{t('nav.insightsGroup')}</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {insightsNavItems.map((item) => (
-                  <SidebarMenuItem key={item.href}>
-                    <SidebarMenuButton
-                      asChild
-                      isActive={pathname === item.href}
-                      tooltip={t(item.titleKey)}
-                    >
-                      <Link href={item.href}>
-                        <item.icon className="size-4" />
-                        <span>{t(item.titleKey)}</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-
-          <SidebarSeparator />
-
-          <SidebarGroup>
-            <SidebarGroupLabel>{t('nav.integrations')}</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {integrationNavItems.map((item) => (
-                  <SidebarMenuItem key={item.href}>
-                    <SidebarMenuButton
-                      asChild
-                      isActive={pathname === item.href}
-                      tooltip={t(item.titleKey)}
-                    >
-                      <Link href={item.href}>
-                        <item.icon className="size-4" />
-                        <span>{t(item.titleKey)}</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
+          {navGroups.map((group, index) => (
+            <React.Fragment key={group.label.en}>
+              {index > 0 && <SidebarSeparator />}
+              <SidebarGroup>
+                <SidebarGroupLabel>{p(group.label)}</SidebarGroupLabel>
+                <SidebarGroupContent>
+                  <SidebarMenu>
+                    {group.items.map((item) => (
+                      <SidebarMenuItem key={item.href}>
+                        <SidebarMenuButton
+                          asChild
+                          isActive={isActivePath(pathname, item.href)}
+                          tooltip={t(item.titleKey)}
+                        >
+                          <Link href={item.href} className="relative flex items-center gap-2">
+                            <item.icon className="size-4" aria-hidden />
+                            <span>{t(item.titleKey)}</span>
+                            {item.href === '/friends' && pendingCount > 0 && (
+                              <Badge
+                                className="ml-auto h-5 min-w-5 rounded-full bg-destructive px-1 text-xs text-destructive-foreground"
+                                aria-label={p({
+                                  th: `คำขอเป็นเพื่อน ${pendingCount} รายการ`,
+                                  en: `${pendingCount} friend requests`,
+                                  zh: `${pendingCount} 个好友请求`,
+                                })}
+                              >
+                                {pendingCount}
+                              </Badge>
+                            )}
+                          </Link>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    ))}
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              </SidebarGroup>
+            </React.Fragment>
+          ))}
         </SidebarContent>
 
         <SidebarFooter className="border-t border-sidebar-border">
@@ -210,11 +197,19 @@ export function AppSidebar({ children }: { children: React.ReactNode }) {
                   side="top"
                   className="w-[--radix-dropdown-menu-trigger-width]"
                 >
-                  <DropdownMenuItem>Profile</DropdownMenuItem>
-                  <DropdownMenuItem>Preferences</DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link href="/settings?tab=account">
+                      {p({ th: 'โปรไฟล์', en: 'Profile', zh: '个人资料' })}
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link href="/settings?tab=preferences">
+                      {p({ th: 'การแสดงผลและภาษา', en: 'Display & language', zh: '显示与语言' })}
+                    </Link>
+                  </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onSelect={(e) => { e.preventDefault(); void signOut(); }}>
-                    Sign out
+                    {p({ th: 'ออกจากระบบ', en: 'Sign out', zh: '退出登录' })}
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -235,17 +230,19 @@ export function AppSidebar({ children }: { children: React.ReactNode }) {
                 "relative h-9 w-full max-w-sm justify-start rounded-lg bg-muted/50 text-sm text-muted-foreground hover:bg-muted"
               )}
             >
-              <Search className="mr-2 size-4" />
-              <span className="truncate">Search transactions...</span>
-              <kbd className="pointer-events-none absolute right-2 hidden h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium sm:flex">
-                <Command className="size-3" />K
+              <Search className="mr-2 size-4" aria-hidden />
+              <span className="truncate">
+                {p({ th: 'ค้นหารายการ...', en: 'Search entries...', zh: '搜索记录...' })}
+              </span>
+              <kbd className="pointer-events-none absolute right-2 hidden h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-xs font-medium sm:flex">
+                <Command className="size-3" aria-hidden />K
               </kbd>
             </Button>
           </div>
 
-          <Button size="sm" className="gap-2" onClick={openQuickAdd}>
-            <Plus className="size-4" />
-            <span className="hidden sm:inline">Add Expense</span>
+          <Button size="sm" className="hidden h-9 gap-2 md:inline-flex" onClick={() => openQuickAdd()}>
+            <Plus className="size-4" aria-hidden />
+            {p({ th: 'จดรายการ', en: 'Add entry', zh: '添加记录' })}
           </Button>
         </header>
 
